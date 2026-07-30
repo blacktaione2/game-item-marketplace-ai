@@ -1,0 +1,199 @@
+"""같은 질의를 반복 재작성했을 때 결과가 얼마나 흔들리는지 측정한다.
+
+실행:
+  python -m scripts.evaluate_rewrite_determinism --temperature 1.0   # 기준선(예전 동작)
+  python -m scripts.evaluate_rewrite_determinism --temperature 0.0   # 현재 기본값
+
+## 왜 필요한가
+
+`understand_query()`의 비결정성이 이 프로젝트에서 세 번 비용을 냈다.
+
+- 리랭커 하한 캘리브레이션 불가 — 재작성 토큰 하나 차이로 점수가 1.31점 이동,
+  같은 스크립트 두 번 실행에 홀드아웃 판정이 뒤집혔다(ADR-0014)
+- 0건 판정을 캐시할 수 없음 — 판정 근거인 필터 추출이 흔들려서(ADR-0016)
+- 모든 검색 품질 측정의 시행 간 분산
+
+그런데 **지금까지 그 크기를 잰 적이 없다.** `"5만원 이하 검"`이 두 가지로
+갈렸다는 n=2 일화가 전부였다. 이 스크립트가 비율로 만든다.
+
+## 필터와 텍스트를 따로 잰다
+
+하류 영향이 다르기 때문이다.
+
+| 흔들리는 것 | 결과 |
+|---|---|
+| **필터** | 어떤 문서가 후보에 드는지가 바뀐다 → 0건 판정이 뒤집힌다 |
+| **재작성 텍스트** | 순위·리랭커 점수가 흔들린다 |
+
+합쳐서 하나의 숫자로 보고하면 어느 쪽이 문제인지 안 보인다.
+
+## 텍스트는 두 기준으로 잰다
+
+재작성 텍스트는 BM25(`query_text`)와 kNN(`query_vector`) **양쪽**에 들어간다.
+
+- **토큰 집합** — BM25는 nori 분석 후 bag-of-words라 어순이 무관하다
+- **문자열 완전 일치** — kNN 임베딩은 어순에 민감하다
+
+문자열만 보면 불안정을 과대평가하고, 토큰집합만 보면 과소평가한다.
+"""
+
+from __future__ import annotations
+
+import argparse
+import asyncio
+import json
+from collections import Counter
+
+from app.core.config import get_settings
+from app.corpus.rerank_floor_queries import FLOOR_QUERIES
+from app.services.llm.openai_client import OpenAIClient
+from app.services.search.query_understanding import understand_query
+
+# 캐시 전제 조건 판정 기준 (계획 단계에서 합의)
+FILTER_AGREEMENT_REQUIRED = 1.0
+TOKEN_AGREEMENT_REQUIRED = 0.9
+
+
+def mode_agreement(values: list[str]) -> float:
+    """최빈값과 일치하는 실행의 비율."""
+    return Counter(values).most_common(1)[0][1] / len(values)
+
+
+async def measure(llm: OpenAIClient, query: str, runs: int) -> dict:
+    filters: list[str] = []
+    exact: list[str] = []
+    tokens: list[str] = []
+
+    for _ in range(runs):
+        result = await understand_query(llm, query)
+        # 키 순서에 영향받지 않도록 정렬해서 직렬화한다 — 같은 필터인데 다른
+        # 문자열로 세면 불안정을 과대평가한다.
+        filters.append(
+            json.dumps(
+                result.filters.model_dump(exclude_none=True),
+                sort_keys=True,
+                ensure_ascii=False,
+            )
+        )
+        text = result.rewritten_query.strip()
+        exact.append(text)
+        tokens.append(" ".join(sorted(set(text.split()))))
+
+    return {
+        "query": query,
+        "filters": filters,
+        "exact": exact,
+        "tokens": tokens,
+    }
+
+
+def report(rows: list[dict], runs: int, temperature: float) -> None:
+    print(f"\n{'=' * 78}")
+    print(f"질의 {len(rows)}건 × {runs}회, temperature={temperature}")
+    print(f"{'=' * 78}")
+    print(
+        f"{'질의':<24}{'필터':>12}{'토큰집합':>12}{'문자열':>12}"
+        f"{'필터일치':>10}{'토큰일치':>10}"
+    )
+    print("-" * 78)
+
+    for row in rows:
+        print(
+            f"{row['query'][:22]:<24}"
+            f"{len(set(row['filters'])):>10}가지"
+            f"{len(set(row['tokens'])):>10}가지"
+            f"{len(set(row['exact'])):>10}가지"
+            f"{mode_agreement(row['filters']):>10.2f}"
+            f"{mode_agreement(row['tokens']):>10.2f}"
+        )
+
+    filter_agreements = [mode_agreement(r["filters"]) for r in rows]
+    token_agreements = [mode_agreement(r["tokens"]) for r in rows]
+    exact_agreements = [mode_agreement(r["exact"]) for r in rows]
+
+    unstable_filters = [r["query"] for r in rows if len(set(r["filters"])) > 1]
+    unstable_tokens = [r["query"] for r in rows if len(set(r["tokens"])) > 1]
+    unstable_exact = [r["query"] for r in rows if len(set(r["exact"])) > 1]
+
+    print("-" * 78)
+    print(f"{'평균 모드 일치율':<24}"
+          f"필터 {sum(filter_agreements) / len(rows):.3f}  "
+          f"토큰집합 {sum(token_agreements) / len(rows):.3f}  "
+          f"문자열 {sum(exact_agreements) / len(rows):.3f}")
+    print(f"{'불안정 질의 수':<24}"
+          f"필터 {len(unstable_filters)}/{len(rows)}  "
+          f"토큰집합 {len(unstable_tokens)}/{len(rows)}  "
+          f"문자열 {len(unstable_exact)}/{len(rows)}")
+
+    if unstable_filters:
+        print("\n  필터가 흔들린 질의 — 0건 판정이 뒤집힐 수 있는 쪽:")
+        for row in rows:
+            if len(set(row["filters"])) > 1:
+                print(f"    {row['query']}")
+                for value, count in Counter(row["filters"]).most_common():
+                    print(f"      {count}회  {value}")
+
+    if unstable_tokens:
+        print("\n  토큰 집합이 흔들린 질의 — 순위가 흔들리는 쪽:")
+        for row in rows:
+            if len(set(row["tokens"])) > 1:
+                print(f"    {row['query']}")
+                for value, count in Counter(row["exact"]).most_common():
+                    print(f"      {count}회  \"{value}\"")
+
+    # 캐시 전제 조건 판정
+    filter_ok = min(filter_agreements) >= FILTER_AGREEMENT_REQUIRED
+    token_ok = sum(token_agreements) / len(rows) >= TOKEN_AGREEMENT_REQUIRED
+    print(f"\n{'=' * 78}\n재작성 캐싱 전제 조건\n{'=' * 78}")
+    print(
+        f"  필터 추출 전 질의 {runs}/{runs} 동일        "
+        f"{'충족' if filter_ok else '미충족'}  "
+        f"(최저 {min(filter_agreements):.2f})"
+    )
+    print(
+        f"  토큰집합 평균 모드 일치율 >= {TOKEN_AGREEMENT_REQUIRED}   "
+        f"{'충족' if token_ok else '미충족'}  "
+        f"({sum(token_agreements) / len(rows):.3f})"
+    )
+    print(
+        "\n  => "
+        + (
+            "재작성 캐싱을 다음 단계로 검토 가능하다."
+            if filter_ok and token_ok
+            else "아직 재작성 캐싱을 검토할 단계가 아니다."
+        )
+    )
+    print(
+        "  주의: 이 기준이 충족돼도 **0건 판정 캐싱은 열리지 않는다.**\n"
+        "        ADR-0016의 금지 이유 2(0건은 매물 하나만 등록돼도 거짓이 되는\n"
+        "        가장 낡기 쉬운 답)는 재작성 결정성과 무관하게 남는다."
+    )
+
+
+async def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--runs", type=int, default=10)
+    parser.add_argument(
+        "--temperature",
+        type=float,
+        default=None,
+        help="생략하면 settings.openai_temperature. 기준선은 1.0(예전 동작)",
+    )
+    args = parser.parse_args()
+
+    settings = get_settings()
+    temperature = (
+        args.temperature if args.temperature is not None else settings.openai_temperature
+    )
+    llm = OpenAIClient(
+        api_key=settings.openai_api_key,
+        model=settings.openai_model,
+        temperature=temperature,
+    )
+
+    rows = [await measure(llm, q.query, args.runs) for q in FLOOR_QUERIES]
+    report(rows, args.runs, temperature)
+
+
+if __name__ == "__main__":
+    asyncio.run(main())

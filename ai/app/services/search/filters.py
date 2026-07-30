@@ -1,0 +1,71 @@
+"""Text-to-DSL이 뽑아낸 구조화 필터 → Elasticsearch filter 절 변환."""
+
+from __future__ import annotations
+
+from typing import Any
+
+from pydantic import BaseModel, Field
+
+
+class SearchFilters(BaseModel):
+    """LLM이 자연어에서 추출하는 구조화 필터. 전부 optional."""
+
+    category: str | None = None
+    # 세부 종류. category(`무기`)로는 검/활/지팡이가 구분되지 않아 텍스트
+    # 신호에만 의존했고, 그 결과 `"5만원 이하 검"`에 활이 섞였다.
+    subcategory: str | None = None
+    # 속성. `"불속성 검"`은 subcategory까지 걸어도 검류 전체를 돌려줬다 —
+    # 속성이 텍스트 신호로만 남아 있었기 때문이다.
+    # `None`은 "속성 조건 없음", `"무속성"`은 "속성이 없는 아이템만"이다.
+    element: str | None = None
+    sale_type: str | None = None
+    price_min: float | None = None
+    price_max: float | None = None
+    enhancement_min: int | None = None
+    enhancement_max: int | None = None
+    # 착용 요구 레벨. "100렙 이상"은 level_min=100 (그 레벨대 장비를 찾는다는
+    # 뜻이지, 그 레벨로 낄 수 있는 하위 장비를 달라는 뜻이 아니다).
+    level_min: int | None = None
+    level_max: int | None = None
+
+    def to_es_filters(self) -> list[dict[str, Any]]:
+        clauses: list[dict[str, Any]] = []
+
+        if self.category:
+            clauses.append({"term": {"category": self.category}})
+        if self.subcategory:
+            clauses.append({"term": {"subcategory": self.subcategory}})
+        if self.element:
+            clauses.append({"term": {"element": self.element}})
+        if self.sale_type:
+            clauses.append({"term": {"sale_type": self.sale_type}})
+
+        price_range = _range(self.price_min, self.price_max)
+        if price_range:
+            clauses.append({"range": {"price": price_range}})
+
+        enhancement_range = _range(self.enhancement_min, self.enhancement_max)
+        if enhancement_range:
+            clauses.append({"range": {"enhancement_level": enhancement_range}})
+
+        level_range = _range(self.level_min, self.level_max)
+        if level_range:
+            clauses.append({"range": {"required_level": level_range}})
+
+        return clauses
+
+
+class QueryUnderstanding(BaseModel):
+    """Query Rewrite + Text-to-DSL의 단일 LLM 호출 결과."""
+
+    rewritten_query: str
+    filters: SearchFilters = Field(default_factory=SearchFilters)
+
+
+def _range(minimum: float | int | None, maximum: float | int | None) -> dict[str, Any]:
+    bounds: dict[str, Any] = {}
+    if minimum is not None:
+        bounds["gte"] = minimum
+    if maximum is not None:
+        bounds["lte"] = maximum
+    return bounds
