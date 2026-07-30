@@ -1,0 +1,98 @@
+"""의도별 캐시 정책.
+
+캐시 가능 여부와 TTL은 **의도마다 다르다.** 하나의 TTL을 전역으로 쓰면 FAQ는
+불필요하게 자주 만료되고 시세는 낡은 값을 내보내게 된다.
+"""
+
+from __future__ import annotations
+
+from datetime import datetime, timedelta
+from typing import Any
+
+from app.services.router.intents import Intent
+
+_HOUR = 3600
+
+# (캐시 가능 여부, 고정 TTL 초). TTL이 None이면 동적 계산(_dynamic_ttl).
+_POLICY: dict[Intent, tuple[bool, int | None]] = {
+    # 답이 바뀌지 않는다.
+    Intent.FAQ_SMALLTALK: (True, 24 * _HOUR),
+    # 매물은 등록/판매로 계속 바뀐다.
+    Intent.ITEM_SEARCH: (True, 10 * 60),
+    # 예측이 일 단위로 갱신되므로 날짜가 바뀌면 무효 — 동적 TTL.
+    Intent.PRICE_FORECAST: (True, None),
+    # **캐시하지 않는다.** 개별 거래 단건 판정이라 재사용될 일이 거의 없고,
+    # 유사 질의로 잘못 히트하면 그게 곧 보안 오판이 된다. 캐시 적중률
+    # 몇 퍼센트와 맞바꿀 위험이 아니다.
+    Intent.ANOMALY_CHECK: (False, None),
+    # 여러 도구 결과를 합성한 것이라 구성요소 중 하나만 바뀌어도 낡는다.
+    Intent.COMPOUND: (True, 5 * 60),
+    Intent.UNKNOWN: (True, 5 * 60),
+}
+
+
+# 시맨틱(유사도) 매칭을 허용할 의도.
+#
+# 실측 결과 이 코퍼스의 질의-질의 유사도로는 "같은 질문"과 "다른 질문"이
+# 분리되지 않는다(scripts.evaluate_semantic_cache). 함정 쌍의 평균 유사도가
+# 동의 쌍과 사실상 같거나 오히려 높았고, 파인튜닝 모델과 베이스 모델 모두
+# 그랬다. `+8 롱소드 시세`와 `+9 롱소드 시세`처럼 한 글자 차이로 답이 완전히
+# 달라지는 질의가 문장 임베딩에서는 거의 같은 벡터이기 때문이다.
+#
+# 그래서 시맨틱 매칭을 전 의도에 열지 않고 **오탐의 대가가 작은 곳에만**
+# 허용한다. FAQ/스몰토크는 답 공간이 좁고 표현만 다른 같은 질문이 대부분이며,
+# 틀려도 "다른 안내 문구가 나가는" 정도다. 반면 시세·검색·이상거래는 오탐이
+# 곧 잘못된 가격이나 잘못된 판정이 된다.
+#
+# 나머지 의도는 정확 일치 캐시로만 동작한다. (ADR-0012)
+_SEMANTIC_ALLOWED = {Intent.FAQ_SMALLTALK}
+
+
+def is_cacheable(intent: Intent, response: dict[str, Any] | None = None) -> bool:
+    """이 응답을 캐시에 저장해도 되는가.
+
+    `response`를 주면 의도 정책 위에 **응답 내용에 따른 예외**를 하나 더 본다.
+    안 주면 의도 정책만 판정한다(기존 호출 형태 유지).
+    """
+    if not _POLICY.get(intent, (False, None))[0]:
+        return False
+
+    # **"조건에 맞는 결과가 없다"는 응답은 저장하지 않는다.** 이유가 둘이고
+    # 둘 다 이 프로젝트에서 실측된 것이다.
+    #
+    # 1. 0건 판정의 근거인 **필터 추출이 비결정적이다.** 같은 질의가 실행마다
+    #    다르게 재작성되고 그 과정에서 필터도 달라질 수 있다(ADR-0014). 0건
+    #    응답을 질의 문자열로 캐시하면 여러 추출 결과 중 하나를 임의로 골라
+    #    TTL 동안 고정하는 셈이다. 판정은 매 요청의 실제 필터 결과로 다시
+    #    해야 하고, 질의 텍스트를 키로 미리 굳혀선 안 된다.
+    # 2. 0건은 **가장 낡기 쉬운 답**이다. 매물이 하나 등록되면 즉시 거짓이
+    #    되고, 오류의 방향("없다")이 사용자에게 더 나쁘다.
+    if response is not None and response.get("no_results"):
+        return False
+
+    return True
+
+
+def allows_semantic(intent: Intent) -> bool:
+    return intent in _SEMANTIC_ALLOWED
+
+
+def ttl_seconds(intent: Intent, now: datetime | None = None) -> int:
+    cacheable, fixed = _POLICY.get(intent, (False, None))
+    if not cacheable:
+        return 0
+    if fixed is not None:
+        return fixed
+    return _until_midnight(now or datetime.now())
+
+
+def _until_midnight(now: datetime) -> int:
+    """다음 자정까지 남은 초.
+
+    시세 예측은 일별 시세 시리즈를 기준으로 계산되므로 날짜가 바뀌면 근거가
+    바뀐다. 고정 TTL을 쓰면 자정 직전에 캐시된 값이 다음 날까지 살아남는다.
+    """
+    tomorrow = (now + timedelta(days=1)).replace(
+        hour=0, minute=0, second=0, microsecond=0
+    )
+    return max(int((tomorrow - now).total_seconds()), 60)
