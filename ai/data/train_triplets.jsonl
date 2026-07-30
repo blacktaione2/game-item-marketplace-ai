@@ -1,0 +1,162 @@
+{"anchor": "공격력 높은 롱소드 구해요", "positive": "+9 강화 롱소드 공격력 +120, 치명타 확률 8% 증가. 강화 실패 이력 없음.", "negative": "+8 강화 롱소드 공격력 +95, 치명타 확률 5% 증가. 무난한 중급 무기.", "negative_type": "structural", "item_id": 1, "negative_item_id": 2}
+{"anchor": "공격력 높은 롱소드 구해요", "positive": "+9 강화 롱소드 공격력 +120, 치명타 확률 8% 증가. 강화 실패 이력 없음.", "negative": "+6 강화 롱소드", "negative_type": "synthetic", "item_id": 1, "negative_item_id": null}
+{"anchor": "60레벨 강검", "positive": "+9 강화 롱소드 공격력 +120, 치명타 확률 8% 증가. 강화 실패 이력 없음.", "negative": "+7 강화 롱소드 공격력 +70. 입문자용 강화 무기.", "negative_type": "structural", "item_id": 1, "negative_item_id": 3}
+{"anchor": "60레벨 강검", "positive": "+9 강화 롱소드 공격력 +120, 치명타 확률 8% 증가. 강화 실패 이력 없음.", "negative": "+9 강화 대검", "negative_type": "synthetic", "item_id": 1, "negative_item_id": null}
+{"anchor": "9강 순수 롱소드 판매하나요", "positive": "+9 강화 롱소드 공격력 +120, 치명타 확률 8% 증가. 강화 실패 이력 없음.", "negative": "+8 강화 롱소드 공격력 +95, 치명타 확률 5% 증가. 무난한 중급 무기.", "negative_type": "corpus", "item_id": 1, "negative_item_id": 2}
+{"anchor": "9강 순수 롱소드 판매하나요", "positive": "+9 강화 롱소드 공격력 +120, 치명타 확률 8% 증가. 강화 실패 이력 없음.", "negative": "+9 강화 활", "negative_type": "synthetic", "item_id": 1, "negative_item_id": null}
+{"anchor": "공격력 높은 롱소드 구해요", "positive": "+9 강화 롱소드 공격력 +120, 치명타 확률 8% 증가. 강화 실패 이력 없음.", "negative": "신속의 장화 이동 속도 20% 증가, 회피율 5% 증가.", "negative_type": "easy", "item_id": 1, "negative_item_id": 18}
+{"anchor": "8강 롱검", "positive": "+8 강화 롱소드 공격력 +95, 치명타 확률 5% 증가. 무난한 중급 무기.", "negative": "+9 강화 롱소드 공격력 +120, 치명타 확률 8% 증가. 강화 실패 이력 없음.", "negative_type": "structural", "item_id": 2, "negative_item_id": 1}
+{"anchor": "8강 롱검", "positive": "+8 강화 롱소드 공격력 +95, 치명타 확률 5% 증가. 무난한 중급 무기.", "negative": "+8 강화 숏소드", "negative_type": "synthetic", "item_id": 2, "negative_item_id": null}
+{"anchor": "치명타 있는 중급 검 구해요", "positive": "+8 강화 롱소드 공격력 +95, 치명타 확률 5% 증가. 무난한 중급 무기.", "negative": "+7 강화 롱소드 공격력 +70. 입문자용 강화 무기.", "negative_type": "structural", "item_id": 2, "negative_item_id": 3}
+{"anchor": "치명타 있는 중급 검 구해요", "positive": "+8 강화 롱소드 공격력 +95, 치명타 확률 5% 증가. 무난한 중급 무기.", "negative": "+8 강화 대검", "negative_type": "synthetic", "item_id": 2, "negative_item_id": null}
+{"anchor": "파티용 강화검 찾습니다", "positive": "+8 강화 롱소드 공격력 +95, 치명타 확률 5% 증가. 무난한 중급 무기.", "negative": "+7 강화 롱소드 공격력 +70. 입문자용 강화 무기.", "negative_type": "corpus", "item_id": 2, "negative_item_id": 3}
+{"anchor": "파티용 강화검 찾습니다", "positive": "+8 강화 롱소드 공격력 +95, 치명타 확률 5% 증가. 무난한 중급 무기.", "negative": "+8 강화 숏소드", "negative_type": "synthetic", "item_id": 2, "negative_item_id": null}
+{"anchor": "8강 롱검", "positive": "+8 강화 롱소드 공격력 +95, 치명타 확률 5% 증가. 무난한 중급 무기.", "negative": "용비늘 방패 방어력 +180, 화염 피해 40% 감소. 보스 레이드 추천.", "negative_type": "easy", "item_id": 2, "negative_item_id": 7}
+{"anchor": "7강 롱소드", "positive": "+7 강화 롱소드 공격력 +70. 입문자용 강화 무기.", "negative": "+9 강화 롱소드 공격력 +120, 치명타 확률 8% 증가. 강화 실패 이력 없음.", "negative_type": "structural", "item_id": 3, "negative_item_id": 1}
+{"anchor": "7강 롱소드", "positive": "+7 강화 롱소드 공격력 +70. 입문자용 강화 무기.", "negative": "+6 강화 롱소드", "negative_type": "synthetic", "item_id": 3, "negative_item_id": null}
+{"anchor": "입문자용 강화검 알려주세요", "positive": "+7 강화 롱소드 공격력 +70. 입문자용 강화 무기.", "negative": "+8 강화 롱소드 공격력 +95, 치명타 확률 5% 증가. 무난한 중급 무기.", "negative_type": "structural", "item_id": 3, "negative_item_id": 2}
+{"anchor": "입문자용 강화검 알려주세요", "positive": "+7 강화 롱소드 공격력 +70. 입문자용 강화 무기.", "negative": "+7 강화 숏소드", "negative_type": "synthetic", "item_id": 3, "negative_item_id": null}
+{"anchor": "렙40 롱소드 사고싶어요", "positive": "+7 강화 롱소드 공격력 +70. 입문자용 강화 무기.", "negative": "+8 강화 롱소드 공격력 +95, 치명타 확률 5% 증가. 무난한 중급 무기.", "negative_type": "corpus", "item_id": 3, "negative_item_id": 2}
+{"anchor": "렙40 롱소드 사고싶어요", "positive": "+7 강화 롱소드 공격력 +70. 입문자용 강화 무기.", "negative": "+7 강화 단검", "negative_type": "synthetic", "item_id": 3, "negative_item_id": null}
+{"anchor": "7강 롱소드", "positive": "+7 강화 롱소드 공격력 +70. 입문자용 강화 무기.", "negative": "+9 강화 미스릴 갑옷 방어력 +150, 모든 속성 저항 10% 증가.", "negative_type": "easy", "item_id": 3, "negative_item_id": 6}
+{"anchor": "150레벨 대검", "positive": "전설 등급 대검 공격력 +200, 광역 피해 증가. 획득 난이도 최상.", "negative": "+9 강화 롱소드 공격력 +120, 치명타 확률 8% 증가. 강화 실패 이력 없음.", "negative_type": "corpus", "item_id": 4, "negative_item_id": 1}
+{"anchor": "150레벨 대검", "positive": "전설 등급 대검 공격력 +200, 광역 피해 증가. 획득 난이도 최상.", "negative": "희귀 등급 대검", "negative_type": "synthetic", "item_id": 4, "negative_item_id": null}
+{"anchor": "광역 피해 증가 대검 구합니다", "positive": "전설 등급 대검 공격력 +200, 광역 피해 증가. 획득 난이도 최상.", "negative": "바람의 장궁 원거리 공격력 +140, 사거리 증가. 레벨 100 이상 궁수 착용 가능.", "negative_type": "corpus", "item_id": 4, "negative_item_id": 21}
+{"anchor": "광역 피해 증가 대검 구합니다", "positive": "전설 등급 대검 공격력 +200, 광역 피해 증가. 획득 난이도 최상.", "negative": "공격력 +180 전설 대검", "negative_type": "synthetic", "item_id": 4, "negative_item_id": null}
+{"anchor": "강력한 전설 대검 사고 싶어요", "positive": "전설 등급 대검 공격력 +200, 광역 피해 증가. 획득 난이도 최상.", "negative": "+9 강화 롱소드 공격력 +120, 치명타 확률 8% 증가. 강화 실패 이력 없음.", "negative_type": "corpus", "item_id": 4, "negative_item_id": 1}
+{"anchor": "강력한 전설 대검 사고 싶어요", "positive": "전설 등급 대검 공격력 +200, 광역 피해 증가. 획득 난이도 최상.", "negative": "전설 등급 단검", "negative_type": "synthetic", "item_id": 4, "negative_item_id": null}
+{"anchor": "150레벨 대검", "positive": "전설 등급 대검 공격력 +200, 광역 피해 증가. 획득 난이도 최상.", "negative": "고대 유물 파편 전설 장비 제작에 필요한 희귀 재료. 거래량이 적음.", "negative_type": "easy", "item_id": 4, "negative_item_id": 19}
+{"anchor": "빠른 암살자 단검", "positive": "미스릴 단검 공격 속도가 매우 빠른 단검. 암살자 직업 전용.", "negative": "불꽃의 마법봉 화염 계열 마법 위력 25% 증가. 마법사 직업 전용 무기.", "negative_type": "corpus", "item_id": 5, "negative_item_id": 15}
+{"anchor": "빠른 암살자 단검", "positive": "미스릴 단검 공격 속도가 매우 빠른 단검. 암살자 직업 전용.", "negative": "미스릴 검", "negative_type": "synthetic", "item_id": 5, "negative_item_id": null}
+{"anchor": "레벨 45 단검 찾고 있어요", "positive": "미스릴 단검 공격 속도가 매우 빠른 단검. 암살자 직업 전용.", "negative": "전설 등급 대검 공격력 +200, 광역 피해 증가. 획득 난이도 최상.", "negative_type": "corpus", "item_id": 5, "negative_item_id": 4}
+{"anchor": "레벨 45 단검 찾고 있어요", "positive": "미스릴 단검 공격 속도가 매우 빠른 단검. 암살자 직업 전용.", "negative": "늑대 단검", "negative_type": "synthetic", "item_id": 5, "negative_item_id": null}
+{"anchor": "미스릴 속성이 들어간 검", "positive": "미스릴 단검 공격 속도가 매우 빠른 단검. 암살자 직업 전용.", "negative": "불꽃의 마법봉 화염 계열 마법 위력 25% 증가. 마법사 직업 전용 무기.", "negative_type": "corpus", "item_id": 5, "negative_item_id": 15}
+{"anchor": "미스릴 속성이 들어간 검", "positive": "미스릴 단검 공격 속도가 매우 빠른 단검. 암살자 직업 전용.", "negative": "강화된 미스릴 단검", "negative_type": "synthetic", "item_id": 5, "negative_item_id": null}
+{"anchor": "빠른 암살자 단검", "positive": "미스릴 단검 공격 속도가 매우 빠른 단검. 암살자 직업 전용.", "negative": "행운의 목걸이 아이템 획득 확률 15% 증가. 파밍 필수템.", "negative_type": "easy", "item_id": 5, "negative_item_id": 10}
+{"anchor": "9강 미스릴 갑옷", "positive": "+9 강화 미스릴 갑옷 방어력 +150, 모든 속성 저항 10% 증가.", "negative": "+9 강화 사슬 갑옷 방어력 +130, 물리 피해 감소 20%.", "negative_type": "corpus", "item_id": 6, "negative_item_id": 17}
+{"anchor": "9강 미스릴 갑옷", "positive": "+9 강화 미스릴 갑옷 방어력 +150, 모든 속성 저항 10% 증가.", "negative": "+6 강화 미스릴 갑옷", "negative_type": "synthetic", "item_id": 6, "negative_item_id": null}
+{"anchor": "모든 속성 저항이 높은 방어구 찾아요", "positive": "+9 강화 미스릴 갑옷 방어력 +150, 모든 속성 저항 10% 증가.", "negative": "암흑 로브 마력 +110, 암흑 속성 저항 25%. 흑마법사 전용 방어구.", "negative_type": "corpus", "item_id": 6, "negative_item_id": 20}
+{"anchor": "모든 속성 저항이 높은 방어구 찾아요", "positive": "+9 강화 미스릴 갑옷 방어력 +150, 모든 속성 저항 10% 증가.", "negative": "+9 강화 철갑옷", "negative_type": "synthetic", "item_id": 6, "negative_item_id": null}
+{"anchor": "70레벨 이상 방어구 구합니다", "positive": "+9 강화 미스릴 갑옷 방어력 +150, 모든 속성 저항 10% 증가.", "negative": "+9 강화 사슬 갑옷 방어력 +130, 물리 피해 감소 20%.", "negative_type": "corpus", "item_id": 6, "negative_item_id": 17}
+{"anchor": "70레벨 이상 방어구 구합니다", "positive": "+9 강화 미스릴 갑옷 방어력 +150, 모든 속성 저항 10% 증가.", "negative": "+9 강화 미스릴 투구", "negative_type": "synthetic", "item_id": 6, "negative_item_id": null}
+{"anchor": "9강 미스릴 갑옷", "positive": "+9 강화 미스릴 갑옷 방어력 +150, 모든 속성 저항 10% 증가.", "negative": "체력 회복 물약 100개 묶음 사용 시 체력 500 즉시 회복. 대량 판매.", "negative_type": "easy", "item_id": 6, "negative_item_id": 11}
+{"anchor": "방어력 높은 방패", "positive": "용비늘 방패 방어력 +180, 화염 피해 40% 감소. 보스 레이드 추천.", "negative": "+9 강화 사슬 갑옷 방어력 +130, 물리 피해 감소 20%.", "negative_type": "corpus", "item_id": 7, "negative_item_id": 17}
+{"anchor": "방어력 높은 방패", "positive": "용비늘 방패 방어력 +180, 화염 피해 40% 감소. 보스 레이드 추천.", "negative": "용비늘 갑옷", "negative_type": "synthetic", "item_id": 7, "negative_item_id": null}
+{"anchor": "130레벨 화염 방어구 있나요", "positive": "용비늘 방패 방어력 +180, 화염 피해 40% 감소. 보스 레이드 추천.", "negative": "가죽 경갑 방어력 +40, 이동 속도 감소 없음. 초보자용.", "negative_type": "corpus", "item_id": 7, "negative_item_id": 8}
+{"anchor": "130레벨 화염 방어구 있나요", "positive": "용비늘 방패 방어력 +180, 화염 피해 40% 감소. 보스 레이드 추천.", "negative": "방어력 +150 방패", "negative_type": "synthetic", "item_id": 7, "negative_item_id": null}
+{"anchor": "레전드 보스 레이드 방패 구해요", "positive": "용비늘 방패 방어력 +180, 화염 피해 40% 감소. 보스 레이드 추천.", "negative": "+9 강화 사슬 갑옷 방어력 +130, 물리 피해 감소 20%.", "negative_type": "corpus", "item_id": 7, "negative_item_id": 17}
+{"anchor": "레전드 보스 레이드 방패 구해요", "positive": "용비늘 방패 방어력 +180, 화염 피해 40% 감소. 보스 레이드 추천.", "negative": "소환사용 방장막", "negative_type": "synthetic", "item_id": 7, "negative_item_id": null}
+{"anchor": "방어력 높은 방패", "positive": "용비늘 방패 방어력 +180, 화염 피해 40% 감소. 보스 레이드 추천.", "negative": "체력 회복 물약 100개 묶음 사용 시 체력 500 즉시 회복. 대량 판매.", "negative_type": "easy", "item_id": 7, "negative_item_id": 11}
+{"anchor": "초보자용 경갑", "positive": "가죽 경갑 방어력 +40, 이동 속도 감소 없음. 초보자용.", "negative": "용비늘 방패 방어력 +180, 화염 피해 40% 감소. 보스 레이드 추천.", "negative_type": "corpus", "item_id": 8, "negative_item_id": 7}
+{"anchor": "초보자용 경갑", "positive": "가죽 경갑 방어력 +40, 이동 속도 감소 없음. 초보자용.", "negative": "가죽 경갑+1", "negative_type": "synthetic", "item_id": 8, "negative_item_id": null}
+{"anchor": "이동 속도 빠른 방어구", "positive": "가죽 경갑 방어력 +40, 이동 속도 감소 없음. 초보자용.", "negative": "+9 강화 사슬 갑옷 방어력 +130, 물리 피해 감소 20%.", "negative_type": "corpus", "item_id": 8, "negative_item_id": 17}
+{"anchor": "이동 속도 빠른 방어구", "positive": "가죽 경갑 방어력 +40, 이동 속도 감소 없음. 초보자용.", "negative": "방어력 35 경갑", "negative_type": "synthetic", "item_id": 8, "negative_item_id": null}
+{"anchor": "방어력 높은 가죽 방어구 구해요", "positive": "가죽 경갑 방어력 +40, 이동 속도 감소 없음. 초보자용.", "negative": "용비늘 방패 방어력 +180, 화염 피해 40% 감소. 보스 레이드 추천.", "negative_type": "corpus", "item_id": 8, "negative_item_id": 7}
+{"anchor": "방어력 높은 가죽 방어구 구해요", "positive": "가죽 경갑 방어력 +40, 이동 속도 감소 없음. 초보자용.", "negative": "레벨 10 강화 갑옷", "negative_type": "synthetic", "item_id": 8, "negative_item_id": null}
+{"anchor": "초보자용 경갑", "positive": "가죽 경갑 방어력 +40, 이동 속도 감소 없음. 초보자용.", "negative": "미스릴 단검 공격 속도가 매우 빠른 단검. 암살자 직업 전용.", "negative_type": "easy", "item_id": 8, "negative_item_id": 5}
+{"anchor": "마력 높은 반지", "positive": "현자의 반지 마력 +80, 스킬 재사용 대기시간 12% 감소.", "negative": "행운의 목걸이 아이템 획득 확률 15% 증가. 파밍 필수템.", "negative_type": "corpus", "item_id": 9, "negative_item_id": 10}
+{"anchor": "마력 높은 반지", "positive": "현자의 반지 마력 +80, 스킬 재사용 대기시간 12% 감소.", "negative": "현자의 목걸이", "negative_type": "synthetic", "item_id": 9, "negative_item_id": null}
+{"anchor": "스킬 쿨타임 줄이는 장신구 찾습니다", "positive": "현자의 반지 마력 +80, 스킬 재사용 대기시간 12% 감소.", "negative": "행운의 목걸이 아이템 획득 확률 15% 증가. 파밍 필수템.", "negative_type": "corpus", "item_id": 9, "negative_item_id": 10}
+{"anchor": "스킬 쿨타임 줄이는 장신구 찾습니다", "positive": "현자의 반지 마력 +80, 스킬 재사용 대기시간 12% 감소.", "negative": "마력 +60 반지", "negative_type": "synthetic", "item_id": 9, "negative_item_id": null}
+{"anchor": "렙90 링 구해요", "positive": "현자의 반지 마력 +80, 스킬 재사용 대기시간 12% 감소.", "negative": "행운의 목걸이 아이템 획득 확률 15% 증가. 파밍 필수템.", "negative_type": "corpus", "item_id": 9, "negative_item_id": 10}
+{"anchor": "렙90 링 구해요", "positive": "현자의 반지 마력 +80, 스킬 재사용 대기시간 12% 감소.", "negative": "스킬 재사용 대기시간 15% 감소 링", "negative_type": "synthetic", "item_id": 9, "negative_item_id": null}
+{"anchor": "마력 높은 반지", "positive": "현자의 반지 마력 +80, 스킬 재사용 대기시간 12% 감소.", "negative": "전설 등급 대검 공격력 +200, 광역 피해 증가. 획득 난이도 최상.", "negative_type": "easy", "item_id": 9, "negative_item_id": 4}
+{"anchor": "획득 확률 높이는 목걸이", "positive": "행운의 목걸이 아이템 획득 확률 15% 증가. 파밍 필수템.", "negative": "현자의 반지 마력 +80, 스킬 재사용 대기시간 12% 감소.", "negative_type": "corpus", "item_id": 10, "negative_item_id": 9}
+{"anchor": "획득 확률 높이는 목걸이", "positive": "행운의 목걸이 아이템 획득 확률 15% 증가. 파밍 필수템.", "negative": "행운의 반지", "negative_type": "synthetic", "item_id": 10, "negative_item_id": null}
+{"anchor": "행운 증가하는 장신구 필요", "positive": "행운의 목걸이 아이템 획득 확률 15% 증가. 파밍 필수템.", "negative": "현자의 반지 마력 +80, 스킬 재사용 대기시간 12% 감소.", "negative_type": "corpus", "item_id": 10, "negative_item_id": 9}
+{"anchor": "행운 증가하는 장신구 필요", "positive": "행운의 목걸이 아이템 획득 확률 15% 증가. 파밍 필수템.", "negative": "획득 확률 10% 증가 목걸이", "negative_type": "synthetic", "item_id": 10, "negative_item_id": null}
+{"anchor": "파밍용 좋은 목걸이 찾아요", "positive": "행운의 목걸이 아이템 획득 확률 15% 증가. 파밍 필수템.", "negative": "현자의 반지 마력 +80, 스킬 재사용 대기시간 12% 감소.", "negative_type": "corpus", "item_id": 10, "negative_item_id": 9}
+{"anchor": "파밍용 좋은 목걸이 찾아요", "positive": "행운의 목걸이 아이템 획득 확률 15% 증가. 파밍 필수템.", "negative": "파밍용 행운 목걸이", "negative_type": "synthetic", "item_id": 10, "negative_item_id": null}
+{"anchor": "획득 확률 높이는 목걸이", "positive": "행운의 목걸이 아이템 획득 확률 15% 증가. 파밍 필수템.", "negative": "불꽃의 대검 화염 속성 피해 +90, 공격 시 화상 효과. 불속성 무기.", "negative_type": "easy", "item_id": 10, "negative_item_id": 24}
+{"anchor": "체력 회복 물약 100개", "positive": "체력 회복 물약 100개 묶음 사용 시 체력 500 즉시 회복. 대량 판매.", "negative": "강화 주문서 (성공률 70%) 장비 강화 시 성공 확률을 높여주는 소모성 주문서.", "negative_type": "corpus", "item_id": 11, "negative_item_id": 12}
+{"anchor": "체력 회복 물약 100개", "positive": "체력 회복 물약 100개 묶음 사용 시 체력 500 즉시 회복. 대량 판매.", "negative": "체력 회복 물약 50개", "negative_type": "synthetic", "item_id": 11, "negative_item_id": null}
+{"anchor": "500 체력 즉시 회복하는 물약", "positive": "체력 회복 물약 100개 묶음 사용 시 체력 500 즉시 회복. 대량 판매.", "negative": "고대 유물 파편 전설 장비 제작에 필요한 희귀 재료. 거래량이 적음.", "negative_type": "corpus", "item_id": 11, "negative_item_id": 19}
+{"anchor": "500 체력 즉시 회복하는 물약", "positive": "체력 회복 물약 100개 묶음 사용 시 체력 500 즉시 회복. 대량 판매.", "negative": "즉시 회복 물약 100개", "negative_type": "synthetic", "item_id": 11, "negative_item_id": null}
+{"anchor": "저렴한 체력 회복 아이템 구매", "positive": "체력 회복 물약 100개 묶음 사용 시 체력 500 즉시 회복. 대량 판매.", "negative": "강화 주문서 (성공률 70%) 장비 강화 시 성공 확률을 높여주는 소모성 주문서.", "negative_type": "corpus", "item_id": 11, "negative_item_id": 12}
+{"anchor": "저렴한 체력 회복 아이템 구매", "positive": "체력 회복 물약 100개 묶음 사용 시 체력 500 즉시 회복. 대량 판매.", "negative": "체력 회복 물약 100개 묶음 +5", "negative_type": "synthetic", "item_id": 11, "negative_item_id": null}
+{"anchor": "체력 회복 물약 100개", "positive": "체력 회복 물약 100개 묶음 사용 시 체력 500 즉시 회복. 대량 판매.", "negative": "바람의 장궁 원거리 공격력 +140, 사거리 증가. 레벨 100 이상 궁수 착용 가능.", "negative_type": "easy", "item_id": 11, "negative_item_id": 21}
+{"anchor": "강화 성공률 높은 주문서", "positive": "강화 주문서 (성공률 70%) 장비 강화 시 성공 확률을 높여주는 소모성 주문서.", "negative": "고대 유물 파편 전설 장비 제작에 필요한 희귀 재료. 거래량이 적음.", "negative_type": "corpus", "item_id": 12, "negative_item_id": 19}
+{"anchor": "강화 성공률 높은 주문서", "positive": "강화 주문서 (성공률 70%) 장비 강화 시 성공 확률을 높여주는 소모성 주문서.", "negative": "성공률 50% 강화 주문서", "negative_type": "synthetic", "item_id": 12, "negative_item_id": null}
+{"anchor": "장비 강화 할 때 쓰는 아이템", "positive": "강화 주문서 (성공률 70%) 장비 강화 시 성공 확률을 높여주는 소모성 주문서.", "negative": "체력 회복 물약 100개 묶음 사용 시 체력 500 즉시 회복. 대량 판매.", "negative_type": "corpus", "item_id": 12, "negative_item_id": 11}
+{"anchor": "장비 강화 할 때 쓰는 아이템", "positive": "강화 주문서 (성공률 70%) 장비 강화 시 성공 확률을 높여주는 소모성 주문서.", "negative": "성공률 70% 마법서", "negative_type": "synthetic", "item_id": 12, "negative_item_id": null}
+{"anchor": "성공률 70% 강화서 구해요", "positive": "강화 주문서 (성공률 70%) 장비 강화 시 성공 확률을 높여주는 소모성 주문서.", "negative": "고대 유물 파편 전설 장비 제작에 필요한 희귀 재료. 거래량이 적음.", "negative_type": "corpus", "item_id": 12, "negative_item_id": 19}
+{"anchor": "성공률 70% 강화서 구해요", "positive": "강화 주문서 (성공률 70%) 장비 강화 시 성공 확률을 높여주는 소모성 주문서.", "negative": "강화 실패 주문서", "negative_type": "synthetic", "item_id": 12, "negative_item_id": null}
+{"anchor": "강화 성공률 높은 주문서", "positive": "강화 주문서 (성공률 70%) 장비 강화 시 성공 확률을 높여주는 소모성 주문서.", "negative": "+7 강화 롱소드 공격력 +70. 입문자용 강화 무기.", "negative_type": "easy", "item_id": 12, "negative_item_id": 3}
+{"anchor": "만렙 전사 계정 구해요", "positive": "만렙 전사 계정 레벨 200 전사, 전설 장비 풀세팅 포함. 본인 인증 완료.", "negative": "레벨 180 전사 계정", "negative_type": "synthetic", "item_id": 13, "negative_item_id": null}
+{"anchor": "레벨 200 전사 계정 팝니다", "positive": "만렙 전사 계정 레벨 200 전사, 전설 장비 풀세팅 포함. 본인 인증 완료.", "negative": "만렙 궁수 계정", "negative_type": "synthetic", "item_id": 13, "negative_item_id": null}
+{"anchor": "전설 장비 세트 있는 캐릭터 찾습니다", "positive": "만렙 전사 계정 레벨 200 전사, 전설 장비 풀세팅 포함. 본인 인증 완료.", "negative": "레벨 200 법사 계정", "negative_type": "synthetic", "item_id": 13, "negative_item_id": null}
+{"anchor": "만렙 전사 계정 구해요", "positive": "만렙 전사 계정 레벨 200 전사, 전설 장비 풀세팅 포함. 본인 인증 완료.", "negative": "암흑 로브 마력 +110, 암흑 속성 저항 25%. 흑마법사 전용 방어구.", "negative_type": "easy", "item_id": 13, "negative_item_id": 20}
+{"anchor": "1000만 골드 팝니다", "positive": "게임 머니 1000만 골드 즉시 거래 가능한 인게임 재화.", "negative": "2000만 골드", "negative_type": "synthetic", "item_id": 14, "negative_item_id": null}
+{"anchor": "인게임 재화 거래소 찾고 있어요", "positive": "게임 머니 1000만 골드 즉시 거래 가능한 인게임 재화.", "negative": "500만 골드 판매", "negative_type": "synthetic", "item_id": 14, "negative_item_id": null}
+{"anchor": "골드 1000만 원하시는 분", "positive": "게임 머니 1000만 골드 즉시 거래 가능한 인게임 재화.", "negative": "1000만 은화", "negative_type": "synthetic", "item_id": 14, "negative_item_id": null}
+{"anchor": "1000만 골드 팝니다", "positive": "게임 머니 1000만 골드 즉시 거래 가능한 인게임 재화.", "negative": "불꽃의 마법봉 화염 계열 마법 위력 25% 증가. 마법사 직업 전용 무기.", "negative_type": "easy", "item_id": 14, "negative_item_id": 15}
+{"anchor": "마법사 전용 화염 지팡이", "positive": "불꽃의 마법봉 화염 계열 마법 위력 25% 증가. 마법사 직업 전용 무기.", "negative": "+8 강화 롱소드 공격력 +95, 치명타 확률 5% 증가. 무난한 중급 무기.", "negative_type": "corpus", "item_id": 15, "negative_item_id": 2}
+{"anchor": "마법사 전용 화염 지팡이", "positive": "불꽃의 마법봉 화염 계열 마법 위력 25% 증가. 마법사 직업 전용 무기.", "negative": "얼음 속성 마법봉", "negative_type": "synthetic", "item_id": 15, "negative_item_id": null}
+{"anchor": "불 속성이 있는 마법 무기 찾아요", "positive": "불꽃의 마법봉 화염 계열 마법 위력 25% 증가. 마법사 직업 전용 무기.", "negative": "불꽃의 대검 화염 속성 피해 +90, 공격 시 화상 효과. 불속성 무기.", "negative_type": "corpus", "item_id": 15, "negative_item_id": 24}
+{"anchor": "불 속성이 있는 마법 무기 찾아요", "positive": "불꽃의 마법봉 화염 계열 마법 위력 25% 증가. 마법사 직업 전용 무기.", "negative": "불꽃의 검", "negative_type": "synthetic", "item_id": 15, "negative_item_id": null}
+{"anchor": "레벨 55 마법봉 구합니다", "positive": "불꽃의 마법봉 화염 계열 마법 위력 25% 증가. 마법사 직업 전용 무기.", "negative": "+8 강화 롱소드 공격력 +95, 치명타 확률 5% 증가. 무난한 중급 무기.", "negative_type": "corpus", "item_id": 15, "negative_item_id": 2}
+{"anchor": "레벨 55 마법봉 구합니다", "positive": "불꽃의 마법봉 화염 계열 마법 위력 25% 증가. 마법사 직업 전용 무기.", "negative": "불꽃의 마법지팡이 +1", "negative_type": "synthetic", "item_id": 15, "negative_item_id": null}
+{"anchor": "마법사 전용 화염 지팡이", "positive": "불꽃의 마법봉 화염 계열 마법 위력 25% 증가. 마법사 직업 전용 무기.", "negative": "+9 강화 미스릴 갑옷 방어력 +150, 모든 속성 저항 10% 증가.", "negative_type": "easy", "item_id": 15, "negative_item_id": 6}
+{"anchor": "95레벨 얼음 지팡이", "positive": "얼음 서리 지팡이 냉기 마법 위력 30% 증가, 적 이동 속도 둔화 효과.", "negative": "불꽃의 마법봉 화염 계열 마법 위력 25% 증가. 마법사 직업 전용 무기.", "negative_type": "corpus", "item_id": 16, "negative_item_id": 15}
+{"anchor": "95레벨 얼음 지팡이", "positive": "얼음 서리 지팡이 냉기 마법 위력 30% 증가, 적 이동 속도 둔화 효과.", "negative": "불꽃 지팡이", "negative_type": "synthetic", "item_id": 16, "negative_item_id": null}
+{"anchor": "마법 공격력 높은 서리 지팡이", "positive": "얼음 서리 지팡이 냉기 마법 위력 30% 증가, 적 이동 속도 둔화 효과.", "negative": "불꽃의 대검 화염 속성 피해 +90, 공격 시 화상 효과. 불속성 무기.", "negative_type": "corpus", "item_id": 16, "negative_item_id": 24}
+{"anchor": "마법 공격력 높은 서리 지팡이", "positive": "얼음 서리 지팡이 냉기 마법 위력 30% 증가, 적 이동 속도 둔화 효과.", "negative": "얼음 서리 마법서", "negative_type": "synthetic", "item_id": 16, "negative_item_id": null}
+{"anchor": "냉기 위력 증가하는 지팡이 구해요", "positive": "얼음 서리 지팡이 냉기 마법 위력 30% 증가, 적 이동 속도 둔화 효과.", "negative": "불꽃의 마법봉 화염 계열 마법 위력 25% 증가. 마법사 직업 전용 무기.", "negative_type": "corpus", "item_id": 16, "negative_item_id": 15}
+{"anchor": "냉기 위력 증가하는 지팡이 구해요", "positive": "얼음 서리 지팡이 냉기 마법 위력 30% 증가, 적 이동 속도 둔화 효과.", "negative": "냉기 강화된 검", "negative_type": "synthetic", "item_id": 16, "negative_item_id": null}
+{"anchor": "95레벨 얼음 지팡이", "positive": "얼음 서리 지팡이 냉기 마법 위력 30% 증가, 적 이동 속도 둔화 효과.", "negative": "+9 강화 미스릴 갑옷 방어력 +150, 모든 속성 저항 10% 증가.", "negative_type": "easy", "item_id": 16, "negative_item_id": 6}
+{"anchor": "9강 사슬 갑옷", "positive": "+9 강화 사슬 갑옷 방어력 +130, 물리 피해 감소 20%.", "negative": "+9 강화 미스릴 갑옷 방어력 +150, 모든 속성 저항 10% 증가.", "negative_type": "corpus", "item_id": 17, "negative_item_id": 6}
+{"anchor": "9강 사슬 갑옷", "positive": "+9 강화 사슬 갑옷 방어력 +130, 물리 피해 감소 20%.", "negative": "+6 강화 사슬 갑옷", "negative_type": "synthetic", "item_id": 17, "negative_item_id": null}
+{"anchor": "방어력 높은 갑옷 추천해요", "positive": "+9 강화 사슬 갑옷 방어력 +130, 물리 피해 감소 20%.", "negative": "용비늘 방패 방어력 +180, 화염 피해 40% 감소. 보스 레이드 추천.", "negative_type": "corpus", "item_id": 17, "negative_item_id": 7}
+{"anchor": "방어력 높은 갑옷 추천해요", "positive": "+9 강화 사슬 갑옷 방어력 +130, 물리 피해 감소 20%.", "negative": "+9 강화 판금 갑옷", "negative_type": "synthetic", "item_id": 17, "negative_item_id": null}
+{"anchor": "레벨 65 방어구 구매하고 싶어요", "positive": "+9 강화 사슬 갑옷 방어력 +130, 물리 피해 감소 20%.", "negative": "+9 강화 미스릴 갑옷 방어력 +150, 모든 속성 저항 10% 증가.", "negative_type": "corpus", "item_id": 17, "negative_item_id": 6}
+{"anchor": "레벨 65 방어구 구매하고 싶어요", "positive": "+9 강화 사슬 갑옷 방어력 +130, 물리 피해 감소 20%.", "negative": "+9 강화 가죽 갑옷", "negative_type": "synthetic", "item_id": 17, "negative_item_id": null}
+{"anchor": "9강 사슬 갑옷", "positive": "+9 강화 사슬 갑옷 방어력 +130, 물리 피해 감소 20%.", "negative": "+7 강화 롱소드 공격력 +70. 입문자용 강화 무기.", "negative_type": "easy", "item_id": 17, "negative_item_id": 3}
+{"anchor": "이동 속도 올리는 장화", "positive": "신속의 장화 이동 속도 20% 증가, 회피율 5% 증가.", "negative": "+9 강화 미스릴 갑옷 방어력 +150, 모든 속성 저항 10% 증가.", "negative_type": "corpus", "item_id": 18, "negative_item_id": 6}
+{"anchor": "이동 속도 올리는 장화", "positive": "신속의 장화 이동 속도 20% 증가, 회피율 5% 증가.", "negative": "신속한 장갑", "negative_type": "synthetic", "item_id": 18, "negative_item_id": null}
+{"anchor": "회피율 증가하는 신발", "positive": "신속의 장화 이동 속도 20% 증가, 회피율 5% 증가.", "negative": "가죽 경갑 방어력 +40, 이동 속도 감소 없음. 초보자용.", "negative_type": "corpus", "item_id": 18, "negative_item_id": 8}
+{"anchor": "회피율 증가하는 신발", "positive": "신속의 장화 이동 속도 20% 증가, 회피율 5% 증가.", "negative": "이동속도 10% 증가 장화", "negative_type": "synthetic", "item_id": 18, "negative_item_id": null}
+{"anchor": "렙35 방어구 중 빠른 장비 있나요", "positive": "신속의 장화 이동 속도 20% 증가, 회피율 5% 증가.", "negative": "+9 강화 미스릴 갑옷 방어력 +150, 모든 속성 저항 10% 증가.", "negative_type": "corpus", "item_id": 18, "negative_item_id": 6}
+{"anchor": "렙35 방어구 중 빠른 장비 있나요", "positive": "신속의 장화 이동 속도 20% 증가, 회피율 5% 증가.", "negative": "회피율 5% 감소 신발", "negative_type": "synthetic", "item_id": 18, "negative_item_id": null}
+{"anchor": "이동 속도 올리는 장화", "positive": "신속의 장화 이동 속도 20% 증가, 회피율 5% 증가.", "negative": "행운의 목걸이 아이템 획득 확률 15% 증가. 파밍 필수템.", "negative_type": "easy", "item_id": 18, "negative_item_id": 10}
+{"anchor": "전설 장비 재료", "positive": "고대 유물 파편 전설 장비 제작에 필요한 희귀 재료. 거래량이 적음.", "negative": "강화 주문서 (성공률 70%) 장비 강화 시 성공 확률을 높여주는 소모성 주문서.", "negative_type": "corpus", "item_id": 19, "negative_item_id": 12}
+{"anchor": "전설 장비 재료", "positive": "고대 유물 파편 전설 장비 제작에 필요한 희귀 재료. 거래량이 적음.", "negative": "고대 유물 조각", "negative_type": "synthetic", "item_id": 19, "negative_item_id": null}
+{"anchor": "고대 유물 조각 구합니다", "positive": "고대 유물 파편 전설 장비 제작에 필요한 희귀 재료. 거래량이 적음.", "negative": "체력 회복 물약 100개 묶음 사용 시 체력 500 즉시 회복. 대량 판매.", "negative_type": "corpus", "item_id": 19, "negative_item_id": 11}
+{"anchor": "고대 유물 조각 구합니다", "positive": "고대 유물 파편 전설 장비 제작에 필요한 희귀 재료. 거래량이 적음.", "negative": "전설 장비 조각", "negative_type": "synthetic", "item_id": 19, "negative_item_id": null}
+{"anchor": "희귀 아이템 팜", "positive": "고대 유물 파편 전설 장비 제작에 필요한 희귀 재료. 거래량이 적음.", "negative": "강화 주문서 (성공률 70%) 장비 강화 시 성공 확률을 높여주는 소모성 주문서.", "negative_type": "corpus", "item_id": 19, "negative_item_id": 12}
+{"anchor": "희귀 아이템 팜", "positive": "고대 유물 파편 전설 장비 제작에 필요한 희귀 재료. 거래량이 적음.", "negative": "신화 장비 파편", "negative_type": "synthetic", "item_id": 19, "negative_item_id": null}
+{"anchor": "전설 장비 재료", "positive": "고대 유물 파편 전설 장비 제작에 필요한 희귀 재료. 거래량이 적음.", "negative": "가죽 경갑 방어력 +40, 이동 속도 감소 없음. 초보자용.", "negative_type": "easy", "item_id": 19, "negative_item_id": 8}
+{"anchor": "흑마법사 전용 로브", "positive": "암흑 로브 마력 +110, 암흑 속성 저항 25%. 흑마법사 전용 방어구.", "negative": "+9 강화 미스릴 갑옷 방어력 +150, 모든 속성 저항 10% 증가.", "negative_type": "corpus", "item_id": 20, "negative_item_id": 6}
+{"anchor": "흑마법사 전용 로브", "positive": "암흑 로브 마력 +110, 암흑 속성 저항 25%. 흑마법사 전용 방어구.", "negative": "암흑 로브 +1", "negative_type": "synthetic", "item_id": 20, "negative_item_id": null}
+{"anchor": "마력 높은 방어구 찾고 있어요", "positive": "암흑 로브 마력 +110, 암흑 속성 저항 25%. 흑마법사 전용 방어구.", "negative": "+9 강화 사슬 갑옷 방어력 +130, 물리 피해 감소 20%.", "negative_type": "corpus", "item_id": 20, "negative_item_id": 17}
+{"anchor": "마력 높은 방어구 찾고 있어요", "positive": "암흑 로브 마력 +110, 암흑 속성 저항 25%. 흑마법사 전용 방어구.", "negative": "마력 +100 로브", "negative_type": "synthetic", "item_id": 20, "negative_item_id": null}
+{"anchor": "암흑 속성 저항 있는 아이템", "positive": "암흑 로브 마력 +110, 암흑 속성 저항 25%. 흑마법사 전용 방어구.", "negative": "+9 강화 미스릴 갑옷 방어력 +150, 모든 속성 저항 10% 증가.", "negative_type": "corpus", "item_id": 20, "negative_item_id": 6}
+{"anchor": "암흑 속성 저항 있는 아이템", "positive": "암흑 로브 마력 +110, 암흑 속성 저항 25%. 흑마법사 전용 방어구.", "negative": "흑마법사 로브", "negative_type": "synthetic", "item_id": 20, "negative_item_id": null}
+{"anchor": "흑마법사 전용 로브", "positive": "암흑 로브 마력 +110, 암흑 속성 저항 25%. 흑마법사 전용 방어구.", "negative": "초심자용 단궁 원거리 공격력 +30. 레벨 10 이상 착용 가능한 입문용 활.", "negative_type": "easy", "item_id": 20, "negative_item_id": 23}
+{"anchor": "레벨 100 궁수용 활", "positive": "바람의 장궁 원거리 공격력 +140, 사거리 증가. 레벨 100 이상 궁수 착용 가능.", "negative": "초심자용 단궁 원거리 공격력 +30. 레벨 10 이상 착용 가능한 입문용 활.", "negative_type": "corpus", "item_id": 21, "negative_item_id": 23}
+{"anchor": "레벨 100 궁수용 활", "positive": "바람의 장궁 원거리 공격력 +140, 사거리 증가. 레벨 100 이상 궁수 착용 가능.", "negative": "레벨 100 마법사용 활", "negative_type": "synthetic", "item_id": 21, "negative_item_id": null}
+{"anchor": "원거리 공격력 높은 장비", "positive": "바람의 장궁 원거리 공격력 +140, 사거리 증가. 레벨 100 이상 궁수 착용 가능.", "negative": "+9 강화 사냥꾼의 활 원거리 공격력 +95, 치명타 확률 10%. 레벨 80 이상 착용 가능.", "negative_type": "corpus", "item_id": 21, "negative_item_id": 22}
+{"anchor": "원거리 공격력 높은 장비", "positive": "바람의 장궁 원거리 공격력 +140, 사거리 증가. 레벨 100 이상 궁수 착용 가능.", "negative": "+1 강화 바람의 장궁", "negative_type": "synthetic", "item_id": 21, "negative_item_id": null}
+{"anchor": "사거리 늘려주는 바람 활 있나요", "positive": "바람의 장궁 원거리 공격력 +140, 사거리 증가. 레벨 100 이상 궁수 착용 가능.", "negative": "초심자용 단궁 원거리 공격력 +30. 레벨 10 이상 착용 가능한 입문용 활.", "negative_type": "corpus", "item_id": 21, "negative_item_id": 23}
+{"anchor": "사거리 늘려주는 바람 활 있나요", "positive": "바람의 장궁 원거리 공격력 +140, 사거리 증가. 레벨 100 이상 궁수 착용 가능.", "negative": "사거리 증가 없는 바람의 장궁", "negative_type": "synthetic", "item_id": 21, "negative_item_id": null}
+{"anchor": "레벨 100 궁수용 활", "positive": "바람의 장궁 원거리 공격력 +140, 사거리 증가. 레벨 100 이상 궁수 착용 가능.", "negative": "+9 강화 사슬 갑옷 방어력 +130, 물리 피해 감소 20%.", "negative_type": "easy", "item_id": 21, "negative_item_id": 17}
+{"anchor": "9강 사냥꾼 활", "positive": "+9 강화 사냥꾼의 활 원거리 공격력 +95, 치명타 확률 10%. 레벨 80 이상 착용 가능.", "negative": "초심자용 단궁 원거리 공격력 +30. 레벨 10 이상 착용 가능한 입문용 활.", "negative_type": "corpus", "item_id": 22, "negative_item_id": 23}
+{"anchor": "9강 사냥꾼 활", "positive": "+9 강화 사냥꾼의 활 원거리 공격력 +95, 치명타 확률 10%. 레벨 80 이상 착용 가능.", "negative": "+6 강화 사냥꾼의 활", "negative_type": "synthetic", "item_id": 22, "negative_item_id": null}
+{"anchor": "공격력 높은 원거리 활", "positive": "+9 강화 사냥꾼의 활 원거리 공격력 +95, 치명타 확률 10%. 레벨 80 이상 착용 가능.", "negative": "바람의 장궁 원거리 공격력 +140, 사거리 증가. 레벨 100 이상 궁수 착용 가능.", "negative_type": "corpus", "item_id": 22, "negative_item_id": 21}
+{"anchor": "공격력 높은 원거리 활", "positive": "+9 강화 사냥꾼의 활 원거리 공격력 +95, 치명타 확률 10%. 레벨 80 이상 착용 가능.", "negative": "+9 강화 마법사 활", "negative_type": "synthetic", "item_id": 22, "negative_item_id": null}
+{"anchor": "렙80 이상 활 구해요", "positive": "+9 강화 사냥꾼의 활 원거리 공격력 +95, 치명타 확률 10%. 레벨 80 이상 착용 가능.", "negative": "초심자용 단궁 원거리 공격력 +30. 레벨 10 이상 착용 가능한 입문용 활.", "negative_type": "corpus", "item_id": 22, "negative_item_id": 23}
+{"anchor": "렙80 이상 활 구해요", "positive": "+9 강화 사냥꾼의 활 원거리 공격력 +95, 치명타 확률 10%. 레벨 80 이상 착용 가능.", "negative": "+9 강화 전사 활", "negative_type": "synthetic", "item_id": 22, "negative_item_id": null}
+{"anchor": "9강 사냥꾼 활", "positive": "+9 강화 사냥꾼의 활 원거리 공격력 +95, 치명타 확률 10%. 레벨 80 이상 착용 가능.", "negative": "+9 강화 미스릴 갑옷 방어력 +150, 모든 속성 저항 10% 증가.", "negative_type": "easy", "item_id": 22, "negative_item_id": 6}
+{"anchor": "레벨 10 활", "positive": "초심자용 단궁 원거리 공격력 +30. 레벨 10 이상 착용 가능한 입문용 활.", "negative": "바람의 장궁 원거리 공격력 +140, 사거리 증가. 레벨 100 이상 궁수 착용 가능.", "negative_type": "corpus", "item_id": 23, "negative_item_id": 21}
+{"anchor": "레벨 10 활", "positive": "초심자용 단궁 원거리 공격력 +30. 레벨 10 이상 착용 가능한 입문용 활.", "negative": "초보자용 단궁", "negative_type": "synthetic", "item_id": 23, "negative_item_id": null}
+{"anchor": "7000원 이하 초심자 원거리 무기", "positive": "초심자용 단궁 원거리 공격력 +30. 레벨 10 이상 착용 가능한 입문용 활.", "negative": "+9 강화 사냥꾼의 활 원거리 공격력 +95, 치명타 확률 10%. 레벨 80 이상 착용 가능.", "negative_type": "corpus", "item_id": 23, "negative_item_id": 22}
+{"anchor": "7000원 이하 초심자 원거리 무기", "positive": "초심자용 단궁 원거리 공격력 +30. 레벨 10 이상 착용 가능한 입문용 활.", "negative": "초심자용 장궁", "negative_type": "synthetic", "item_id": 23, "negative_item_id": null}
+{"anchor": "입문자용 활 구매합니다", "positive": "초심자용 단궁 원거리 공격력 +30. 레벨 10 이상 착용 가능한 입문용 활.", "negative": "바람의 장궁 원거리 공격력 +140, 사거리 증가. 레벨 100 이상 궁수 착용 가능.", "negative_type": "corpus", "item_id": 23, "negative_item_id": 21}
+{"anchor": "입문자용 활 구매합니다", "positive": "초심자용 단궁 원거리 공격력 +30. 레벨 10 이상 착용 가능한 입문용 활.", "negative": "레벨 10 강화 활", "negative_type": "synthetic", "item_id": 23, "negative_item_id": null}
+{"anchor": "레벨 10 활", "positive": "초심자용 단궁 원거리 공격력 +30. 레벨 10 이상 착용 가능한 입문용 활.", "negative": "게임 머니 1000만 골드 즉시 거래 가능한 인게임 재화.", "negative_type": "easy", "item_id": 23, "negative_item_id": 14}
+{"anchor": "화염 대검", "positive": "불꽃의 대검 화염 속성 피해 +90, 공격 시 화상 효과. 불속성 무기.", "negative": "불꽃의 마법봉 화염 계열 마법 위력 25% 증가. 마법사 직업 전용 무기.", "negative_type": "corpus", "item_id": 24, "negative_item_id": 15}
+{"anchor": "화염 대검", "positive": "불꽃의 대검 화염 속성 피해 +90, 공격 시 화상 효과. 불속성 무기.", "negative": "얼음속성 대검", "negative_type": "synthetic", "item_id": 24, "negative_item_id": null}
+{"anchor": "불속성 강한 검 찾습니다", "positive": "불꽃의 대검 화염 속성 피해 +90, 공격 시 화상 효과. 불속성 무기.", "negative": "전설 등급 대검 공격력 +200, 광역 피해 증가. 획득 난이도 최상.", "negative_type": "corpus", "item_id": 24, "negative_item_id": 4}
+{"anchor": "불속성 강한 검 찾습니다", "positive": "불꽃의 대검 화염 속성 피해 +90, 공격 시 화상 효과. 불속성 무기.", "negative": "불꽃의 소드", "negative_type": "synthetic", "item_id": 24, "negative_item_id": null}
+{"anchor": "120레벨 화염 무기 혹시 있나요", "positive": "불꽃의 대검 화염 속성 피해 +90, 공격 시 화상 효과. 불속성 무기.", "negative": "불꽃의 마법봉 화염 계열 마법 위력 25% 증가. 마법사 직업 전용 무기.", "negative_type": "corpus", "item_id": 24, "negative_item_id": 15}
+{"anchor": "120레벨 화염 무기 혹시 있나요", "positive": "불꽃의 대검 화염 속성 피해 +90, 공격 시 화상 효과. 불속성 무기.", "negative": "불꽃의 창", "negative_type": "synthetic", "item_id": 24, "negative_item_id": null}
+{"anchor": "화염 대검", "positive": "불꽃의 대검 화염 속성 피해 +90, 공격 시 화상 효과. 불속성 무기.", "negative": "현자의 반지 마력 +80, 스킬 재사용 대기시간 12% 감소.", "negative_type": "easy", "item_id": 24, "negative_item_id": 9}

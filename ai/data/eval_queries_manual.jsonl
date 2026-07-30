@@ -1,0 +1,15 @@
+{"query": "스틸해머 +8", "gold_item_id": 101, "gold_name": "+8 강화 스틸 해머", "style": "keyword"}
+{"query": "은빛사슬갑 +9", "gold_item_id": 111, "gold_name": "+9 강화 은빛 사슬갑", "style": "keyword"}
+{"query": "판금갑옷 140렙", "gold_item_id": 109, "gold_name": "티타늄 판금 갑옷", "style": "keyword"}
+{"query": "쇠뇌 관통", "gold_item_id": 108, "gold_name": "사냥꾼의 쇠뇌", "style": "keyword"}
+{"query": "마법구 마법사", "gold_item_id": 106, "gold_name": "수정 마법구", "style": "keyword"}
+{"query": "그림자 암살컴", "gold_item_id": 103, "gold_name": "그림자 암살검", "style": "typo"}
+{"query": "용의 숨결 지팡히", "gold_item_id": 107, "gold_name": "용의 숨결 지팡이", "style": "typo"}
+{"query": "마도사 후두", "gold_item_id": 112, "gold_name": "마도사의 후드", "style": "typo"}
+{"query": "수호자 팔지", "gold_item_id": 114, "gold_name": "수호자의 팔찌", "style": "typo"}
+{"query": "ㅍㅇㅊ", "gold_item_id": 105, "gold_name": "폭풍의 창", "style": "chosung"}
+{"query": "ㄱㅊ ㄱㅂ", "gold_item_id": 113, "gold_name": "강철 각반", "style": "chosung"}
+{"query": "성기사워메이스", "gold_item_id": 104, "gold_name": "성기사의 워메이스", "style": "nospace"}
+{"query": "마나물약50개", "gold_item_id": 116, "gold_name": "마나 회복 물약 50개 묶음", "style": "nospace"}
+{"query": "축복주문서90%", "gold_item_id": 117, "gold_name": "축복의 주문서 (성공률 90%)", "style": "nospace"}
+{"query": "150렙궁수계정", "gold_item_id": 118, "gold_name": "레벨 150 궁수 계정", "style": "nospace"}
