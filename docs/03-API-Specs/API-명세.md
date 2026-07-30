@@ -1,0 +1,357 @@
+---
+status: 현행
+updated: 2026-07-31
+---
+
+# API 명세
+
+서버가 둘이고 **식별자 규약이 다르다.** 그 차이가 이 문서에서 제일 먼저
+알아야 할 사실이다.
+
+| | 백엔드 (Spring Boot) | AI 서버 (FastAPI) |
+|---|---|---|
+| 포트 | 8080 | 8000 |
+| 테넌트 식별 | 헤더 `X-Tenant-Id: 1` (**Long**) | 본문 `tenant_code: "nexon"` (**str**) |
+| 행위자 식별 | 헤더 `X-User-Id: 1` | 없음 |
+| 인증 | **없음** | **없음** |
+
+프론트엔드의 `src/demo.ts`가 상수 하나로 이 차이를 흡수한다. 두 서버 어느
+쪽도 고치지 않기 위한 선택이며, 근본 통일은 Phase 8 대상이다.
+
+> **인증이 없다.** 두 서버 모두 헤더/본문의 값을 그대로 신뢰한다.
+> 이 배포를 외부에 노출하지 말 것.
+
+## 오리진과 CORS
+
+브라우저는 **Vite dev proxy를 통해 단일 오리진만 본다.**
+
+```
+/api/backend/*  →  http://localhost:8080
+/api/ai/*       →  http://localhost:8000
+```
+
+그래서 **양쪽 서버 모두 CORS 설정이 없다.** 추가하지 말 것 — 배포 시에는
+리버스 프록시가 같은 역할을 한다 (ADR-0013).
+
+---
+
+# AI 서버 (FastAPI, :8000)
+
+## `POST /api/assistant` — 통합 진입점
+
+의도를 판별해 알맞은 파이프라인으로 보낸다. **개별 엔드포인트를 직접 부르는
+것보다 이쪽이 기본 경로다.** 설계는
+`docs/02-AI-Pipeline/요청-타입별-파이프라인.md`.
+
+**요청**
+
+| 필드 | 타입 | 필수 | 설명 |
+|---|---|---|---|
+| `tenant_code` | str | O | 예: `"nexon"` |
+| `query` | str | O | 자연어 질의 |
+| `use_cache` | bool | | 기본 `true`. 캐시 효과 측정·디버깅용으로 끌 수 있다 |
+
+**응답 — 공통 필드**
+
+```jsonc
+{
+  "query": "5만원 이하 검 찾아줘",
+  "intent": "item_search",          // faq_smalltalk|item_search|price_forecast|anomaly_check|compound|unknown
+  "routing": {
+    "decided_by": "rules",          // rules|classifier
+    "confidence": null,             // 분류기가 판정했을 때만 숫자
+    "initial_intent": "item_search" // intent와 다르면 분기가 에스컬레이션한 것
+  },
+  "answer": "…",
+  "llm_calls": 2,
+  "cache": { "hit": false },
+  "timings": { "routing_ms": 0.1, "execution_ms": 2140.5 }
+}
+```
+
+캐시 적중 시 `cache`는 `{hit, match_type, similarity, cached_query}`가 되고
+**`llm_calls`는 항상 0**이다.
+
+**의도별 추가 필드**
+
+| `intent` | 추가 필드 | `llm_calls` |
+|---|---|---|
+| `faq_smalltalk` | — | **0** |
+| `item_search` | `results[]` | 2 |
+| `item_search` (0건) | `no_results: true`, `conditions[]`, `applied_filters` | **1** |
+| `price_forecast` | `forecast`, `resolved_item` | 2 |
+| `anomaly_check` | `detection` | 1 |
+| `compound` | `tool_calls[]`, `tool_failures`, `stop_reason` | 1~6 (도구 호출 수 + 1) |
+
+**0건 응답 예시** — 조건을 같이 돌려주는 것이 요점이다. 결과가 있으면 항목이
+스스로 종류·속성을 밝히지만 0건에는 검증할 대상이 없다.
+
+```jsonc
+{
+  "intent": "item_search",
+  "answer": "검 · 화염 속성 · 30,000원 이하 조건에 맞는 매물이 없습니다. 조건을 완화하면 결과가 나올 수 있습니다.",
+  "results": [],
+  "no_results": true,
+  "conditions": ["검", "화염 속성", "30,000원 이하"],
+  "applied_filters": { "category": "무기", "subcategory": "검", "element": "화염", "price_max": 30000.0 },
+  "llm_calls": 1
+}
+```
+
+> `llm_calls`가 0이 아니라 **1**이다. 질의 이해 호출은 건너뛸 수 없다 —
+> 어떤 필터가 걸렸는지 알아야 0건 판정이 선다. `llm_calls == 0`은 캐시
+> 적중을 뜻하며 그 구분이 흐려지면 캐시 효과 측정이 망가진다.
+
+**상태 코드**
+
+| 코드 | 조건 |
+|---|---|
+| 404 | 테넌트 인덱스 없음 |
+| 503 | 예측/이상탐지 모델 미학습. 본문에 실행할 명령이 들어 있다 — `python -m scripts.train_forecast` / `train_anomaly` |
+| 500 | 그 외 |
+
+`stop_reason`은 `max_steps`(설정 `agent_max_steps`, 기본 5)에 걸렸는지를 알려준다.
+
+---
+
+## `POST /api/search`
+
+MCP 도구가 감싸고 있어 남겨둔 개별 엔드포인트. 라우팅·캐시를 건너뛴다.
+
+**요청**: `tenant_code`(필수), `query`(필수), `size`(1~50, 기본 10),
+`use_rerank`(기본 `true` — 리랭킹 전/후 비교용)
+
+**응답**
+
+```jsonc
+{
+  "query": "5만원 이하 검",
+  "rewritten_query": "검 소드 대검 단검",
+  "filters": { "category": "무기", "subcategory": "검", "price_max": 50000.0 },
+  "reranked": true,
+  "timings": { "query_understanding_ms": 0, "embedding_ms": 0, "retrieval_ms": 0, "rerank_ms": 0 },
+  "results": [
+    {
+      "item_id": 5, "tenant_id": 1,
+      "name": "미스릴 단검", "description": "…",
+      "category": "무기", "subcategory": "검", "element": "무속성",
+      "sale_type": "FIXED_PRICE", "status": "ON_SALE",
+      "price": 22000, "enhancement_level": 0, "required_level": 45,
+      "rrf_score": 0.032, "bm25_rank": 1, "knn_rank": 3, "rerank_score": -2.71
+    }
+  ]
+}
+```
+
+`filters`는 `exclude_none`이라 **걸리지 않은 조건은 키 자체가 없다.**
+
+`rerank_score`는 크로스인코더 로짓이라 **전부 음수일 수 있고, 질의를 가로질러
+비교할 수 없다.** 이 값에 전역 임계값을 걸려는 시도는 두 번 측정해서 두 번
+기각됐다 (ADR-0018).
+
+---
+
+## `POST /api/forecast`
+
+**요청**: `tenant_code`(필수), `item_id`(필수), `horizon`(1~30, 생략 시 모델 기본)
+
+**응답**
+
+```jsonc
+{
+  "item_id": 1, "name": "+9 강화 롱소드", "category": "무기",
+  "cold_start": false,
+  "history_days": 120,
+  "history":  [ { "date": "2026-07-01", "price": 45200.0 } ],
+  "anchor_price": 45000.0,
+  "horizon_days": 7,
+  "forecast": [ { "date": "2026-08-01", "price": 45900.0, "ratio": 1.02 } ],
+  "expected_change_pct": 2.0,
+  "inherited_from": null,
+  "timings": { "window_ms": 0, "inference_ms": 0 }
+}
+```
+
+`cold_start: true`면 **거래 이력이 부족해 유사 아이템 추세를 상속한 추정치**이며
+`inherited_from`에 출처가 담긴다. 응답을 사용자에게 보여줄 때 이 사실을 반드시
+밝혀야 한다.
+
+`history`는 최근 30일이며 그래프의 실선용이다(`forecast`가 점선).
+
+**상태 코드**
+
+| 코드 | 조건 |
+|---|---|
+| 404 | 테넌트 인덱스 없음 / 아이템 없음 |
+| 422 | 이력 부족(Cold Start로도 처리 불가) |
+| **503** | **모델 미학습** — 본문에 `python -m scripts.train_forecast` |
+| 400 | `horizon`이 모델 학습값을 초과 |
+
+---
+
+## `POST /api/anomaly/detect`
+
+**요청**
+
+| 필드 | 타입 | 필수 | 설명 |
+|---|---|---|---|
+| `tenant_code` | str | O | |
+| `trade_id` | int | O | |
+| `id_space` | `"synthetic"` \| `"backend"` | **O** | **기본값이 없다** |
+
+> **`id_space`에 기본값을 두지 않는 게 의도적이다.** 합성 코퍼스(거래 1~26,702)와
+> PostgreSQL(거래 1~N)의 id 범위가 **겹친다.** `trade_id=3`은 양쪽에서 유효하고
+> 서로 다른 거래를 가리키므로 범위 검사로 구분할 수 없다. 기본값을 주는 순간
+> "모르고 넘긴 호출자"가 조용히 틀린 답을 받는다.
+>
+> 현재 `backend` 공간은 **미연동**이라 **501**을 반환한다. 틀린 답 대신
+> 명시적 미지원이다. Phase 8에서 `SUPPORTED_SPACES`에 추가하면 모든 가드가
+> 한 번에 열린다.
+
+**응답**
+
+```jsonc
+{
+  "trade_id": 23659, "item_id": 4, "buyer_id": 91, "seller_id": 12,
+  "id_space": "synthetic",
+  "price": 402000.0, "quantity": 1,
+  "market_median": 300000.0, "price_ratio": 1.34,
+  "traded_at": "2026-07-20T03:14:00",
+  "anomaly_score": 0.0412, "threshold": 0.0188, "is_anomaly": true,
+  "contributions": [ { "feature": "log_price_ratio", "share": 0.41 } ],
+  "injected_label": "price_spike",
+  "alert_percentile": 99.0,
+  "timings": { "scoring_ms": 1.2 }
+}
+```
+
+`contributions`가 이 모델을 고른 이유다 — 재구성 오차를 피처별로 쪼개 "왜
+이상인가"를 축 단위로 답한다.
+
+`injected_label`은 **합성 데모 데이터의 정답 라벨**이라 판정이 맞았는지 눈으로
+확인하는 용도다. 실데이터에는 없다.
+
+**상태 코드**: 404(거래/테넌트 없음), **501**(미연동 id 공간),
+503(모델 미학습), 500
+
+---
+
+## `GET /api/anomaly/alerts`
+
+**쿼리**: `tenant_code`(필수), `limit`(1~100, 기본 10)
+
+**응답**: `{tenant_code, threshold, alert_percentile, total_trades, total_alerts, alerts[]}`
+— `alerts[]`의 각 항목은 `/detect` 응답과 같은 형태다.
+
+---
+
+## `POST /api/llm/test`
+
+Phase 2의 OpenAI 왕복 확인용. **운영 경로가 아니다.**
+
+**요청**: `prompt`(기본값 있음) → **응답**: `{provider: "openai", response}`
+→ LLM 호출 실패 시 **502**
+
+## `GET /health`
+
+`{"status": "ok", "service": "ai-server"}`
+
+---
+
+# 백엔드 (Spring Boot, :8080)
+
+모든 엔드포인트가 `X-Tenant-Id`를 요구하고, 쓰기 계열은 `X-User-Id`도 요구한다.
+**헤더가 없으면 400이다** — JWT 도입 전까지의 임시 방편이며, 클레임 추출로
+교체될 자리라 헤더 파싱을 컨트롤러 레이어에 모아뒀다.
+
+## 아이템
+
+| 메서드 | 경로 | 헤더 | 성공 |
+|---|---|---|---|
+| POST | `/api/items` | Tenant, User(판매자) | **201** |
+| GET | `/api/items/{itemId}` | Tenant | 200 |
+| GET | `/api/items?page=&size=` | Tenant | 200 (`Page<ItemResponse>`) |
+| PUT | `/api/items/{itemId}` | Tenant, User | 200 |
+| DELETE | `/api/items/{itemId}` | Tenant, User | **204** |
+
+**`ItemCreateRequest`**: `name`(필수), `description`, `saleType`
+(`FIXED_PRICE`\|`AUCTION`, 필수), `price`(> 0, 필수), `stock`(>= 0, 필수)
+
+**`ItemUpdateRequest`**: `name`(필수), `description`, `price`(> 0, 필수)
+
+**`ItemResponse`**
+
+```jsonc
+{
+  "id": 1, "tenantId": 1, "sellerId": 1, "sellerUsername": "seller01",
+  "name": "+9 강화 롱소드", "description": "…",
+  "saleType": "FIXED_PRICE", "price": 45000.00,
+  "currentBidPrice": null, "currentBidderId": null,
+  "stock": 10, "status": "ON_SALE",
+  "createdAt": "2026-07-28T10:00:00", "updatedAt": "2026-07-28T10:00:00"
+}
+```
+
+> **`enhancement_level`·`required_level`이 없다.** 그 두 필드는 Elasticsearch
+> 문서에만 있고 PostgreSQL 스키마에는 없다. 상세 화면은 백엔드를 **거래 상태의
+> source of truth**로 쓰고 강화 수치는 검색 결과(ES)에서 넘어온 값이 있을 때만
+> 보조로 표시한다.
+
+## 거래
+
+| 메서드 | 경로 | 헤더 | 성공 |
+|---|---|---|---|
+| POST | `/api/items/{itemId}/purchase` | Tenant, User(구매자) | **201** |
+| POST | `/api/items/{itemId}/bids` | Tenant, User(입찰자) | **201** |
+
+**요청**: `{"quantity": 1}` (>= 1) / `{"bidPrice": 320000}` (> 0)
+
+**`TradeResponse`**: `{id, tenantId, itemId, buyerId, sellerId, tradeType, price, quantity, status, createdAt}`
+
+### 동시성
+
+구매·입찰은 **Redis 분산 락**으로 보호된다. 경합 시 **409**가 나가고, 그건
+버그가 아니라 이 프로젝트가 보여주려는 동작이다. 프론트는 낙관적 업데이트 없이
+성공/실패를 그대로 표시한다.
+
+`redisson-spring-boot-starter`는 Boot 4와 호환되지 않는다(재배치된
+`RedisProperties`를 참조해 컨텍스트 기동이 실패). 순수 `org.redisson:redisson`에
+`RedissonClient` `@Bean`을 직접 정의해 쓴다.
+
+## `GET /api/health`
+
+FastAPI 헬스체크를 프록시한다.
+`{backend: "UP", aiServerStatus: "UP"|"DOWN", aiServer: {status, service}|null}`
+
+## 오류 응답
+
+`GlobalExceptionHandler`가 `{"message": "…"}` 형태로 통일한다.
+
+| 코드 | 발생 |
+|---|---|
+| 400 | 요청 본문 검증 실패 (`MethodArgumentNotValidException`) |
+| 404 | `ResourceNotFoundException` |
+| **409** | 거래 요청 불가 / **낙관적 락 충돌** / **분산 락 획득 실패** |
+
+---
+
+## 두 저장소의 id 정합성
+
+**아이템 id는 두 저장소에서 같은 것을 가리킨다** — 시딩으로 맞춰뒀기 때문이다.
+그래서 검색 결과(ES)를 클릭해 상세(PostgreSQL)로 이동하는 게 성립한다.
+
+**유저와 거래는 다르다.** 합성 코퍼스는 유저 1~206 / 거래 1~26,702, PostgreSQL은
+유저 1~5 / 거래 1~N이라 **범위가 겹치는데 서로 다른 엔티티**다. 그래서
+`id_space`를 명시적으로 받는다(위).
+
+> **코퍼스 아이템을 바꾸면 `ai/scripts/export_demo_sql.py`를 다시 돌리고 SQL을
+> 적용해야 한다.** 안 하면 PostgreSQL과 Elasticsearch가 어긋나 검색 결과가
+> 실제 행으로 해석되지 않는다.
+
+## 관련 문서
+
+- 파이프라인 설계: `docs/02-AI-Pipeline/요청-타입별-파이프라인.md`
+- 연동 구조 결정: `docs/01-Decisions/0013-프론트-백엔드-연동-구조.md`
+- 동시성 제어: `docs/01-Decisions/0001-item-동시성-제어-redis-락-낙관적-락-병행.md`
+- id 공간 균열: `docs/05-Troubleshooting/저장소-분리로-인한-id-공간-균열.md`
+- Boot 4 호환성: `docs/05-Troubleshooting/spring-boot-4-autoconfigure-공통패턴.md`
