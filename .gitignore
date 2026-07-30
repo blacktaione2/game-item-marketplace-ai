@@ -1,2 +1,16 @@
-docs/.obsidian/workspace.json
-docs/.obsidian/cache/
+# docker-compose 자격증명. AI 서버는 ai/.env를 따로 읽는다(둘 다 추적 안 함).
+.env
+
+# Obsidian 볼트(docs/)의 상태 파일과 서드파티 플러그인.
+# 패턴에 슬래시가 들어가면 이 파일 위치 기준으로 고정되므로 **/ 를 붙인다.
+**/.obsidian/workspace.json
+**/.obsidian/workspace-mobile.json
+**/.obsidian/cache/
+# 플러그인 번들은 6.5MB짜리 서드파티 코드다. 프로젝트 산출물이 아니다.
+**/.obsidian/plugins/
+
+# 저장소 루트의 볼트 설정. 문서 볼트는 docs/ 하나뿐이다.
+/.obsidian/
+
+# TypeScript 증분 빌드 산출물
+*.tsbuildinfo
