@@ -1,0 +1,7 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# ONNX 변환/양자화 산출물 (scripts/build_reranker_onnx.py로 재생성)
+models/
