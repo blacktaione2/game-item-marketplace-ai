@@ -1,0 +1,51 @@
+from typing import Any
+
+from elasticsearch import AsyncElasticsearch
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, Field
+
+from app.services.forecast.exceptions import (
+    ForecastModelNotTrainedError,
+    InsufficientHistoryError,
+    ItemNotFoundError,
+)
+from app.services.forecast.pipeline import forecast_price
+from app.services.search.es_client import get_es_client
+from app.services.search.exceptions import TenantIndexNotFoundError
+
+router = APIRouter(prefix="/api/forecast", tags=["forecast"])
+
+
+class ForecastRequest(BaseModel):
+    tenant_code: str
+    item_id: int
+    # 상한은 학습된 모델의 horizon이라 여기서는 느슨하게 두고 파이프라인에서
+    # 실제 값과 비교해 거른다.
+    horizon: int | None = Field(default=None, ge=1, le=30)
+
+
+@router.post("")
+async def forecast(
+    request: ForecastRequest,
+    es: AsyncElasticsearch = Depends(get_es_client),
+) -> dict[str, Any]:
+    try:
+        return await forecast_price(
+            es=es,
+            tenant_code=request.tenant_code,
+            item_id=request.item_id,
+            horizon=request.horizon,
+        )
+    except TenantIndexNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    except ItemNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    except ForecastModelNotTrainedError as e:
+        # 설정 누락이지 요청 잘못이 아니므로 503.
+        raise HTTPException(status_code=503, detail=str(e)) from e
+    except InsufficientHistoryError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"시세 예측 실패: {e}") from e
