@@ -211,11 +211,11 @@ npm run dev                # :5173
 ### 테스트
 
 ```bash
-cd ai && python -m pytest  # 108건. 외부 서비스·모델 불필요
+cd ai && python -m pytest  # 116건. 외부 서비스·모델 불필요
 cd backend && ./gradlew test   # 10건. Postgres·Redis 필요
 ```
 
-CI가 커밋마다 도는 건 여기까지다 — **AI 108건 + 백엔드 10건 + 프론트 빌드.**
+CI가 커밋마다 도는 건 여기까지다 — **AI 116건 + 백엔드 10건 + 프론트 빌드.**
 부하테스트는 CI에 넣지 않았다(환경이 달라 수치가 비교 불가, 걸 SLO가 아직 없음,
 `live-llm`이 실제 과금). 근거는
 [ADR-0021](docs/01-Decisions/0021-ci-cd-1단계.md).
@@ -234,11 +234,11 @@ CI가 커밋마다 도는 건 여기까지다 — **AI 108건 + 백엔드 10건 
 | 폴더 | 내용 |
 |---|---|
 | [00-Architecture](docs/00-Architecture/) | 기획서, 개발 로드맵 |
-| [01-Decisions](docs/01-Decisions/) | **ADR 18건.** 상태/배경/결정/고려한 대안/영향 |
+| [01-Decisions](docs/01-Decisions/) | **ADR 24건.** 상태/배경/결정/고려한 대안/영향 |
 | [02-AI-Pipeline](docs/02-AI-Pipeline/요청-타입별-파이프라인.md) | 요청 유형별 실행 흐름 종합 |
 | [03-API-Specs](docs/03-API-Specs/API-명세.md) | 두 서버의 엔드포인트·상태 코드 |
 | [04-DevLog](docs/04-DevLog/) | 날짜별 경과 |
-| [05-Troubleshooting](docs/05-Troubleshooting/) | 재발 조건이 실재하는 진단 패턴 9건 |
+| [05-Troubleshooting](docs/05-Troubleshooting/) | 재발 조건이 실재하는 진단 패턴 11건 |
 
 읽을 것을 하나만 고른다면 [ADR-0018](docs/01-Decisions/0018-리랭커-하한-재측정.md)
 — 하나의 결정이 기각되고, 원인이 밝혀져 되살아났다가, 분할을 전수 열거해

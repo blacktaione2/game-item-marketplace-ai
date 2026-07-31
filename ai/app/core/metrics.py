@@ -57,6 +57,18 @@ cache_lookups_total = Counter(
     registry=REGISTRY,
 )
 
+# 한도 초과 (ADR-0024). **이건 record_response()를 지나지 않는다** — 거절이
+# 파이프라인 진입 전에 끝나므로 응답 자체가 만들어지지 않는다. 그래서 계측 지점이
+# 하나라는 원칙의 예외이고, 예외인 이유를 여기 적어둔다.
+#
+# `path`는 경로 패턴이지 실제 URL이 아니다. 라벨은 값의 종류가 유한해야 한다.
+rate_limited_total = Counter(
+    "ai_rate_limited_total",
+    "한도 초과로 거절된 요청 수",
+    labelnames=("tenant", "path"),
+    registry=REGISTRY,
+)
+
 # `timings` 키 → 메트릭의 stage 라벨. 키에서 `_ms`를 떼는 규칙이 아니라
 # 명시적 표를 쓴다 — 새 키가 생겼을 때 조용히 통과하지 않고 눈에 띄게 하려고.
 _STAGE_BY_KEY: dict[str, str] = {
@@ -124,6 +136,11 @@ def _outcome(response: dict[str, Any]) -> str:
     if response.get("tool_failures"):
         return "tool_failure"
     return "ok"
+
+
+def record_rate_limited(tenant: str, path: str) -> None:
+    """한도 초과 거절. `record_response()`와 별개인 이유는 위 카운터 정의 참고."""
+    rate_limited_total.labels(tenant=tenant, path=path).inc()
 
 
 def render() -> bytes:
