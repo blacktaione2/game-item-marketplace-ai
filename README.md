@@ -11,12 +11,15 @@
 [![backend](https://github.com/blacktaione2/game-item-marketplace-ai/actions/workflows/backend.yml/badge.svg)](https://github.com/blacktaione2/game-item-marketplace-ai/actions/workflows/backend.yml)
 [![frontend](https://github.com/blacktaione2/game-item-marketplace-ai/actions/workflows/frontend.yml/badge.svg)](https://github.com/blacktaione2/game-item-marketplace-ai/actions/workflows/frontend.yml)
 
-> ## ⚠️ 인증이 없습니다
+> ## ⚠️ 토큰 발급이 데모입니다
 >
-> 데모 목적이라 인증을 구현하지 않았습니다. 서버는 `X-Tenant-Id` /
-> `X-User-Id` 헤더 값을 **그대로 신뢰**하고, 프론트엔드는 데모 사용자
-> 드롭다운으로 그 값을 바꿉니다. **이 상태의 서버를 외부에 노출하지
-> 마세요.** JWT 도입은 Phase 8 진행 항목입니다.
+> 신원·테넌트·역할은 **서명된 JWT 클레임**에서만 옵니다. 검증은 실제로
+> 동작합니다 — 서명·만료·발급자·필수 클레임, 401/403([ADR-0023](docs/01-Decisions/0023-jwt-인증.md)).
+>
+> 다만 **발급에 비밀번호가 없습니다.** `POST /api/auth/demo-token {userId}`는
+> userId만 알면 누구에게나 그 사용자의 토큰을 내줍니다. 로그인 화면 대신
+> 데모 사용자 드롭다운을 쓰기 위한 선택입니다. HTTPS도 없습니다.
+> **이 상태의 서버를 외부에 노출하지 마세요.**
 >
 > 저장소 공개와 서버 노출은 다른 문제입니다 — 코드에 비밀정보는 없습니다.
 
@@ -208,14 +211,19 @@ npm run dev                # :5173
 ### 테스트
 
 ```bash
-cd ai && python -m pytest  # 78건. 외부 서비스·모델 불필요
+cd ai && python -m pytest  # 108건. 외부 서비스·모델 불필요
+cd backend && ./gradlew test   # 10건. Postgres·Redis 필요
 ```
 
-CI가 커밋마다 도는 건 여기까지다 — **AI 78건 + 백엔드/프론트 빌드.** 부하테스트는
-CI에 넣지 않았다(환경이 달라 수치가 비교 불가, 걸 SLO가 아직 없음, `live-llm`이
-실제 과금). 백엔드 테스트는 `contextLoads()` 한 건뿐이라 **행동을 단언하지
-않는다** — 초록 뱃지를 그렇게 읽으면 안 된다. 근거는
+CI가 커밋마다 도는 건 여기까지다 — **AI 108건 + 백엔드 10건 + 프론트 빌드.**
+부하테스트는 CI에 넣지 않았다(환경이 달라 수치가 비교 불가, 걸 SLO가 아직 없음,
+`live-llm`이 실제 과금). 근거는
 [ADR-0021](docs/01-Decisions/0021-ci-cd-1단계.md).
+
+백엔드 테스트는 오랫동안 `contextLoads()` 한 건뿐이라 행동을 단언하지 못했는데,
+인증 라운드에서 **9건이 추가되며 그 공백이 일부 메워졌다**([ADR-0023](docs/01-Decisions/0023-jwt-인증.md)) —
+토큰 없음/만료/위조 시 401, 다른 테넌트 아이템 차단, 헤더로 테넌트를 바꿔치기할
+수 없음, 부하 하네스가 읽는 `/actuator/prometheus`가 잠기지 않음.
 
 ---
 

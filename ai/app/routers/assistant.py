@@ -4,6 +4,7 @@ from elasticsearch import AsyncElasticsearch
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from app.core.auth import Actor, require_actor
 from app.services.anomaly.exceptions import AnomalyModelNotTrainedError
 from app.services.assistant.pipeline import ask
 from app.services.forecast.exceptions import ForecastModelNotTrainedError
@@ -16,7 +17,8 @@ router = APIRouter(prefix="/api/assistant", tags=["assistant"])
 
 
 class AssistantRequest(BaseModel):
-    tenant_code: str
+    # tenant_code는 토큰 클레임에서 온다 (ADR-0023). 캐시 키가 테넌트별로
+    # 갈리므로, 본문으로 받으면 남의 테넌트 캐시를 조회하게 만들 수도 있었다.
     query: str
     # 캐시 효과를 측정하거나 디버깅할 때 끌 수 있게 열어둔다.
     use_cache: bool = True
@@ -25,6 +27,7 @@ class AssistantRequest(BaseModel):
 @router.post("")
 async def assistant(
     request: AssistantRequest,
+    actor: Actor = Depends(require_actor),
     es: AsyncElasticsearch = Depends(get_es_client),
     llm_client: LLMClient = Depends(get_llm_client),
 ) -> dict[str, Any]:
@@ -32,7 +35,7 @@ async def assistant(
         return await ask(
             es=es,
             llm_client=llm_client,
-            tenant_code=request.tenant_code,
+            tenant_code=actor.tenant_code,
             query=request.query,
             use_cache=request.use_cache,
         )

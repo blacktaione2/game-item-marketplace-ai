@@ -28,6 +28,11 @@ langchain-community<0.4
 mcp>=2.0,<3
 redis>=5.0
 
+# Phase 8: JWT verification (ADR-0023). Verification only -- the Spring Boot
+# backend is the sole issuer. Symmetric HS256, so the secret must match
+# `jwt.secret` on that side.
+PyJWT>=2.9
+
 # Observability. The pipeline already measures per-stage timings in-band; this
 # only exposes them at /metrics. Prometheus itself is an optional compose
 # profile, so this dependency is useful even with nothing scraping.

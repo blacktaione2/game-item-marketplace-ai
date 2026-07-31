@@ -83,21 +83,51 @@ export const options = {
   },
 };
 
-function ask(query, useCache) {
+// 토큰 발급자는 백엔드뿐이므로(ADR-0023) **이 시나리오는 이제 백엔드가 떠 있어야
+// 돈다.** k6가 비밀키로 직접 서명하면 백엔드 의존은 사라지지만 발급 로직의 세 번째
+// 사본이 생긴다 — 검증기가 두 벌인 것만으로도 충분히 갈라질 위험이 있다.
+const BACKEND = __ENV.BACKEND_URL || "http://localhost:8080";
+
+function issueToken(userId) {
+  const issued = http.post(
+    `${BACKEND}/api/auth/demo-token`,
+    JSON.stringify({ userId }),
+    { headers: { "Content-Type": "application/json" } },
+  );
+  if (issued.status !== 200) {
+    throw new Error(
+      `토큰 발급 실패 (status=${issued.status}). 백엔드(8080)가 떠 있는지 확인하세요.`,
+    );
+  }
+  return issued.json("token");
+}
+
+function ask(query, useCache, token) {
+  // tenant_code는 본문에서 빠졌다 — 토큰 클레임이 출처다.
   return http.post(
     `${BASE}/api/assistant`,
-    JSON.stringify({ tenant_code: "nexon", query, use_cache: useCache }),
-    { headers: { "Content-Type": "application/json" }, timeout: "120s",
-      tags: { mode: MODE } },
+    JSON.stringify({ query, use_cache: useCache }),
+    {
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      timeout: "120s",
+      tags: { mode: MODE },
+    },
   );
 }
 
 export function setup() {
+  // 토큰을 먼저 받는다. 발급 왕복이 측정 구간에 섞이면 안 되므로 여기서 한 번만
+  // 한다(TTL 1시간 > 부하 구간 수 분).
+  const token = issueToken(3);
+
   // **워밍업.** 임베딩·리랭커·KoELECTRA가 전부 지연 로딩이라 첫 요청이 수십 초
   // 걸린다(ADR-0019 실측 35.3초). 이걸 본 측정에 섞으면 p95가 통째로 오염된다.
   // 값을 버리지 않고 콜드 스타트 비용으로 보고한다.
   const started = Date.now();
-  const first = ask(WARM_QUERIES[0], false);
+  const first = ask(WARM_QUERIES[0], false, token);
   const coldMs = Date.now() - started;
 
   let firstTimings = {};
@@ -111,17 +141,17 @@ export function setup() {
 
   if (MODE === "cache-warm") {
     // 캐시를 채워둔다. 이후 본 측정은 전부 적중이어야 한다.
-    WARM_QUERIES.forEach((q) => ask(q, true));
+    WARM_QUERIES.forEach((q) => ask(q, true, token));
   }
-  return { coldMs, firstTimings };
+  return { coldMs, firstTimings, token };
 }
 
-export default function () {
+export default function (data) {
   const useCache = MODE === "cache-warm";
   const pool = useCache ? WARM_QUERIES : LIVE_QUERIES;
   const query = pool[(__VU + __ITER) % pool.length];
 
-  const res = ask(query, useCache);
+  const res = ask(query, useCache, data.token);
 
   if (res.status >= 500) {
     serverError.add(1);

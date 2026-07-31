@@ -5,6 +5,8 @@ import { Link, useParams } from "react-router-dom";
 import { api, formatWon, type Trade } from "../api";
 import PriceChart from "../components/PriceChart";
 
+// userId는 이제 요청에 안 실린다(토큰이 행위자를 정한다). 화면 표시용으로만
+// 남는다 — "내가 올린 매물"인지 판단하는 데 쓴다.
 export default function ItemDetail({ userId }: { userId: number }) {
   const { itemId } = useParams();
   const id = Number(itemId);
@@ -26,8 +28,8 @@ export default function ItemDetail({ userId }: { userId: number }) {
   const trade = useMutation({
     mutationFn: (input: { kind: "purchase" | "bid"; amount: number }) =>
       input.kind === "purchase"
-        ? api.purchase(id, input.amount, userId)
-        : api.bid(id, input.amount, userId),
+        ? api.purchase(id, input.amount)
+        : api.bid(id, input.amount),
     onSuccess: (data: Trade) => {
       setResult({
         ok: true,
