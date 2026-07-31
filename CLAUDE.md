@@ -336,10 +336,15 @@ dependency: the backend reuses Redisson's `RRateLimiter`, the AI server uses the
   relaxed values deliberately live *outside* `application.yml` so they cannot be
   left behind, and limits are **raised, never disabled** — the limiter must still
   run so `run.sh` can assert the run wasn't contaminated.
-- **`load/out/*.diff.txt` shows only the top 25 counters by absolute delta**, and
-  byte counters share that ranking with request counters. A 3,057-request delta
-  was invisible there. Never build a check on that file — read the
-  `before`/`after` snapshots, which are complete.
+- **Never build a check on rendered output.** `load/out/*.diff.txt` shows only
+  the top 25 counters by absolute delta, and byte counters share that ranking
+  with request counters — a 3,057-request delta was invisible there, so the
+  contamination warning passed silently on a run that was 90% rejected. Read the
+  `before`/`after` snapshots, which are complete. This is the third time a check
+  in this harness was itself wrong; the pattern and its checklist are in
+  `docs/05-Troubleshooting/검사-자체가-틀린-세-건.md`. Corollary: **run any new
+  check against a deliberately failing case too** — a check only ever seen
+  passing is indistinguishable from one that always passes.
 - The AI limiter **fails open** when Redis is down (it protects cost, not
   correctness). The purchase lock is the opposite and rejects — same Redis,
   deliberately opposite policies.
