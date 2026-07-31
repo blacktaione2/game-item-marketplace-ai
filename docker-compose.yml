@@ -67,8 +67,55 @@ services:
       timeout: 5s
       retries: 5
 
+  # --- 관측 스택 (선택) -------------------------------------------------
+  # `docker compose --profile observability up` 일 때만 뜬다.
+  #
+  # 기본 기동에서 빼둔 이유가 자원 절약만은 아니다. 배포 대상이 다른 프로젝트와
+  # 공유하는 4 OCPU라, **부하테스트 중에 같은 박스에서 스크래핑하면 측정 대상과
+  # 부하 생성기에서 CPU를 뺏는다.** 부하테스트는 /metrics 를 전후로 받아
+  # 차분하는 쪽이 정확하고(히스토그램은 누적값이다), 대시보드는 데모 때만 켠다.
+  #
+  # 두 서비스는 호스트의 백엔드(8080)·AI(8000)를 긁으므로
+  # host.docker.internal 을 쓴다. 앱을 컨테이너로 올리면 서비스명으로 바꾼다.
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    container_name: gimp-prometheus
+    profiles: [observability]
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=7d
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    volumes:
+      - ./docker/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  grafana:
+    image: grafana/grafana:11.3.1
+    container_name: gimp-grafana
+    profiles: [observability]
+    depends_on:
+      - prometheus
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-gimp_local_pw}
+      # 데모 편의. 인증 없는 배포를 노출하지 말라는 경고가 README에 있다.
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+    volumes:
+      # 대시보드를 코드로 둔다 — UI에서 만들면 재현이 안 된다.
+      - ./docker/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./docker/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+
 volumes:
   postgres_data:
   es_data:
   redis_data:
   rabbitmq_data:
+  prometheus_data:
+  grafana_data:

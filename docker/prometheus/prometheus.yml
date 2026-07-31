@@ -1,0 +1,27 @@
+# 두 서비스가 호스트에서 돌기 때문에 host.docker.internal 로 긁는다.
+# (docker-compose.yml 에서 extra_hosts 로 매핑해뒀다)
+#
+# 스크레이프 주기가 15초인 건 의도적이다. 더 짧게 잡으면 부하테스트 중에
+# 측정 대상의 CPU를 갉아먹는다 — 4 OCPU를 다른 프로젝트와 공유하는 환경이다.
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: backend
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ["host.docker.internal:8080"]
+        labels:
+          service: backend
+
+  - job_name: ai
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["host.docker.internal:8000"]
+        labels:
+          service: ai
+
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]

@@ -1,0 +1,11 @@
+apiVersion: 1
+
+providers:
+  - name: gimp
+    type: file
+    disableDeletion: true
+    # UI에서 고친 게 파일을 덮어쓰지 않게 한다. 대시보드의 진실은 저장소에 있다.
+    allowUiUpdates: false
+    options:
+      path: /var/lib/grafana/dashboards
+      foldersFromFilesStructure: false

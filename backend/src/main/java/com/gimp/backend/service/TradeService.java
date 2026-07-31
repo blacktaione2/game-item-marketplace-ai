@@ -13,6 +13,8 @@ import com.gimp.backend.exception.ResourceNotFoundException;
 import com.gimp.backend.repository.ItemRepository;
 import com.gimp.backend.repository.TradeRepository;
 import com.gimp.backend.repository.UserRepository;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import java.math.BigDecimal;
 import java.util.concurrent.TimeUnit;
 import org.redisson.api.RLock;
@@ -42,47 +44,83 @@ public class TradeService {
     private final UserRepository userRepository;
     private final TradeRepository tradeRepository;
     private final TransactionTemplate transactionTemplate;
+    private final MeterRegistry meterRegistry;
 
     public TradeService(
             RedissonClient redissonClient,
             ItemRepository itemRepository,
             UserRepository userRepository,
             TradeRepository tradeRepository,
-            PlatformTransactionManager transactionManager) {
+            PlatformTransactionManager transactionManager,
+            MeterRegistry meterRegistry) {
         this.redissonClient = redissonClient;
         this.itemRepository = itemRepository;
         this.userRepository = userRepository;
         this.tradeRepository = tradeRepository;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
+        this.meterRegistry = meterRegistry;
     }
 
     public TradeResponse purchase(Long tenantId, Long itemId, Long buyerId, int quantity) {
-        return withItemLock(itemId, () -> doPurchase(tenantId, itemId, buyerId, quantity));
+        return withItemLock(tenantId, itemId, () -> doPurchase(tenantId, itemId, buyerId, quantity));
     }
 
     public TradeResponse bid(Long tenantId, Long itemId, Long bidderId, BigDecimal bidPrice) {
-        return withItemLock(itemId, () -> doBid(tenantId, itemId, bidderId, bidPrice));
+        return withItemLock(tenantId, itemId, () -> doBid(tenantId, itemId, bidderId, bidPrice));
     }
 
-    private TradeResponse withItemLock(Long itemId, java.util.function.Supplier<TradeResponse> action) {
+    /**
+     * 락을 걸고 트랜잭션 안에서 실행한다.
+     *
+     * <p>여기가 고경합 시나리오의 유일한 시임이라 계측도 이 자리에 모은다. 부하테스트에서
+     * "락이 병목인가"를 답하려면 <b>대기</b>와 <b>보유</b>를 갈라야 한다 — 대기가 길면 경합이,
+     * 보유가 길면 트랜잭션 자체가 문제다. 합쳐서 재면 둘을 구분할 수 없다.
+     *
+     * <p>태그는 tenant까지만 붙인다. itemId는 무한히 늘어나는 값이라 라벨로 쓰면 시계열이
+     * 폭발한다 — "어떤 아이템이 경합했나"는 메트릭이 아니라 로그로 답할 문제다.
+     */
+    private TradeResponse withItemLock(
+            Long tenantId, Long itemId, java.util.function.Supplier<TradeResponse> action) {
+        String tenant = String.valueOf(tenantId);
         RLock lock = redissonClient.getLock(LOCK_KEY_PREFIX + itemId);
+
         boolean acquired;
+        Timer.Sample waitSample = Timer.start(meterRegistry);
         try {
             acquired = lock.tryLock(LOCK_WAIT_SECONDS, LOCK_LEASE_SECONDS, TimeUnit.SECONDS);
         } catch (InterruptedException e) {
+            recordLockWait(waitSample, tenant, "interrupted");
             Thread.currentThread().interrupt();
             throw new LockAcquisitionException("잠금 획득 중 인터럽트가 발생했습니다.");
         }
+        recordLockWait(waitSample, tenant, acquired ? "acquired" : "timeout");
+
         if (!acquired) {
             throw new LockAcquisitionException("다른 거래가 처리 중입니다. 잠시 후 다시 시도해주세요.");
         }
+
+        Timer.Sample holdSample = Timer.start(meterRegistry);
         try {
             return transactionTemplate.execute(status -> action.get());
         } finally {
+            holdSample.stop(
+                    Timer.builder("trade.lock.hold")
+                            .description("락을 쥔 채 트랜잭션을 실행한 시간")
+                            .tag("tenant", tenant)
+                            .register(meterRegistry));
             if (lock.isHeldByCurrentThread()) {
                 lock.unlock();
             }
         }
+    }
+
+    private void recordLockWait(Timer.Sample sample, String tenant, String outcome) {
+        sample.stop(
+                Timer.builder("trade.lock.wait")
+                        .description("tryLock 호출부터 반환까지 — 경합 시 대기 시간")
+                        .tag("tenant", tenant)
+                        .tag("outcome", outcome)
+                        .register(meterRegistry));
     }
 
     private TradeResponse doPurchase(Long tenantId, Long itemId, Long buyerId, int quantity) {

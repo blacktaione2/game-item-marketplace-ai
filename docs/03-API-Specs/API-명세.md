@@ -256,6 +256,29 @@ Phase 2의 OpenAI 왕복 확인용. **운영 경로가 아니다.**
 
 `{"status": "ok", "service": "ai-server"}`
 
+## `GET /metrics`
+
+Prometheus 텍스트 포맷. **Prometheus를 띄우지 않아도 쓸모가 있다** — 히스토그램은
+누적값이라 부하테스트 전후로 받아 차분하면 실행 구간의 정확한 집계가 나온다.
+
+| 메트릭 | 종류 | 라벨 |
+|---|---|---|
+| `ai_stage_duration_seconds` | Histogram | `stage`, `tenant` |
+| `ai_requests_total` | Counter | `tenant`, `intent`, `outcome` |
+| `ai_llm_calls_total` | Counter | `tenant`, `intent` |
+| `ai_cache_lookups_total` | Counter | `tenant`, `result` |
+
+`stage`: `cache` · `routing` · `execution` · `query_understanding` ·
+`embedding` · `retrieval` · `rerank` · `explain` · `forecast_window` ·
+`forecast_inference` · `anomaly_scoring` · `agent_llm` · `agent_tool`
+
+`outcome`: `ok` · `no_results` · `tool_failure` — 뒤 둘은 에러가 아니지만
+부하테스트에서 구분해서 봐야 한다.
+
+> **라벨에 `item_id`·`trade_id`·`user_id`·질의 문자열을 넣지 말 것.** 전부
+> 무한히 늘어나는 값이라 시계열이 폭발한다. "어떤 아이템이 느렸나"는 메트릭이
+> 아니라 로그로 답할 문제다.
+
 ---
 
 # 백엔드 (Spring Boot, :8080)

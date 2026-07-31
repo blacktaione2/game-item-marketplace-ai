@@ -110,7 +110,30 @@ temperature 1.0 (ADR-0016 reason 1 was inferred, not measured — the decision
 stands on reason 2), and temperature does not explain the residual mis-extraction
 (1/40 at both settings).
 
-**Next: Phase 8.** The search-quality thread is closed for now — the three
+**Phase 8 is underway**, in a fixed order with dependencies worked out (see the
+roadmap). Done so far: README + GitHub remote (`game-item-marketplace-ai`,
+public), and **observability stage 1** (ADR-0019). Next is **load testing**.
+
+Two things from ADR-0019 that change how you read this codebase:
+
+- **`/api/assistant` used to discard the per-stage `timings`** that `run_search`
+  and `forecast_price` already produced — only `execution_ms` survived. It now
+  propagates them, and `explain_ms` (the second LLM call in the search branch)
+  is measured for the first time. The instant payoff: a first request's 42.9s
+  was **82% lazy embedding-model loading, not the LLM**. Any load test must warm
+  up first or its early numbers are model-loading noise.
+- **Metrics have exactly one instrumentation point**, `record_response()` in
+  `app/core/metrics.py`. A new stage means one line in `_STAGE_BY_KEY`, not a
+  new timer at the call site. Labels stop at `tenant`/`intent`/`stage`/`outcome`
+  — **never label by `item_id`, `trade_id`, `user_id`, or query text**; that is
+  a log question, not a metric one.
+
+Prometheus and Grafana are a **`--profile observability` opt-in**, not default:
+scraping during a load test steals CPU from the thing being measured on a shared
+4 OCPU box. Read load-test aggregates by diffing `/metrics` before and after
+(histograms are cumulative), and start the dashboards only for demos.
+
+**The search-quality thread is closed for now** — the three
 remaining items all have prerequisites: `"무속성"` extraction needs a prompt eval
 set, the `rarity` axis needs a grade taxonomy invented, and the reranker floor
 needs cross-query score comparability (see above). Anything that would have

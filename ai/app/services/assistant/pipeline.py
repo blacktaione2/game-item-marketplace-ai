@@ -28,6 +28,7 @@ from elasticsearch import AsyncElasticsearch
 
 from app.core.config import get_settings
 from app.core.ids import IdSpace
+from app.core.metrics import record_response
 from app.services.agent.agent import run_agent
 from app.services.anomaly.pipeline import detect_trade
 from app.services.cache.dependencies import get_semantic_cache
@@ -133,7 +134,7 @@ async def ask(
             hit = None  # 캐시 장애가 요청 실패로 번지면 안 된다
         timings["cache_ms"] = _ms(started)
         if hit:
-            return {
+            cached = {
                 **hit["response"],
                 # 캐시된 응답에는 원래 호출 수가 박혀 있다. 그대로 돌려주면
                 # 캐시가 아낀 비용이 아니라 원본 비용으로 읽혀서, 캐시 효과를
@@ -147,6 +148,8 @@ async def ask(
                 },
                 "timings": timings,
             }
+            record_response(tenant_code, cached)
+            return cached
 
     # --- 2. 라우팅 -------------------------------------------------------
     started = time.perf_counter()
@@ -158,6 +161,10 @@ async def ask(
     started = time.perf_counter()
     payload, intent = await _execute(es, llm_client, tenant_code, query, intent)
     timings["execution_ms"] = _ms(started)
+    # **분기 내부 계측을 위로 올린다.** 이게 없으면 통합 진입점에서 execution_ms
+    # 하나만 보이고 그 안이 LLM인지 ES인지 리랭커인지 알 수 없다 — 하위
+    # 파이프라인이 이미 재고 있는데도 여기서 버려지고 있었다.
+    timings.update(payload.pop("timings", {}))
 
     response = {
         "query": query,
@@ -194,6 +201,7 @@ async def ask(
 
     response["cache"] = {"hit": False}
     response["timings"] = timings
+    record_response(tenant_code, response)
     return response
 
 
@@ -213,11 +221,19 @@ async def _execute(
             es=es, llm_client=llm_client, tenant_code=tenant_code, query=query, size=5
         )
         if not result["results"]:
-            return _no_results(result["filters"]), intent
-        answer = await llm_client.complete(
-            _SEARCH_PROMPT.format(query=query, results=_brief(result["results"]))
+            return {**_no_results(result["filters"]), "timings": result["timings"]}, intent
+        answer, explain_ms = await _timed_complete(
+            llm_client, _SEARCH_PROMPT.format(query=query, results=_brief(result["results"]))
         )
-        return {"answer": answer, "results": result["results"], "llm_calls": 2}, intent
+        return (
+            {
+                "answer": answer,
+                "results": result["results"],
+                "llm_calls": 2,
+                "timings": {**result["timings"], "explain_ms": explain_ms},
+            },
+            intent,
+        )
 
     if intent is Intent.PRICE_FORECAST:
         if not _has_target(query):
@@ -232,10 +248,18 @@ async def _execute(
         # 해석하되 그 사실을 답변에 밝히게 한다 — 사용자가 자기 거래 번호를
         # 말한 것일 수도 있고, 두 id 범위는 겹친다.
         result = detect_trade(tenant_code, trade_id, IdSpace.SYNTHETIC)
-        answer = await llm_client.complete(
-            _ANOMALY_PROMPT.format(query=query, result=result)
+        answer, explain_ms = await _timed_complete(
+            llm_client, _ANOMALY_PROMPT.format(query=query, result=result)
         )
-        return {"answer": answer, "detection": result, "llm_calls": 1}, intent
+        return (
+            {
+                "answer": answer,
+                "detection": result,
+                "llm_calls": 1,
+                "timings": {**result["timings"], "explain_ms": explain_ms},
+            },
+            intent,
+        )
 
     return await _agent_branch(llm_client, tenant_code, query)
 
@@ -257,14 +281,15 @@ async def _forecast_branch(
     result = await forecast_price(
         es=es, tenant_code=tenant_code, item_id=item["item_id"]
     )
-    answer = await llm_client.complete(
+    answer, explain_ms = await _timed_complete(
+        llm_client,
         _FORECAST_PROMPT.format(
             query=query,
             result=result,
             baseline_source=(
                 "최근 체결가" if not result["cold_start"] else "거래 이력 부족 상태의 추정 기준가"
             ),
-        )
+        ),
     )
     return (
         {
@@ -272,6 +297,12 @@ async def _forecast_branch(
             "forecast": result,
             "resolved_item": {"item_id": item["item_id"], "name": item["name"]},
             "llm_calls": 2,
+            # 아이템 특정용 검색 + 예측 + 설명. 키가 겹치지 않아 병합이 안전하다.
+            "timings": {
+                **found["timings"],
+                **result["timings"],
+                "explain_ms": explain_ms,
+            },
         },
         Intent.PRICE_FORECAST,
     )
@@ -288,9 +319,22 @@ async def _agent_branch(
             "tool_failures": result["tool_failures"],
             "stop_reason": result["stop_reason"],
             "llm_calls": len(result["tool_calls"]) + 1,
+            "timings": result["timings"],
         },
         Intent.COMPOUND,
     )
+
+
+async def _timed_complete(llm_client: LLMClient, prompt: str) -> tuple[str, float]:
+    """설명 생성 LLM 호출 + 소요 시간.
+
+    검색 분기는 LLM을 2회 부르는데 재작성(`query_understanding_ms`)만 분해돼
+    있고 설명 생성은 `execution_ms`에 묻혀 있었다. 부하테스트에서 "느린 게
+    LLM인가"를 답하려면 두 호출이 다 보여야 한다.
+    """
+    started = time.perf_counter()
+    answer = await llm_client.complete(prompt)
+    return answer, _ms(started)
 
 
 _SALE_TYPE_LABELS = {"FIXED_PRICE": "즉시구매", "AUCTION": "경매"}
