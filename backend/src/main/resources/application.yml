@@ -24,6 +24,23 @@ server:
 ai-server:
   base-url: ${AI_SERVER_URL:http://localhost:8000}
 
+# 관측성. Prometheus를 상시 띄우지 않아도 /actuator/prometheus 는 쓸모가 있다 —
+# 히스토그램이 누적값이라 부하테스트 전후로 받아 차분하면 실행 구간 집계가 나온다.
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  metrics:
+    tags:
+      application: ${spring.application.name}
+    distribution:
+      # 켜야 URI별 지연 분위수를 볼 수 있다. 끄면 카운트와 합계만 남는다.
+      percentiles-histogram:
+        http.server.requests: true
+        trade.lock.wait: true
+        trade.lock.hold: true
+
 logging:
   level:
     org.hibernate.SQL: debug

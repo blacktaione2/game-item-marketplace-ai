@@ -22,6 +22,10 @@ dependencies {
 	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
 	implementation 'org.springframework.boot:spring-boot-starter-validation'
 	implementation 'org.springframework.boot:spring-boot-starter-webmvc'
+	// 관측성. actuator가 JVM/GC/HikariCP/Tomcat과 http.server.requests를 공짜로
+	// 주고, registry-prometheus가 그걸 /actuator/prometheus 로 노출한다.
+	implementation 'org.springframework.boot:spring-boot-starter-actuator'
+	implementation 'io.micrometer:micrometer-registry-prometheus'
 	implementation 'org.redisson:redisson:3.50.0'
 	compileOnly 'org.projectlombok:lombok'
 	runtimeOnly 'org.postgresql:postgresql'

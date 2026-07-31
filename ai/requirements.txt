@@ -17,6 +17,11 @@ optimum[onnxruntime]>=1.20
 ragas>=0.4,<0.5
 langchain-community<0.4
 
+# Observability. The pipeline already measures per-stage timings in-band; this
+# only exposes them at /metrics. Prometheus itself is an optional compose
+# profile, so this dependency is useful even with nothing scraping.
+prometheus-client>=0.20
+
 # Testing. Deliberately minimal: pure functions whose behaviour is asserted in
 # an ADR and would otherwise be unguarded. See docs/01-Decisions/0005.
 pytest>=8.0

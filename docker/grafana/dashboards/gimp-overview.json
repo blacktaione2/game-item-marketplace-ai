@@ -1,0 +1,217 @@
+{
+  "uid": "gimp-overview",
+  "title": "게임 아이템 거래소 — 관측 개요",
+  "description": "부하테스트 판독용. 백엔드는 락 경합, AI는 단계별 지연이 핵심 질문이다.",
+  "tags": ["gimp"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "10s",
+  "time": { "from": "now-15m", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "type": "bargauge",
+      "title": "AI 단계별 지연 p95 — 어디가 병목인가",
+      "description": "막대마다 단계 이름이 붙으므로 색은 정보를 나르지 않는다. 그래서 단일 색조를 쓴다.",
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum by (stage, le) (rate(ai_stage_duration_seconds_bucket[5m])))",
+          "legendFormat": "{{stage}}",
+          "instant": true
+        }
+      ],
+      "options": {
+        "displayMode": "gradient",
+        "orientation": "horizontal",
+        "showUnfilled": true,
+        "sortBy": "Value",
+        "sortOrder": "Descending",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "decimals": 3,
+          "color": { "mode": "fixed", "fixedColor": "#3987e5" }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Redis 락 — 대기 vs 보유 p95",
+      "description": "대기가 길면 경합이, 보유가 길면 트랜잭션 자체가 문제다. 합쳐 재면 구분되지 않는다. 둘 다 초 단위라 축이 하나다.",
+      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(trade_lock_wait_seconds_bucket[5m])))",
+          "legendFormat": "락 대기"
+        },
+        {
+          "refId": "B",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(trade_lock_hold_seconds_bucket[5m])))",
+          "legendFormat": "락 보유"
+        }
+      ],
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "decimals": 3,
+          "custom": { "lineWidth": 2, "fillOpacity": 0, "showPoints": "never" }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "락 대기" },
+            "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "#3987e5" } }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "락 보유" },
+            "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "#d95926" } }]
+          }
+        ]
+      }
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "거래 거절 — 사유별",
+      "description": "셋 다 409로 나가서 상태 코드만으로는 구분되지 않는다. optimistic_conflict가 0이 아니면 분산 락이 새고 있다는 뜻이다.",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 9 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (reason) (rate(trade_rejection_total[5m]))",
+          "legendFormat": "{{reason}}"
+        }
+      ],
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": { "lineWidth": 2, "fillOpacity": 0, "showPoints": "never" }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "lock_timeout" },
+            "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "#3987e5" } }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "optimistic_conflict" },
+            "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "#d95926" } }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "invalid_request" },
+            "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "#199e70" } }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "not_found" },
+            "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "#c98500" } }]
+          }
+        ]
+      }
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "AI 요청 처리율 — 의도별",
+      "gridPos": { "h": 8, "w": 8, "x": 12, "y": 9 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (intent) (rate(ai_requests_total[5m]))",
+          "legendFormat": "{{intent}}"
+        }
+      ],
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": { "lineWidth": 2, "fillOpacity": 0, "showPoints": "never" }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "시맨틱 캐시 적중률",
+      "description": "적중이면 LLM 호출이 0이다. 이 값이 떨어지면 LLM 비용과 p95가 같이 오른다.",
+      "gridPos": { "h": 8, "w": 4, "x": 20, "y": 9 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(ai_cache_lookups_total{result=~\"hit_.*\"}[5m])) / clamp_min(sum(rate(ai_cache_lookups_total[5m])), 0.0001)"
+        }
+      ],
+      "options": {
+        "graphMode": "area",
+        "colorMode": "none",
+        "textMode": "value",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }
+      },
+      "fieldConfig": {
+        "defaults": { "unit": "percentunit", "decimals": 1 },
+        "overrides": []
+      }
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "백엔드 JVM 힙",
+      "gridPos": { "h": 7, "w": 24, "x": 0, "y": 17 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(jvm_memory_used_bytes{area=\"heap\"})",
+          "legendFormat": "사용"
+        },
+        {
+          "refId": "B",
+          "expr": "sum(jvm_memory_max_bytes{area=\"heap\"})",
+          "legendFormat": "최대"
+        }
+      ],
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "custom": { "lineWidth": 2, "fillOpacity": 0, "showPoints": "never" }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "사용" },
+            "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "#3987e5" } }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "최대" },
+            "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "#d95926" } }]
+          }
+        ]
+      }
+    }
+  ]
+}

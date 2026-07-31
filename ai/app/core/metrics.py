@@ -1,0 +1,130 @@
+"""Prometheus 메트릭 정의와 `timings` → 히스토그램 변환.
+
+## 왜 한 곳에서 변환하는가
+
+파이프라인이 이미 단계별 소요 시간을 `timings` dict로 재고 있다(응답 본문에도
+그대로 나간다). 단계마다 계측 코드를 흩뿌리는 대신 **응답을 만들 때 한 번**
+dict를 히스토그램으로 옮긴다. 계측 지점이 하나뿐이라 새 단계가 생겨도
+`_STAGE_BY_KEY`에 한 줄만 추가하면 된다.
+
+## 라벨 규칙 — 카디널리티 상한
+
+`tenant` × `intent`(6) × `stage`(11). 테넌트가 O(10)까지는 안전하다.
+
+**절대 라벨로 쓰지 않는다**: `item_id` · `trade_id` · `user_id` · 질의 문자열.
+전부 무한히 늘어나는 값이고, 하나라도 라벨에 들어가면 시계열이 폭발한다.
+"어떤 아이템이 느렸나"는 메트릭이 아니라 로그로 답할 문제다.
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+from prometheus_client import CollectorRegistry, Counter, Histogram, generate_latest
+
+# 기본 레지스트리를 쓰지 않는다 — 테스트가 서로 오염되지 않게 격리한다.
+REGISTRY = CollectorRegistry()
+
+# LLM 호출은 초 단위, ES·리랭커는 밀리초 단위라 버킷을 넓게 잡는다.
+_BUCKETS = (0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.0, 5.0, 10.0, 30.0)
+
+stage_duration = Histogram(
+    "ai_stage_duration_seconds",
+    "파이프라인 단계별 소요 시간",
+    labelnames=("stage", "tenant"),
+    buckets=_BUCKETS,
+    registry=REGISTRY,
+)
+
+requests_total = Counter(
+    "ai_requests_total",
+    "어시스턴트 요청 수",
+    labelnames=("tenant", "intent", "outcome"),
+    registry=REGISTRY,
+)
+
+llm_calls_total = Counter(
+    "ai_llm_calls_total",
+    "요청당 발생한 LLM 호출 수의 누적",
+    labelnames=("tenant", "intent"),
+    registry=REGISTRY,
+)
+
+cache_lookups_total = Counter(
+    "ai_cache_lookups_total",
+    "시맨틱 캐시 조회 결과",
+    labelnames=("tenant", "result"),
+    registry=REGISTRY,
+)
+
+# `timings` 키 → 메트릭의 stage 라벨. 키에서 `_ms`를 떼는 규칙이 아니라
+# 명시적 표를 쓴다 — 새 키가 생겼을 때 조용히 통과하지 않고 눈에 띄게 하려고.
+_STAGE_BY_KEY: dict[str, str] = {
+    "cache_ms": "cache",
+    "routing_ms": "routing",
+    "execution_ms": "execution",
+    "query_understanding_ms": "query_understanding",
+    "embedding_ms": "embedding",
+    "retrieval_ms": "retrieval",
+    "rerank_ms": "rerank",
+    "explain_ms": "explain",
+    "window_ms": "forecast_window",
+    "inference_ms": "forecast_inference",
+    "scoring_ms": "anomaly_scoring",
+    "agent_llm_ms": "agent_llm",
+    "agent_tool_ms": "agent_tool",
+}
+
+
+def stage_for(key: str) -> str | None:
+    return _STAGE_BY_KEY.get(key)
+
+
+def record_timings(tenant: str, timings: dict[str, float]) -> None:
+    """`timings` dict를 히스토그램으로 옮긴다. 모르는 키는 조용히 버린다."""
+    for key, value in timings.items():
+        stage = _STAGE_BY_KEY.get(key)
+        if stage is None:
+            continue
+        stage_duration.labels(stage=stage, tenant=tenant).observe(value / 1000.0)
+
+
+def cache_result(cache: dict[str, Any]) -> str:
+    """캐시 조회 결과를 라벨 값으로. 적중 종류를 구분해야 의미가 있다."""
+    if not cache.get("hit"):
+        return "miss"
+    return f"hit_{cache.get('match_type', 'unknown')}"
+
+
+def record_response(tenant: str, response: dict[str, Any]) -> None:
+    """응답 하나가 만들어질 때마다 호출. 계측 지점은 여기 하나뿐이다."""
+    intent = str(response.get("intent", "unknown"))
+
+    record_timings(tenant, response.get("timings", {}))
+
+    requests_total.labels(
+        tenant=tenant, intent=intent, outcome=_outcome(response)
+    ).inc()
+    llm_calls_total.labels(tenant=tenant, intent=intent).inc(
+        response.get("llm_calls", 0)
+    )
+    cache_lookups_total.labels(
+        tenant=tenant, result=cache_result(response.get("cache", {}))
+    ).inc()
+
+
+def _outcome(response: dict[str, Any]) -> str:
+    """성공/실패가 아니라 **무엇이 일어났는지**를 센다.
+
+    0건과 도구 실패는 에러가 아니지만 부하테스트에서 구분해서 봐야 한다 —
+    0건이 늘면 캐시 미저장 경로가 늘고, 도구 실패가 늘면 에이전트가 재시도한다.
+    """
+    if response.get("no_results"):
+        return "no_results"
+    if response.get("tool_failures"):
+        return "tool_failure"
+    return "ok"
+
+
+def render() -> bytes:
+    return generate_latest(REGISTRY)

@@ -85,9 +85,15 @@ async def run_agent(
 
         stop_reason = "completed"
         answer = ""
+        # 복합 질의의 병목 질문은 "LLM인가 도구인가"다. elapsed_ms 하나로는
+        # 답할 수 없어서 둘을 따로 누적한다.
+        llm_ms = 0.0
+        tool_ms = 0.0
 
         for step in range(1, max_steps + 1):
+            call_started = time.perf_counter()
             result = await llm_client.chat(messages, tools=tools)
+            llm_ms += (time.perf_counter() - call_started) * 1000
 
             if not result.tool_calls:
                 answer = result.content
@@ -95,9 +101,11 @@ async def run_agent(
 
             messages.append(_assistant_message(result))
             for call in result.tool_calls:
+                tool_started = time.perf_counter()
                 text, failed = await call_tool_text(
                     client, call.name, call.arguments, timeout
                 )
+                tool_ms += (time.perf_counter() - tool_started) * 1000
                 trace.append(
                     {
                         "step": step,
@@ -113,7 +121,9 @@ async def run_agent(
             # 한도를 다 쓰고도 답이 안 나왔다 — 도구 없이 마무리를 요청한다.
             stop_reason = "max_steps"
             messages.append({"role": "user", "content": _FINAL_PROMPT})
+            call_started = time.perf_counter()
             answer = (await llm_client.chat(messages)).content
+            llm_ms += (time.perf_counter() - call_started) * 1000
 
     return {
         "answer": answer,
@@ -121,6 +131,10 @@ async def run_agent(
         "tool_failures": sum(1 for entry in trace if entry["failed"]),
         "stop_reason": stop_reason,
         "elapsed_ms": round((time.perf_counter() - started) * 1000, 1),
+        "timings": {
+            "agent_llm_ms": round(llm_ms, 1),
+            "agent_tool_ms": round(tool_ms, 1),
+        },
     }
 
 
