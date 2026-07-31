@@ -112,8 +112,29 @@ stands on reason 2), and temperature does not explain the residual mis-extractio
 
 **Phase 8 is underway**, in a fixed order with dependencies worked out (see the
 roadmap). Done so far: README + GitHub remote (`game-item-marketplace-ai`,
-public), **observability stage 1** (ADR-0019), and **load testing** (ADR-0020).
-Next is **CI/CD stage 1**.
+public), **observability stage 1** (ADR-0019), **load testing** (ADR-0020), and
+**CI/CD stage 1** (ADR-0021). Next is **id-space unification (B)**.
+
+CI is three GitHub Actions workflows (`.github/workflows/{ai,backend,frontend}.yml`),
+split into separate files so each can carry its own `paths` filter — a
+docs-only commit runs nothing. Two things about it are load-bearing:
+
+- **The load test is deliberately NOT in CI**, and the reason is not weight:
+  a GH runner is a third environment whose numbers compare to neither ADR-0020
+  nor the deployment target, there is no SLO to assert yet (ADR-0020 declined to
+  set one), and `live-llm` bills OpenAI on every commit. The 4-OCPU worry is
+  answered by **not self-hosting a runner**. Revisit only when an SLO exists, and
+  then as `workflow_dispatch`, never a schedule.
+- **The backend job brings up `docker-compose.yml` rather than GHA service
+  containers.** Service containers cannot set `command`, so Redis can't run with
+  `--requirepass`, and `RedissonConfig` unconditionally sends AUTH. Using compose
+  also keeps CI identical to local. Only `postgres` and `redis` — the backend has
+  no ES or AMQP dependency.
+
+Note what the green badges do and don't mean: the backend suite is still the
+single Initializr `contextLoads()` and asserts no behaviour. It is worth running
+only because context-startup failure is a regression class that actually bit here
+(the Redisson/Boot-4 `RedisProperties` relocation).
 
 Load-test facts worth carrying (`load/`, k6):
 
@@ -255,7 +276,7 @@ lock, and the trade flow were verified by hand with curl; see the roadmap's
   versioning for reproducibility). `models/` is gitignored — regenerate with
   the build/finetune scripts.
 
-- `tests/` — `python -m pytest` from `ai/` (68 tests, no `pytest-asyncio` — the
+- `tests/` — `python -m pytest` from `ai/` (78 tests, no `pytest-asyncio` — the
   few async cases use `asyncio.run`). Deliberately limited to
   deterministic units: RRF fusion, router rules, cache keys/tenant isolation,
   per-intent TTL + the no-result storage veto, id-space guards, filter→DSL
@@ -344,6 +365,18 @@ Postgres and ES drift apart and search results stop resolving to real rows.
 - **`langchain-community` is pinned `<0.4` on purpose.** ragas 0.4.x
   unconditionally imports `langchain_community.chat_models.vertexai`, which
   0.4.x removed; without the pin `import ragas` fails outright.
+- **A long-lived dev venv hides missing dependency declarations.** `mcp` and
+  `redis` were installed by hand in Phase 6 and never added to
+  `requirements.txt`; six months of work ran fine locally and CI failed on its
+  first run (ADR-0021). The general rule: **a passing local test suite is no
+  evidence that the declarations are complete** — only a fresh environment is.
+  CI covers this for anything imported at module level, but **not** for lazy
+  imports (`redis` sits inside a function in
+  `app/services/cache/dependencies.py`, so collection passes and the server dies
+  at the first request instead). When you add an import, add the declaration in
+  the same edit. To check by hand without waiting for CI: clone the repo to a
+  scratch dir and run it in a `python:3.11-slim` container — Windows can't
+  reproduce these, and Actions logs need an admin token to download.
 - **`settings.embedding_model` points at `models/embedding-finetuned`, which is
   gitignored.** A fresh clone will NOT have it, and the AI server will fail when
   it first tries to embed. Regenerate before running:
