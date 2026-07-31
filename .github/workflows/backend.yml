@@ -1,0 +1,62 @@
+name: backend
+
+# 주의: 백엔드 테스트는 Initializr 기본 `contextLoads()` 한 건뿐이고 **행동을
+# 단언하지 않는다.** 그래도 돌릴 값어치가 있는 이유는 하나다 — 컨텍스트 기동
+# 실패가 이 프로젝트에서 실제로 터진 회귀 유형이기 때문이다
+# (redisson-spring-boot-starter가 Boot 4에서 RedisProperties 재배치 때문에
+# 기동 실패했고, 그래서 지금은 plain redisson + 수동 @Bean 을 쓴다).
+# 초록 뱃지를 "백엔드가 검증됐다"로 읽으면 안 된다. README에 같은 단서를 달았다.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'backend/**'
+      - '.github/workflows/backend.yml'
+  pull_request:
+    paths:
+      - 'backend/**'
+      - '.github/workflows/backend.yml'
+
+concurrency:
+  group: backend-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+
+      # GHA service containers 대신 저장소의 compose 파일을 그대로 쓴다.
+      # service containers 는 `command` 를 지정할 수 없어서 Redis를
+      # `--requirepass` 로 띄울 수 없고, 그러면 RedissonConfig가 보내는 AUTH가
+      # 거절돼 로컬과 다른 구성이 된다. compose를 쓰면 로컬과 동일하고
+      # compose 파일 자체도 덤으로 검증된다.
+      # ES와 RabbitMQ는 백엔드가 붙지 않으므로(build.gradle에 의존성 없음) 뺀다 —
+      # ES는 커스텀 이미지 빌드까지 필요해서 비용이 크다.
+      - name: Postgres · Redis 기동
+        run: docker compose up -d postgres redis
+
+      - name: 헬스체크 대기
+        run: |
+          for i in $(seq 1 30); do
+            pg=$(docker inspect -f '{{.State.Health.Status}}' gimp-postgres)
+            rd=$(docker inspect -f '{{.State.Health.Status}}' gimp-redis)
+            echo "postgres=$pg redis=$rd"
+            [ "$pg" = healthy ] && [ "$rd" = healthy ] && exit 0
+            sleep 2
+          done
+          echo "컨테이너가 healthy 가 되지 않았다"
+          docker compose logs postgres redis
+          exit 1
+
+      - name: 빌드 + 테스트
+        working-directory: backend
+        run: ./gradlew build --no-daemon

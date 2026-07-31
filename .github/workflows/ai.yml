@@ -1,0 +1,59 @@
+name: ai
+
+# 이 워크플로는 서비스도 모델도 필요 없다. 테스트가 의도적으로 결정론적
+# 단위로만 한정돼 있어서다(RRF 융합, 라우터 룰, 캐시 키, id 공간 가드 등).
+# 모델 품질은 학습 스크립트의 홀드아웃 리포트가 판단한다 — CI가 아니다.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'ai/**'
+      - '.github/workflows/ai.yml'
+  pull_request:
+    paths:
+      - 'ai/**'
+      - '.github/workflows/ai.yml'
+
+concurrency:
+  group: ai-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ai
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: ai/requirements.txt
+
+      # requirements.txt 는 ASCII만 허용한다. pip이 시스템 로케일 코덱으로 읽어서
+      # 한글 주석 한 줄이 cp949 환경의 설치를 깨뜨린 적이 있다.
+      # 리눅스 러너는 UTF-8이라 그냥 통과하므로 CI가 자연히 잡아주지 못한다 —
+      # 명시적으로 확인해야 의미가 있다.
+      - name: requirements.txt ASCII 확인
+        run: python -c "open('requirements.txt', encoding='ascii').read()"
+
+      # 기본 인덱스의 torch는 리눅스에서 CUDA 의존성까지 끌고 온다(GB 단위).
+      # 테스트는 CPU만 쓰고, 뒤의 requirements 설치는 이미 충족된 torch를 건너뛴다.
+      - name: torch (CPU 휠) 설치
+        run: pip install torch --index-url https://download.pytorch.org/whl/cpu
+
+      - name: 의존성 설치
+        run: pip install -r requirements.txt
+
+      # langchain-community<0.4 핀 검증. 핀을 풀면 ragas 0.4.x가 0.4에서 제거된
+      # langchain_community.chat_models.vertexai를 무조건 import해서 깨진다.
+      # 설치는 성공하고 import에서만 드러나므로 한 줄 필요하다.
+      - name: ragas import 확인 (langchain-community 핀)
+        run: python -c "import ragas"
+
+      - name: 테스트
+        run: python -m pytest
