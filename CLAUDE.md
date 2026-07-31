@@ -374,9 +374,12 @@ Postgres and ES drift apart and search results stop resolving to real rows.
   imports (`redis` sits inside a function in
   `app/services/cache/dependencies.py`, so collection passes and the server dies
   at the first request instead). When you add an import, add the declaration in
-  the same edit. To check by hand without waiting for CI: clone the repo to a
-  scratch dir and run it in a `python:3.11-slim` container — Windows can't
-  reproduce these, and Actions logs need an admin token to download.
+  the same edit; the current lazy-import inventory (6 sites, 5 packages) is in
+  `docs/05-Troubleshooting/의존성-선언-누락-오래된-venv.md`. To check by hand
+  without waiting for CI: clone the repo to a scratch dir and run it in a
+  `python:3.11-slim` container — Windows can't reproduce these, and Actions logs
+  need an admin token to download even on a public repo. Procedure in
+  `docs/05-Troubleshooting/ci-로그-접근-불가-컨테이너-재현.md`.
 - **`settings.embedding_model` points at `models/embedding-finetuned`, which is
   gitignored.** A fresh clone will NOT have it, and the AI server will fail when
   it first tries to embed. Regenerate before running:
