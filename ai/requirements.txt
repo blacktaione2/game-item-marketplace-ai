@@ -17,6 +17,17 @@ optimum[onnxruntime]>=1.20
 ragas>=0.4,<0.5
 langchain-community<0.4
 
+# Phase 6: agent / MCP / semantic cache.
+# Both were installed by hand during Phase 6 and never declared here, so a fresh
+# clone could not import the MCP session at all. CI caught `mcp` on its first
+# run; `redis` is the same defect hidden behind a lazy import in
+# app/services/cache/dependencies.py -- that import is deferred so a cache-less
+# setup does not need the package, but every intent goes through the cache by
+# default (ADR-0012), so in practice it is required.
+# `from mcp import Client` is the 2.x API; 1.x exposes ClientSession instead.
+mcp>=2.0,<3
+redis>=5.0
+
 # Observability. The pipeline already measures per-stage timings in-band; this
 # only exposes them at /metrics. Prometheus itself is an optional compose
 # profile, so this dependency is useful even with nothing scraping.
