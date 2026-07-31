@@ -7,6 +7,10 @@
 `Spring Boot 4` · `Java 21` · `FastAPI` · `Python 3.11` · `React` ·
 `PostgreSQL` · `Elasticsearch` · `Redis` · `RabbitMQ` · `Docker`
 
+[![ai](https://github.com/blacktaione2/game-item-marketplace-ai/actions/workflows/ai.yml/badge.svg)](https://github.com/blacktaione2/game-item-marketplace-ai/actions/workflows/ai.yml)
+[![backend](https://github.com/blacktaione2/game-item-marketplace-ai/actions/workflows/backend.yml/badge.svg)](https://github.com/blacktaione2/game-item-marketplace-ai/actions/workflows/backend.yml)
+[![frontend](https://github.com/blacktaione2/game-item-marketplace-ai/actions/workflows/frontend.yml/badge.svg)](https://github.com/blacktaione2/game-item-marketplace-ai/actions/workflows/frontend.yml)
+
 > ## ⚠️ 인증이 없습니다
 >
 > 데모 목적이라 인증을 구현하지 않았습니다. 서버는 `X-Tenant-Id` /
@@ -204,8 +208,14 @@ npm run dev                # :5173
 ### 테스트
 
 ```bash
-cd ai && python -m pytest  # 68건. 외부 서비스·모델 불필요
+cd ai && python -m pytest  # 78건. 외부 서비스·모델 불필요
 ```
+
+CI가 커밋마다 도는 건 여기까지다 — **AI 78건 + 백엔드/프론트 빌드.** 부하테스트는
+CI에 넣지 않았다(환경이 달라 수치가 비교 불가, 걸 SLO가 아직 없음, `live-llm`이
+실제 과금). 백엔드 테스트는 `contextLoads()` 한 건뿐이라 **행동을 단언하지
+않는다** — 초록 뱃지를 그렇게 읽으면 안 된다. 근거는
+[ADR-0021](docs/01-Decisions/0021-ci-cd-1단계.md).
 
 ---
 
