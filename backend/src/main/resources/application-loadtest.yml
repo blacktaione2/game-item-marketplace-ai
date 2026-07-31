@@ -1,0 +1,27 @@
+# 부하테스트 전용 프로파일 (ADR-0024).
+#
+#   SPRING_PROFILES_ACTIVE=loadtest ./gradlew bootRun
+#
+# ## 왜 별도 파일인가
+#
+# 부하테스트는 한 사용자가 초당 수십 건을 낸다. 운영 한도를 그대로 두면 **리미터를 측정**하게
+# 되는데, 그건 ADR-0020에서 "락 경합인 줄 알았더니 재고 고갈을 재고 있던" 것과 같은 종류의
+# 오염이다.
+#
+# 그렇다고 application.yml의 숫자를 손으로 올렸다 내리면 되돌리는 걸 잊을 수 있다. 완화된 값을
+# **다른 파일**에 두면 그런 실수가 불가능하고, 어떤 구성으로 돌았는지가 실행 명령에 남는다.
+# 우회 헤더(X-Bypass-RateLimit 류)를 기각한 것과 같은 기준 — **감사 가능해야 한다.**
+#
+# ## 끄지 않고 올린다
+#
+# `enabled: false`가 아니라 큰 값을 쓴다. 리미터 경로가 그대로 돌아야 그 오버헤드까지 측정에
+# 포함되고, `rate.limited` 카운터가 0인지로 **오염 여부를 확인**할 수 있다. 아예 끄면 그 확인이
+# 불가능하다.
+rate-limit:
+  enabled: true
+  trade:
+    permits: 100000
+    window-seconds: 1
+  demo-token:
+    permits: 100000
+    window-seconds: 60

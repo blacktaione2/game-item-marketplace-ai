@@ -57,6 +57,20 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.CONFLICT).body(ErrorResponse.of(e.getMessage()));
     }
 
+    /**
+     * 한도 초과 (ADR-0024).
+     *
+     * <p>카운터를 {@code trade.rejection}에 합치지 않은 이유는 이름이 거짓이 되기 때문이다 —
+     * 토큰 발급은 거래가 아니다. 계측 <b>지점</b>은 여기 하나로 유지하되 이름은 정직하게 둔다.
+     */
+    @ExceptionHandler(RateLimitExceededException.class)
+    public ResponseEntity<ErrorResponse> handleRateLimit(RateLimitExceededException e) {
+        meterRegistry.counter("rate.limited", "scope", e.getScope()).increment();
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                .header("Retry-After", String.valueOf(e.getRetryAfterSeconds()))
+                .body(ErrorResponse.of(e.getMessage()));
+    }
+
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ErrorResponse> handleValidation(MethodArgumentNotValidException e) {
         Map<String, String> fieldErrors = new HashMap<>();

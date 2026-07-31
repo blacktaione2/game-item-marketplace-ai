@@ -34,10 +34,28 @@ updated: 2026-07-31
 > 동작하지만(서명·만료·발급자·필수 클레임), HTTPS가 없고 발급이 무인증이므로
 > **이 배포를 외부에 노출하지 말 것.**
 
-**공통 상태 코드**: **401**(토큰 없음·무효·만료), **403**(권한 부족).
+**공통 상태 코드**: **401**(토큰 없음·무효·만료), **403**(권한 부족),
+**429**(한도 초과, `Retry-After` 헤더 동반).
 `/actuator/prometheus`, `/actuator/health`, `/api/health`,
 `/api/auth/demo-token`, AI의 `/health`·`/metrics`는 인증에서 제외된다 —
 부하 하네스와 헬스체크가 읽는 경로다.
+
+## 요청 한도 (ADR-0024)
+
+**비용이 나가거나 토큰 없이 닿을 수 있는 경로에만** 건다. 조회 계열은 걸지 않는다.
+
+| 경로 | 한도 | 키 |
+|---|---|---|
+| `POST /api/assistant` | 20회 / 분 | tenant + user |
+| `POST /api/items/{id}/purchase`, `/bids` | 10회 / 초 | user |
+| `POST /api/auth/demo-token` | 30회 / 분 | **IP** |
+
+> `demo-token`만 IP를 쓴다 — 인증 이전이라 신원이 없기 때문이다. **NAT·회사망
+> 뒤에서는 여러 사용자가 한 IP를 공유하므로 정상 사용자가 막힐 수 있다.**
+> 신뢰할 프록시가 없으므로 `X-Forwarded-For`는 읽지 않는다(읽으면 헤더 하나로
+> 우회된다).
+
+**부하테스트는 이 한도에 걸린다.** 완화 구성으로 띄우는 절차는 `load/README.md`.
 
 ## 오리진과 CORS
 
@@ -315,6 +333,13 @@ Prometheus 텍스트 포맷. **Prometheus를 띄우지 않아도 쓸모가 있�
 | `ai_requests_total` | Counter | `tenant`, `intent`, `outcome` |
 | `ai_llm_calls_total` | Counter | `tenant`, `intent` |
 | `ai_cache_lookups_total` | Counter | `tenant`, `result` |
+| `ai_rate_limited_total` | Counter | `tenant`, `path` |
+
+> `ai_rate_limited_total`은 **`record_response()`를 지나지 않는다** — 한도 거절은
+> 파이프라인 진입 전에 끝나 응답 자체가 만들어지지 않기 때문이다. "계측 지점은
+> 하나"라는 원칙(ADR-0019)의 유일한 예외다. 백엔드 쪽 짝은
+> `rate_limited_total{scope}`이며, `trade.rejection`에 합치지 않았다 — 토큰
+> 발급은 거래가 아니라 이름이 거짓이 된다.
 
 `stage`: `cache` · `routing` · `execution` · `query_understanding` ·
 `embedding` · `retrieval` · `rerank` · `explain` · `forecast_window` ·

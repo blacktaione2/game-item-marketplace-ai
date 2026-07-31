@@ -57,6 +57,40 @@ STOCK_AFTER="$(stock)"
 "$PY" "$ROOT/load/snapshot_metrics.py" diff \
   "$OUT/$TAG.before.txt" "$OUT/$TAG.after.txt" | tee "$OUT/$TAG.diff.txt"
 
+# --- 오염 확인: 리미터에 걸렸는가 (ADR-0024) --------------------------------
+#
+# 한도가 운영값이면 부하테스트는 **리미터를 측정**하게 된다. ADR-0020에서 "락
+# 경합인 줄 알았더니 재고 고갈을 재고 있던" 것과 같은 종류의 오염인데, 이쪽은
+# 429가 조용히 섞이기 때문에 요약만 봐서는 더 안 보인다. 사람이 눈치채길
+# 기대하지 않고 여기서 단언한다.
+# **차분 출력이 아니라 스냅샷 원본에서 센다.** diff.txt는 증가분 상위 25개만
+# 보여주는데, 그 순위에 바이트 카운터(억 단위)가 섞여 있어서 요청 수 단위 카운터는
+# 쉽게 밀려난다 — 실제로 rate_limited 증가분 3,057이 표시에서 사라졌다.
+# 안전망이 잘린 화면을 입력으로 쓰면 안전망이 아니다.
+LIMITED="$("$PY" -c "
+import re, sys
+def total(path):
+    s = 0
+    for line in open(path, encoding='utf-8'):
+        if line.startswith('#'):
+            continue
+        m = re.match(r'^(ai_)?rate_limited_total\{[^}]*\}\s+([0-9.eE+-]+)', line)
+        if m:
+            s += float(m.group(2))
+    return s
+print(int(total(sys.argv[2]) - total(sys.argv[1])))
+" "$OUT/$TAG.before.txt" "$OUT/$TAG.after.txt" 2>/dev/null)"
+if [ -n "$LIMITED" ] && [ "$LIMITED" != "0" ]; then
+  echo
+  echo "=============================================================================="
+  echo "!! 오염 경고 — 한도 초과 거절이 $LIMITED 건 발생했다"
+  echo "=============================================================================="
+  echo "  이 측정은 시스템이 아니라 리미터를 재고 있다."
+  echo "  백엔드: SPRING_PROFILES_ACTIVE=loadtest 로 띄웠는지 확인"
+  echo "  AI    : RATE_LIMIT_ASSISTANT_PER_MIN 을 올려서 띄웠는지 확인"
+  echo "  자세한 절차는 load/README.md"
+fi
+
 if [ "$SUITE" = "purchase" ] && [ -n "$STOCK_BEFORE" ] && [ -n "$STOCK_AFTER" ]; then
   CREATED="$(grep -oE 'created_201[^0-9]*([0-9]+)' "$OUT/$TAG.k6.txt" | grep -oE '[0-9]+$' | tail -1)"
   SOLD=$((STOCK_BEFORE - STOCK_AFTER))

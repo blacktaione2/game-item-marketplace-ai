@@ -83,6 +83,18 @@ class Settings(BaseSettings):
     jwt_secret: str = "gimp_local_dev_secret_change_me_32b"
     jwt_issuer: str = "gimp-backend"
 
+    # --- Phase 8: 요청 한도 (ADR-0024) ---
+    # `/api/assistant` 하나에만 건다 — 실제로 돈이 나가는 유일한 경로다.
+    #
+    # **부하테스트는 이 한도에 걸린다.** 그때 이 기본값을 고치지 말고 환경변수로
+    # 넘긴다: `RATE_LIMIT_ASSISTANT_PER_MIN=100000 python -m uvicorn ...`
+    # 백엔드가 `application-loadtest.yml` 프로파일을 쓰는 것과 같은 목적이다 —
+    # 완화한 값이 **파일에 남지 않아야** 되돌리는 걸 잊을 수 없다.
+    # 끄지 않고 올리는 이유는 리미터 경로가 그대로 돌아야 오버헤드가 측정에
+    # 포함되고 `ai_rate_limited_total`이 0인지로 오염을 확인할 수 있어서다.
+    rate_limit_enabled: bool = True
+    rate_limit_assistant_per_min: int = 20
+
 
 @lru_cache
 def get_settings() -> Settings:

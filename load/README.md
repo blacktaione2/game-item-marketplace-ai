@@ -12,9 +12,19 @@ docker compose up -d                   # observability 프로파일은 켜지 �
 docker exec -i gimp-postgres psql -U gimp -d gimp \
   < backend/src/main/resources/db/seed-loadtest.sql
 
-cd backend && ./gradlew bootRun        # :8080
-cd ai && python -m uvicorn app.main:app --port 8000   # 시나리오 B에만 필요
+# 부하테스트는 요청 한도에 걸린다(ADR-0024). 완화된 구성으로 띄운다.
+cd backend && SPRING_PROFILES_ACTIVE=loadtest ./gradlew bootRun        # :8080
+cd ai && RATE_LIMIT_ASSISTANT_PER_MIN=100000 python -m uvicorn app.main:app --port 8000
 ```
+
+> **한도를 파일에서 손으로 고치지 않는다.** 백엔드는 `application-loadtest.yml`
+> 프로파일, AI는 실행 시 환경변수를 쓴다 — 완화한 값이 **어디에도 남지 않으므로**
+> 되돌리는 걸 잊을 수가 없고, 어떤 구성으로 돌았는지가 실행 명령에 드러난다.
+> 우회 헤더를 기각한 것과 같은 기준이다(감사 가능해야 한다).
+>
+> **끄지 않고 올린다.** 리미터 경로가 그대로 돌아야 그 오버헤드가 측정에
+> 포함되고, `run.sh`가 실행 후 한도 초과 카운터를 확인해 **오염되지 않았음을
+> 단언**할 수 있다. 아예 끄면 그 확인이 불가능하다.
 
 > **인증이 들어온 뒤로 백엔드는 두 시나리오 모두에 필요하다**(ADR-0023).
 > 시나리오 B(AI)도 `setup()`에서 `POST /api/auth/demo-token`으로 토큰을 받으므로

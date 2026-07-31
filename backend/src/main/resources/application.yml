@@ -28,6 +28,26 @@ jwt:
   issuer: gimp-backend
   ttl-seconds: 3600
 
+# 요청 한도 (ADR-0024). 이 값들이 **운영 기본값**이다.
+#
+# 부하테스트는 이 한도에 걸린다. 그때 여기 숫자를 손으로 고치면 되돌리는 걸 잊을 수 있으므로
+# 그렇게 하지 않는다 — `application-loadtest.yml`에 완화된 값을 따로 두고
+# `SPRING_PROFILES_ACTIVE=loadtest` 로 띄운다. 프로파일은 기동 인자라 파일에 남지 않고,
+# 어떤 값으로 돌았는지가 실행 명령에 드러난다(우회 헤더를 기각한 것과 같은 기준이다).
+rate-limit:
+  enabled: true
+  # 거래(구매·입찰) — 검증된 사용자 단위.
+  # 실측 상한이 107 req/s인데(ADR-0020) 그건 전체 처리량이고, 한 사용자가 그중 상당 부분을
+  # 차지할 이유가 없다.
+  trade:
+    permits: 10
+    window-seconds: 1
+  # 토큰 발급 — IP 단위(인증 이전이라 신원이 없다).
+  # 정상 사용은 사용자 전환당 1~2회다(개발 모드 StrictMode 이중 호출 포함).
+  demo-token:
+    permits: 30
+    window-seconds: 60
+
 ai-server:
   base-url: ${AI_SERVER_URL:http://localhost:8000}
 

@@ -324,6 +324,26 @@ Auth costs **0.7ms per request** (measured via `spring_security_filterchains_sec
 0.22% of a 312ms request) — if throughput looks off, it is not this. See ADR-0023
 for two throughput hypotheses that were tested and rejected.
 
+**Rate limits exist too** (ADR-0024), on the paths that cost money or are
+reachable without a token: `/api/assistant` (20/min per tenant+user),
+purchase/bid (10/s per user), and `/api/auth/demo-token` (30/min **per IP** — the
+one place keyed by address, since it runs before identity exists). No new
+dependency: the backend reuses Redisson's `RRateLimiter`, the AI server uses the
+`redis.asyncio` client the semantic cache already opens.
+
+- **Load tests trip these limits**, so both servers need the relaxed config:
+  `SPRING_PROFILES_ACTIVE=loadtest` and `RATE_LIMIT_ASSISTANT_PER_MIN=…`. The
+  relaxed values deliberately live *outside* `application.yml` so they cannot be
+  left behind, and limits are **raised, never disabled** — the limiter must still
+  run so `run.sh` can assert the run wasn't contaminated.
+- **`load/out/*.diff.txt` shows only the top 25 counters by absolute delta**, and
+  byte counters share that ranking with request counters. A 3,057-request delta
+  was invisible there. Never build a check on that file — read the
+  `before`/`after` snapshots, which are complete.
+- The AI limiter **fails open** when Redis is down (it protects cost, not
+  correctness). The purchase lock is the opposite and rejects — same Redis,
+  deliberately opposite policies.
+
 - **The synthetic corpus and PostgreSQL share overlapping id ranges for
   different entities.** Corpus users are 1–206 and trades 1–26,702; Postgres has
   users 1–5 and trades 1–N. `trade_id=3` is valid in both and means different
@@ -405,6 +425,15 @@ Postgres and ES drift apart and search results stop resolving to real rows.
 - **`langchain-community` is pinned `<0.4` on purpose.** ragas 0.4.x
   unconditionally imports `langchain_community.chat_models.vertexai`, which
   0.4.x removed; without the pin `import ragas` fails outright.
+- **"The port answers" is not "the process I just started is answering."**
+  Stopping `./gradlew bootRun` kills the wrapper but leaves the forked JVM
+  holding 8080, so the *next* `bootRun` dies with "Port 8080 was already in use"
+  **while `curl localhost:8080` keeps returning 200.** A readiness check that
+  only asks "is it up?" passes, and if the survivor is an older build you are
+  now verifying stale code. This has already happened twice here. After starting
+  a server, confirm the start actually succeeded (the log line, not the port),
+  and kill leftovers by PID — `netstat -ano | grep :8080` then
+  `taskkill //F //PID <pid>`, since stopping the wrapper does not do it.
 - **A long-lived dev venv hides missing dependency declarations.** `mcp` and
   `redis` were installed by hand in Phase 6 and never added to
   `requirements.txt`; six months of work ran fine locally and CI failed on its

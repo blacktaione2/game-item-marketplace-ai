@@ -4,7 +4,8 @@ from elasticsearch import AsyncElasticsearch
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from app.core.auth import Actor, require_actor
+from app.core.auth import Actor
+from app.core.rate_limit import limit_assistant
 from app.services.anomaly.exceptions import AnomalyModelNotTrainedError
 from app.services.assistant.pipeline import ask
 from app.services.forecast.exceptions import ForecastModelNotTrainedError
@@ -27,7 +28,9 @@ class AssistantRequest(BaseModel):
 @router.post("")
 async def assistant(
     request: AssistantRequest,
-    actor: Actor = Depends(require_actor),
+    # limit_assistant가 require_actor를 품고 있다 — 인증을 통과한 뒤에 한도를
+    # 센다. 순서가 반대면 인증 실패도 한도를 소모한다.
+    actor: Actor = Depends(limit_assistant),
     es: AsyncElasticsearch = Depends(get_es_client),
     llm_client: LLMClient = Depends(get_llm_client),
 ) -> dict[str, Any]:
