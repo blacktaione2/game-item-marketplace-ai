@@ -4,6 +4,7 @@ from elasticsearch import AsyncElasticsearch
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
+from app.core.auth import Actor, require_actor
 from app.services.forecast.exceptions import (
     ForecastModelNotTrainedError,
     InsufficientHistoryError,
@@ -17,7 +18,7 @@ router = APIRouter(prefix="/api/forecast", tags=["forecast"])
 
 
 class ForecastRequest(BaseModel):
-    tenant_code: str
+    # tenant_code는 토큰 클레임에서 온다 (ADR-0023).
     item_id: int
     # 상한은 학습된 모델의 horizon이라 여기서는 느슨하게 두고 파이프라인에서
     # 실제 값과 비교해 거른다.
@@ -27,12 +28,13 @@ class ForecastRequest(BaseModel):
 @router.post("")
 async def forecast(
     request: ForecastRequest,
+    actor: Actor = Depends(require_actor),
     es: AsyncElasticsearch = Depends(get_es_client),
 ) -> dict[str, Any]:
     try:
         return await forecast_price(
             es=es,
-            tenant_code=request.tenant_code,
+            tenant_code=actor.tenant_code,
             item_id=request.item_id,
             horizon=request.horizon,
         )

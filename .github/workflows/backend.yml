@@ -59,4 +59,9 @@ jobs:
 
       - name: 빌드 + 테스트
         working-directory: backend
+        # JWT_SECRET을 명시한다. application.yml에 개발 기본값이 있어서 없어도
+        # 돌긴 하지만, CI가 그 기본값에 의존하면 기본값을 지우는 순간 조용히
+        # 깨진다. HS256이라 32바이트 이상이어야 한다.
+        env:
+          JWT_SECRET: ci_test_secret_not_used_anywhere_32b
         run: ./gradlew build --no-daemon

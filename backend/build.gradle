@@ -26,6 +26,11 @@ dependencies {
 	// 주고, registry-prometheus가 그걸 /actuator/prometheus 로 노출한다.
 	implementation 'org.springframework.boot:spring-boot-starter-actuator'
 	implementation 'io.micrometer:micrometer-registry-prometheus'
+	// 인증(ADR-0023). resource-server가 Nimbus JwtDecoder/JwtEncoder를 함께
+	// 끌고 오므로 발급과 검증을 한 계열로 끝낼 수 있다 — jjwt를 따로 붙이지
+	// 않는 이유다. 대칭키(HMAC-SHA256)라 JWK 엔드포인트도 필요 없다.
+	implementation 'org.springframework.boot:spring-boot-starter-security'
+	implementation 'org.springframework.boot:spring-boot-starter-oauth2-resource-server'
 	implementation 'org.redisson:redisson:3.50.0'
 	compileOnly 'org.projectlombok:lombok'
 	runtimeOnly 'org.postgresql:postgresql'

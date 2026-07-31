@@ -298,11 +298,31 @@ is why neither server has CORS configured; don't add it. Screens: `/`
 (assistant + search), `/items/:id` (detail + price chart + purchase/bid),
 `/anomalies` (GM queue). State is TanStack Query only; there is no global store.
 
-**There is no authentication.** A demo-user dropdown picks the `X-User-Id` sent
-to the backend, matching the placeholder headers the controllers expect. Don't
-expose this deployment. Note also that the backend wants `X-Tenant-Id: 1`
-(Long) while the AI server wants `tenant_code: "nexon"` (str) — `src/demo.ts`
-absorbs that difference so neither server had to change.
+**Authentication exists since ADR-0023, but token *issuance* is a demo.**
+`POST /api/auth/demo-token {userId}` hands out a JWT for any userId with no
+password, because there is no login screen — the demo-user dropdown calls it on
+every switch. Verification, by contrast, is real on both servers (signature,
+`exp`, `iss`, required claims, 401/403). Still don't expose this deployment.
+
+Three consequences worth carrying:
+
+- **Nothing sends tenant or actor in the request any more.** Both come from
+  signed claims, and the `X-Tenant-Id` / `X-User-Id` headers are gone — sending
+  them now does nothing. The backend reads `tenant_id` (Long) and the AI server
+  reads `tenant_code` (str) from the *same* token, so `src/demo.ts` no longer
+  absorbs that difference; its constants are display-only.
+- **`tenant_code` was removed from every AI request body/query** for the reason
+  ADR-0022 gives: two sources for one fact can disagree undetectably. It also
+  closed a real hole — semantic-cache keys are per-tenant, so a caller used to be
+  able to ask for another tenant's cache.
+- **`JWT_SECRET` must be identical in two places** (repo-root `.env` and
+  `ai/.env`), unlike `OPENAI_API_KEY` which lives only in `ai/.env`. A mismatch
+  is confusing rather than obvious: issuing still succeeds and only the AI server
+  returns 401.
+
+Auth costs **0.7ms per request** (measured via `spring_security_filterchains_seconds`,
+0.22% of a 312ms request) — if throughput looks off, it is not this. See ADR-0023
+for two throughput hypotheses that were tested and rejected.
 
 - **The synthetic corpus and PostgreSQL share overlapping id ranges for
   different entities.** Corpus users are 1–206 and trades 1–26,702; Postgres has

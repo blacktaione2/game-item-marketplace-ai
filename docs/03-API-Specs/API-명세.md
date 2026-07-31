@@ -11,15 +11,33 @@ updated: 2026-07-31
 | | 백엔드 (Spring Boot) | AI 서버 (FastAPI) |
 |---|---|---|
 | 포트 | 8080 | 8000 |
-| 테넌트 식별 | 헤더 `X-Tenant-Id: 1` (**Long**) | 본문 `tenant_code: "nexon"` (**str**) |
-| 행위자 식별 | 헤더 `X-User-Id: 1` | 없음 |
-| 인증 | **없음** | **없음** |
+| 인증 | `Authorization: Bearer <JWT>` | 동일 (같은 토큰) |
+| 테넌트 식별 | 클레임 `tenant_id` (**Long**) | 클레임 `tenant_code` (**str**) |
+| 행위자 식별 | 클레임 `sub` | 클레임 `sub` |
+| 토큰 발급 | **여기서만** (`POST /api/auth/demo-token`) | 검증 전용 |
 
-프론트엔드의 `src/demo.ts`가 상수 하나로 이 차이를 흡수한다. 두 서버 어느
-쪽도 고치지 않기 위한 선택이며, 근본 통일은 Phase 8 대상이다.
+**요청에 테넌트·행위자를 싣지 않는다.** 두 서버가 표기(Long vs str)는 다르게
+쓰지만 토큰이 둘 다 싣고 다니므로 **출처는 하나**다(ADR-0023). 예전에는
+프론트의 `src/demo.ts`가 이 차이를 흡수했는데, 그 값들은 이제 서버로 나가지
+않는다.
 
-> **인증이 없다.** 두 서버 모두 헤더/본문의 값을 그대로 신뢰한다.
-> 이 배포를 외부에 노출하지 말 것.
+| 클레임 | 값 | 쓰임 |
+|---|---|---|
+| `sub` | userId | 행위자 |
+| `tenant_id` | `1` | 백엔드 조회 격리 |
+| `tenant_code` | `"nexon"` | AI 서버의 ES 인덱스 선택 |
+| `role` | `USER` / `ADMIN` | GM 검토 큐 접근 |
+| `exp` / `iss` | 1시간 / `gimp-backend` | |
+
+> **발급이 데모다.** `POST /api/auth/demo-token`은 비밀번호를 확인하지 않으므로
+> **userId만 알면 누구나 그 사용자의 토큰을 받는다.** 검증은 전부 실제로
+> 동작하지만(서명·만료·발급자·필수 클레임), HTTPS가 없고 발급이 무인증이므로
+> **이 배포를 외부에 노출하지 말 것.**
+
+**공통 상태 코드**: **401**(토큰 없음·무효·만료), **403**(권한 부족).
+`/actuator/prometheus`, `/actuator/health`, `/api/health`,
+`/api/auth/demo-token`, AI의 `/health`·`/metrics`는 인증에서 제외된다 —
+부하 하네스와 헬스체크가 읽는 경로다.
 
 ## 오리진과 CORS
 
@@ -47,9 +65,12 @@ updated: 2026-07-31
 
 | 필드 | 타입 | 필수 | 설명 |
 |---|---|---|---|
-| `tenant_code` | str | O | 예: `"nexon"` |
 | `query` | str | O | 자연어 질의 |
 | `use_cache` | bool | | 기본 `true`. 캐시 효과 측정·디버깅용으로 끌 수 있다 |
+
+테넌트는 토큰 클레임에서 온다. 시맨틱 캐시 키가 테넌트별로 갈리므로,
+본문으로 받던 동안에는 **남의 테넌트 캐시를 조회하도록 요청할 수 있었다**
+(ADR-0023).
 
 **응답 — 공통 필드**
 
@@ -153,7 +174,7 @@ MCP 도구가 감싸고 있어 남겨둔 개별 엔드포인트. 라우팅·캐�
 
 ## `POST /api/forecast`
 
-**요청**: `tenant_code`(필수), `item_id`(필수), `horizon`(1~30, 생략 시 모델 기본)
+**요청**: `item_id`(필수), `horizon`(1~30, 생략 시 모델 기본). 테넌트는 클레임에서.
 
 **응답**
 
@@ -195,7 +216,6 @@ MCP 도구가 감싸고 있어 남겨둔 개별 엔드포인트. 라우팅·캐�
 
 | 필드 | 타입 | 필수 | 설명 |
 |---|---|---|---|
-| `tenant_code` | str | O | |
 | `trade_ref` | str | O | `"syn:3"` / `"pg:3"` — **접두사가 공간을 지정한다** |
 
 > **참조가 자기 공간을 들고 온다** (ADR-0022). 합성 코퍼스(거래 1~26,702)와
@@ -253,7 +273,12 @@ MCP 도구가 감싸고 있어 남겨둔 개별 엔드포인트. 라우팅·캐�
 
 ## `GET /api/anomaly/alerts`
 
-**쿼리**: `tenant_code`(필수), `limit`(1~100, 기본 10)
+**쿼리**: `limit`(1~100, 기본 10). 테넌트는 클레임에서.
+
+> **GM 전용 — `role=ADMIN`이 아니면 403.** 이 큐는 다른 사용자의 거래 내역과
+> 상대방 id를 그대로 보여준다. 이 프로젝트에서 역할 인가가 실제로 의미를 갖는
+> 유일한 지점이다(ADR-0023). 프론트가 메뉴를 숨기는 것은 접근 제어가 아니었다 —
+> URL을 직접 치면 열렸다.
 
 **응답**: `{tenant_code, threshold, alert_percentile, total_trades, total_alerts, alerts[]}`
 — `alerts[]`의 각 항목은 `/detect` 응답과 같은 형태다.
@@ -306,19 +331,32 @@ Prometheus 텍스트 포맷. **Prometheus를 띄우지 않아도 쓸모가 있�
 
 # 백엔드 (Spring Boot, :8080)
 
-모든 엔드포인트가 `X-Tenant-Id`를 요구하고, 쓰기 계열은 `X-User-Id`도 요구한다.
-**헤더가 없으면 400이다** — JWT 도입 전까지의 임시 방편이며, 클레임 추출로
-교체될 자리라 헤더 파싱을 컨트롤러 레이어에 모아뒀다.
+## `POST /api/auth/demo-token`
+
+**인증 없이** 호출한다 — 토큰을 받으러 오는 길이다.
+
+**요청**: `{ "userId": 3 }` →
+**응답**: `{ "token", "expiresIn": 3600, "userId", "username", "role" }`
+
+테넌트·역할은 **요청이 아니라 DB에서** 읽어 클레임에 싣는다. 없는 userId면 404.
+
+> **로그인이 아니다.** 비밀번호를 확인하지 않는다. 경로 이름이 그 경고를 겸한다.
 
 ## 아이템
 
-| 메서드 | 경로 | 헤더 | 성공 |
+전부 **인증 필요**. 테넌트·행위자는 클레임에서 오므로 요청에 싣지 않는다 —
+`X-Tenant-Id` / `X-User-Id` 헤더는 **제거됐고, 보내도 무시된다.**
+
+| 메서드 | 경로 | 행위자 쓰임 | 성공 |
 |---|---|---|---|
-| POST | `/api/items` | Tenant, User(판매자) | **201** |
-| GET | `/api/items/{itemId}` | Tenant | 200 |
-| GET | `/api/items?page=&size=` | Tenant | 200 (`Page<ItemResponse>`) |
-| PUT | `/api/items/{itemId}` | Tenant, User | 200 |
-| DELETE | `/api/items/{itemId}` | Tenant, User | **204** |
+| POST | `/api/items` | `sub` = 판매자 | **201** |
+| GET | `/api/items/{itemId}` | — | 200 |
+| GET | `/api/items?page=&size=` | — | 200 (`Page<ItemResponse>`) |
+| PUT | `/api/items/{itemId}` | `sub` = 요청자(판매자 검사) | 200 |
+| DELETE | `/api/items/{itemId}` | `sub` = 요청자(판매자 검사) | **204** |
+
+조회는 전부 `tenant_id` 클레임으로 격리된다. **다른 테넌트의 아이템은 404**이지
+403이 아니다 — 존재 여부를 알려주지 않는다.
 
 **`ItemCreateRequest`**: `name`(필수), `description`, `saleType`
 (`FIXED_PRICE`\|`AUCTION`, 필수), `price`(> 0, 필수), `stock`(>= 0, 필수)

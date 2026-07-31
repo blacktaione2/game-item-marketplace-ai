@@ -76,6 +76,13 @@ class Settings(BaseSettings):
     # 키에 박히는 버전. 재색인/모델 재학습 시 올리면 캐시가 통째로 무효화된다.
     cache_version: str = "v1"
 
+    # --- Phase 8: 인증 (ADR-0023) ---
+    # **백엔드 application.yml의 jwt.secret과 같은 값이어야 한다.** 대칭키
+    # (HS256)라 발급자와 검증자가 같은 키를 본다. 다르면 발급은 성공하는데 이
+    # 서버만 401을 내므로 증상이 헷갈린다 — 기본값도 백엔드와 맞춰뒀다.
+    jwt_secret: str = "gimp_local_dev_secret_change_me_32b"
+    jwt_issuer: str = "gimp-backend"
+
 
 @lru_cache
 def get_settings() -> Settings:

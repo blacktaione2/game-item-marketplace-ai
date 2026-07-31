@@ -107,11 +107,48 @@ DI로 받는 대신 정적 팩토리로 직접 생성.
   }
 ```
 
+## 사례 3: `@AutoConfigureMockMvc`의 패키지가 옮겨감 (2026-08-01)
+
+### 문제
+
+인증 라운드(ADR-0023)에서 백엔드 첫 행동 테스트를 쓰면서 Boot 3.x 관례대로
+임포트했더니 컴파일이 실패했다.
+
+```
+error: package org.springframework.boot.test.autoconfigure.web.servlet does not exist
+```
+
+### 원인
+
+Boot 4에서 webmvc 테스트 지원이 별도 모듈(`spring-boot-webmvc-test`)로
+쪼개지면서 패키지도 함께 옮겨졌다. 의존성은 이미 있었고(`spring-boot-starter-webmvc-test`),
+**클래스가 없어진 게 아니라 자리가 바뀐 것**이다.
+
+```
+org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc  (3.x)
+org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc       (4.x)
+```
+
+### 해결
+
+임포트만 교체. 확인은 추측하지 말고 jar를 직접 열어보는 게 빠르다.
+
+```bash
+unzip -l ~/.gradle/caches/.../spring-boot-webmvc-test-4.1.0.jar | grep AutoConfigureMockMvc
+```
+
+### 앞의 둘과 다른 점
+
+사례 1·2는 **런타임**에만 드러났지만 이건 **컴파일에서 잡힌다.** 같은 축
+(Boot 4 재배치)이라도 테스트 코드 쪽은 즉시 실패하므로 훨씬 싸다 — 다만
+"의존성이 있으니 클래스도 그 자리에 있겠지"라는 가정은 똑같이 틀렸다.
+
 ## 공통 원인
 
-두 사례 모두 "Boot 3.x 시절에 당연히 있던 autoconfigure 클래스/빈이 Boot
+세 사례 모두 "Boot 3.x 시절에 당연히 있던 autoconfigure 클래스/빈이 Boot
 4.x에서 이름이 바뀌었거나, 모듈이 쪼개졌거나, 아예 없어졌다"는 같은
-축에서 나왔다. 하나는 서드파티 스타터가 구버전 클래스를 참조해서 터진
+축에서 나왔다(사례 3은 테스트 지원 클래스의 패키지 이동이라 컴파일에서
+잡혔다). 하나는 서드파티 스타터가 구버전 클래스를 참조해서 터진
 것(라이브러리 쪽이 아직 Boot 4를 못 따라감)이고, 다른 하나는 Boot
 자신의 오토컨피그가 이 프로젝트의 의존성 조합에서는 활성화되지 않은
 것(우리 쪽 의존성 구성이 그 오토컨피그의 활성화 조건을 충족 못 시킴)이라

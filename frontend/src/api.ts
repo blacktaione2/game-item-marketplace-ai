@@ -4,8 +4,10 @@
  * 경로 접두사로 어느 서버인지 가른다 — vite.config.ts의 dev proxy가
  * `/api/backend` → 8080, `/api/ai` → 8000 으로 넘긴다. 브라우저는 단일
  * 오리진만 보므로 양쪽 서버에 CORS 설정이 필요 없다.
+ *
+ * 테넌트·행위자는 **요청에 싣지 않는다.** 둘 다 JWT 클레임에서 오고, 이 파일은
+ * 토큰만 붙인다 (ADR-0023).
  */
-import { TENANT } from "./demo";
 
 // --- 백엔드(Spring Boot) 응답 타입 -----------------------------------------
 export type SaleType = "FIXED_PRICE" | "AUCTION";
@@ -170,20 +172,26 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(
-  path: string,
-  init: RequestInit & { userId?: number } = {},
-): Promise<T> {
-  const { userId, ...rest } = init;
-  const headers = new Headers(rest.headers);
-  headers.set("Content-Type", "application/json; charset=utf-8");
-  // 백엔드만 헤더로 행위자를 식별한다. AI 서버는 본문의 tenant_code를 쓴다.
-  if (path.startsWith("/api/backend")) {
-    headers.set("X-Tenant-Id", String(TENANT.id));
-    if (userId != null) headers.set("X-User-Id", String(userId));
-  }
+/**
+ * 발급받은 JWT. 모듈 변수로 두는 이유는 `request()`가 컴포넌트 밖이기 때문이고,
+ * 새로고침하면 사라지는 게 맞다 — 데모 토큰이라 다시 받으면 그만이다.
+ * localStorage에 두면 XSS 표면만 늘고 얻는 게 없다.
+ */
+let accessToken: string | null = null;
 
-  const response = await fetch(path, { ...rest, headers });
+export function setAccessToken(token: string | null): void {
+  accessToken = token;
+}
+
+async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const headers = new Headers(init.headers);
+  headers.set("Content-Type", "application/json; charset=utf-8");
+  // **두 서버가 같은 토큰을 쓴다.** 예전에는 백엔드만 헤더로 행위자를 식별하고
+  // AI 서버는 본문의 tenant_code를 봤는데, 그 tenant_code는 프론트가 자칭하는
+  // 값이었다. 이제 테넌트도 토큰 클레임에서 온다 (ADR-0023).
+  if (accessToken) headers.set("Authorization", `Bearer ${accessToken}`);
+
+  const response = await fetch(path, { ...init, headers });
   if (!response.ok) {
     // 백엔드는 {message}, AI 서버는 {detail} 로 에러를 준다. 둘 다 흡수한다.
     let message = `요청 실패 (HTTP ${response.status})`;
@@ -198,43 +206,56 @@ async function request<T>(
   return response.json() as Promise<T>;
 }
 
+export interface DemoToken {
+  token: string;
+  expiresIn: number;
+  userId: number;
+  username: string;
+  role: string;
+}
+
 export const api = {
+  /**
+   * 데모 사용자 전환용 토큰 발급. **로그인이 아니다** — 비밀번호를 확인하지
+   * 않으므로 userId만 알면 누구나 받는다. 이 배포를 외부에 노출하면 안 되는
+   * 이유가 여전히 유효하다(ADR-0023).
+   */
+  demoToken: (userId: number) =>
+    request<DemoToken>("/api/backend/auth/demo-token", {
+      method: "POST",
+      body: JSON.stringify({ userId }),
+    }),
+
   getItem: (itemId: number) => request<Item>(`/api/backend/items/${itemId}`),
 
-  purchase: (itemId: number, quantity: number, userId: number) =>
+  // 구매자·입찰자는 토큰에서 온다 — 더 이상 프론트가 지목하지 않는다.
+  purchase: (itemId: number, quantity: number) =>
     request<Trade>(`/api/backend/items/${itemId}/purchase`, {
       method: "POST",
       body: JSON.stringify({ quantity }),
-      userId,
     }),
 
-  bid: (itemId: number, bidPrice: number, userId: number) =>
+  bid: (itemId: number, bidPrice: number) =>
     request<Trade>(`/api/backend/items/${itemId}/bids`, {
       method: "POST",
       body: JSON.stringify({ bidPrice }),
-      userId,
     }),
 
+  // AI 서버 요청에서도 tenant_code가 빠졌다 — 토큰 클레임이 출처다.
   ask: (query: string, useCache = true) =>
     request<AssistantResponse>("/api/ai/assistant", {
       method: "POST",
-      body: JSON.stringify({
-        tenant_code: TENANT.code,
-        query,
-        use_cache: useCache,
-      }),
+      body: JSON.stringify({ query, use_cache: useCache }),
     }),
 
   forecast: (itemId: number) =>
     request<Forecast>("/api/ai/forecast", {
       method: "POST",
-      body: JSON.stringify({ tenant_code: TENANT.code, item_id: itemId }),
+      body: JSON.stringify({ item_id: itemId }),
     }),
 
   alerts: (limit = 10) =>
-    request<AlertQueue>(
-      `/api/ai/anomaly/alerts?tenant_code=${TENANT.code}&limit=${limit}`,
-    ),
+    request<AlertQueue>(`/api/ai/anomaly/alerts?limit=${limit}`),
 };
 
 export function formatWon(value: number): string {

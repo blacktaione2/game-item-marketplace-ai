@@ -79,6 +79,26 @@ function itemFor(iteration) {
 }
 
 export function setup() {
+  // 구매자별 토큰을 미리 받아둔다. 인증이 들어오면서(ADR-0023) 헤더로 사용자를
+  // 자칭할 수 없게 됐다 — VU마다 구매자가 다르므로 토큰도 사용자 수만큼 필요하다.
+  // 발급을 setup에서 한 번만 하는 이유는 **측정 구간에 발급 왕복을 섞지 않기**
+  // 위해서다. 토큰 TTL이 1시간이라 부하 구간(최대 수 분) 안에서는 만료되지 않는다.
+  const tokens = {};
+  for (const userId of BUYERS) {
+    const issued = http.post(
+      `${BASE}/api/auth/demo-token`,
+      JSON.stringify({ userId }),
+      { headers: { "Content-Type": "application/json" } },
+    );
+    if (issued.status !== 200) {
+      throw new Error(
+        `토큰 발급 실패 (user=${userId}, status=${issued.status}). ` +
+          `백엔드가 떠 있고 seed-demo.sql이 적용됐는지 확인하세요.`,
+      );
+    }
+    tokens[userId] = issued.json("token");
+  }
+
   // 워밍업. 백엔드는 AI만큼 극적이진 않지만 JIT·커넥션 풀·Hibernate 첫 쿼리가
   // 첫 요청에 실린다. 이 값을 버리지 않고 따로 보고한다 — ADR-0019에서 AI의
   // 콜드 스타트가 35초였고, 그건 온디맨드 기동 설계에 직접 영향을 준다.
@@ -86,29 +106,28 @@ export function setup() {
   const warm = http.post(
     `${BASE}/api/items/${CONTENDED_ITEM}/purchase`,
     JSON.stringify({ quantity: 1 }),
-    { headers: headers(3) },
+    { headers: headers(tokens[3]) },
   );
   const coldMs = Date.now() - started;
   console.log(`[warmup] status=${warm.status} cold_start_ms=${coldMs}`);
-  return { coldMs };
+  return { coldMs, tokens };
 }
 
-function headers(userId) {
+function headers(token) {
   return {
     "Content-Type": "application/json",
-    "X-Tenant-Id": "1",
-    "X-User-Id": String(userId),
+    Authorization: `Bearer ${token}`,
   };
 }
 
-export default function () {
+export default function (data) {
   const itemId = itemFor(__ITER);
   const buyer = BUYERS[(__VU + __ITER) % BUYERS.length];
 
   const res = http.post(
     `${BASE}/api/items/${itemId}/purchase`,
     JSON.stringify({ quantity: 1 }),
-    { headers: headers(buyer), tags: { profile: PROFILE } },
+    { headers: headers(data.tokens[buyer]), tags: { profile: PROFILE } },
   );
 
   if (res.status === 201) {
