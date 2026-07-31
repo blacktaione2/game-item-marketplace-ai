@@ -34,12 +34,16 @@ def _index_by_trade_id() -> dict[int, int]:
     return {trade["trade_id"]: index for index, trade in enumerate(trades)}
 
 
-def detect_trade(
-    tenant_code: str, trade_id: int, id_space: IdSpace = IdSpace.SYNTHETIC
-) -> dict[str, Any]:
+def detect_trade(tenant_code: str, trade_id: int, id_space: IdSpace) -> dict[str, Any]:
     # 어느 데이터 평면의 id인지 호출자가 밝혀야 한다. 합성 코퍼스(1~26,702)와
     # 백엔드 거래(1~)의 범위가 겹쳐서, 검사 없이 받으면 엉뚱한 거래의 판정을
     # 조용히 돌려주게 된다. app/core/ids.py 참고.
+    #
+    # **id_space에 기본값을 두지 않는다.** 예전엔 SYNTHETIC이 기본이었는데,
+    # 그러면 인자를 빠뜨린 새 호출자가 조용히 합성 데이터로 답을 받는다 —
+    # 이 함수가 막으려는 바로 그 실패 방식이다. 라우터는 처음부터 기본값을
+    # 두지 않았으므로, 함수 쪽 기본값은 그 의도와 어긋나 있었다(ADR-0022).
+    # tests/test_id_space.py 가 시그니처를 고정한다.
     require_supported(id_space, "거래")
 
     detector = get_detector()
@@ -62,7 +66,17 @@ def detect_trade(
 
 
 def list_alerts(tenant_code: str, limit: int = 10) -> dict[str, Any]:
-    """임계값을 넘은 거래를 점수 내림차순으로. GM 검토 큐에 해당한다."""
+    """임계값을 넘은 거래를 점수 내림차순으로. GM 검토 큐에 해당한다.
+
+    **이 경로는 `require_supported()`를 지나지 않는다.** 외부에서 id를 받지
+    않고 합성 코퍼스(`build_timeline()`)만 훑기 때문에, 지금은 검사할 대상이
+    없다 — 호출자가 공간을 지목할 여지 자체가 없다.
+
+    이 전제가 깨지는 순간이 있다: **이 목록에 백엔드 거래가 섞이면** 그때는
+    거래마다 공간이 달라지므로 `_summarize()`의 `id_space` 하드코딩이 곧바로
+    거짓이 되고, 화면은 합성 유저 번호를 실제 번호처럼 보여주게 된다.
+    그때 이 함수는 거래별로 공간을 들고 다니게 바뀌어야 한다(ADR-0022).
+    """
     detector = get_detector()
     threshold = detector.threshold(tenant_code)
 

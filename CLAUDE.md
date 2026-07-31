@@ -113,7 +113,8 @@ stands on reason 2), and temperature does not explain the residual mis-extractio
 **Phase 8 is underway**, in a fixed order with dependencies worked out (see the
 roadmap). Done so far: README + GitHub remote (`game-item-marketplace-ai`,
 public), **observability stage 1** (ADR-0019), **load testing** (ADR-0020), and
-**CI/CD stage 1** (ADR-0021). Next is **id-space unification (B)**.
+**CI/CD stage 1** (ADR-0021), and **id-space prefixing** (ADR-0022, scoped down
+to the representation layer). Next is **security (JWT + rate limiting)**.
 
 CI is three GitHub Actions workflows (`.github/workflows/{ai,backend,frontend}.yml`),
 split into separate files so each can carry its own `paths` filter — a
@@ -306,11 +307,30 @@ absorbs that difference so neither server had to change.
 - **The synthetic corpus and PostgreSQL share overlapping id ranges for
   different entities.** Corpus users are 1–206 and trades 1–26,702; Postgres has
   users 1–5 and trades 1–N. `trade_id=3` is valid in both and means different
-  things, so a range check cannot tell them apart. Every entry point that takes
-  such an id must call `require_supported()` from `app/core/ids.py` — callers
-  declare the space and an unwired one returns **501**, never a silently wrong
-  answer. Items are the exception: seeding aligned them. Phase 8 unifies the
-  rest; adding `BACKEND` to `SUPPORTED_SPACES` opens every guard at once.
+  things, so a range check cannot tell them apart. Items are the exception:
+  seeding aligned them. Since ADR-0022 an external trade reference **carries its
+  own space** — `"syn:3"` / `"pg:3"`, parsed by `parse_ref()` in
+  `app/core/ids.py`. A bare `"3"` is a **400**, never a guess. Conversion happens
+  at the API boundary only; internally ids stay ints, because they are
+  `index + 1` **array positions** that `features.py` uses solely as grouping keys
+  — the model has never seen an id as a value.
+
+  Three things about that guard are easy to get wrong:
+
+  - **A well-formed reference to an unwired space is 501, not 400.** `parse_ref()`
+    deliberately does not check support; `require_supported()` does that after.
+    The request isn't wrong, the server just can't read that plane yet.
+  - **`/api/anomaly/alerts` does not pass the guard at all**, and older docs
+    claiming "every entry point does" were wrong. It takes no external id and
+    walks only the synthetic corpus, so `_summarize()` hardcodes
+    `id_space: "synthetic"`. That is safe *today* and false the moment backend
+    trades enter that list. No token guard was added there — a check that always
+    passes is decoration that buys false confidence.
+  - **Parsing `pg:3` is not the same as handling it.** Adding `BACKEND` to
+    `SUPPORTED_SPACES` opens every guard at once, which is exactly why it must
+    wait for code that turns a Postgres trade into the 11 feature axes;
+    history-based features like `pair_trades_7d` are meaningless on 5 demo rows.
+    Opening it early replaces an honest 501 with a wrong answer.
 
 `ai/scripts/export_demo_sql.py` generates
 `backend/src/main/resources/db/seed-demo.sql` from the same corpus that seeds

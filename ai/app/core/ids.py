@@ -68,3 +68,58 @@ def require_supported(space: IdSpace, entity: str) -> None:
     """
     if space not in SUPPORTED_SPACES:
         raise UnsupportedIdSpaceError(space, entity)
+
+
+# --- 접두사 표기 (Phase 8) -------------------------------------------------
+#
+# 외부에서 들어오는 id는 **공간을 자기가 들고 온다.** `"syn:3"`은 합성 코퍼스
+# 3번, `"pg:3"`은 PostgreSQL 3번이다. 둘 다 유효하고 서로 다른 거래이므로,
+# 접두사가 없는 `"3"`은 해석하지 않고 거부한다 — 추측이 바로 이 모듈이 막으려는
+# 결함이다.
+#
+# 내부는 정수를 유지한다. 합성 id는 `index + 1`로 매겨지는 **배열 위치**이고
+# (`corpus/trades.py`, `anomaly/dataset.py`), 특징 계산에서는 묶음 키로만
+# 쓰인다 — 모델은 id를 값으로 본 적이 없다. 위치 인덱스를 문자열로 바꿔봐야
+# 정체성이 되지 않으므로 변환은 경계에서만 한다. ADR-0022 참고.
+
+_PREFIX_BY_SPACE: dict[IdSpace, str] = {
+    IdSpace.SYNTHETIC: "syn",
+    IdSpace.BACKEND: "pg",
+}
+_SPACE_BY_PREFIX: dict[str, IdSpace] = {
+    prefix: space for space, prefix in _PREFIX_BY_SPACE.items()
+}
+
+
+class MalformedIdRefError(ValueError):
+    """접두사가 없거나 해석할 수 없는 참조."""
+
+    def __init__(self, ref: str, entity: str) -> None:
+        self.ref = ref
+        prefixes = ", ".join(f"{p}:1" for p in sorted(_SPACE_BY_PREFIX))
+        super().__init__(
+            f"{entity} 참조 '{ref}'를 해석할 수 없습니다. "
+            f"공간 접두사가 필요합니다 (예: {prefixes}). "
+            "합성 데모 데이터와 실제 거래는 id 범위가 겹치므로, 접두사 없는 "
+            "번호는 어느 쪽인지 알 수 없습니다."
+        )
+
+
+def parse_ref(ref: str, entity: str) -> tuple[IdSpace, int]:
+    """`"syn:3"` → `(SYNTHETIC, 3)`.
+
+    지원 여부는 보지 않는다 — `"pg:3"`은 정상적으로 파싱되고, 그다음
+    `require_supported()`가 501로 막는다. **해석 불가(400)와 미연동(501)은
+    다른 답이어야 한다.**
+    """
+    prefix, separator, raw = ref.partition(":")
+    if not separator or prefix not in _SPACE_BY_PREFIX:
+        raise MalformedIdRefError(ref, entity)
+    if not raw.isdigit() or int(raw) < 1:
+        raise MalformedIdRefError(ref, entity)
+    return _SPACE_BY_PREFIX[prefix], int(raw)
+
+
+def format_ref(space: IdSpace, value: int) -> str:
+    """`(SYNTHETIC, 3)` → `"syn:3"`."""
+    return f"{_PREFIX_BY_SPACE[space]}:{value}"

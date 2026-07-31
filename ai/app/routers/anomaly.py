@@ -3,7 +3,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from app.core.ids import IdSpace, UnsupportedIdSpaceError
+from app.core.ids import MalformedIdRefError, UnsupportedIdSpaceError, parse_ref
 from app.services.anomaly.exceptions import (
     AnomalyModelNotTrainedError,
     TradeNotFoundError,
@@ -16,17 +16,24 @@ router = APIRouter(prefix="/api/anomaly", tags=["anomaly"])
 
 class DetectRequest(BaseModel):
     tenant_code: str
-    trade_id: int
-    # **기본값을 두지 않는다.** 합성 코퍼스와 백엔드 거래는 id 범위가 겹치므로
-    # 호출자가 어느 쪽인지 밝혀야 한다. 기본값을 주면 그 순간 "모르고 넘긴
-    # 사람"이 조용히 틀린 답을 받는다.
-    id_space: IdSpace
+    # 참조가 **자기 공간을 들고 온다** — `"syn:3"` / `"pg:3"`.
+    # 예전엔 `trade_id: int` + `id_space` 두 필드였는데, 그러면 둘이 어긋나게
+    # 보낼 수 있고 어긋난 걸 검출할 방법도 없다. 한 값으로 합치면 그 조합
+    # 자체가 사라진다. 접두사 없는 `"3"`은 400이다 — 추측하지 않는다.
+    trade_ref: str
 
 
 @router.post("/detect")
 def detect(request: DetectRequest) -> dict[str, Any]:
+    # 해석 불가(400)와 미연동(501)은 다른 답이다. 전자는 요청을 고치면 되고,
+    # 후자는 요청이 맞는데 서버가 아직 못 한다는 뜻이다.
     try:
-        return detect_trade(request.tenant_code, request.trade_id, request.id_space)
+        id_space, trade_id = parse_ref(request.trade_ref, "거래")
+    except MalformedIdRefError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+    try:
+        return detect_trade(request.tenant_code, trade_id, id_space)
     except UnsupportedIdSpaceError as e:
         # 요청은 이해했지만 그 데이터 평면이 아직 연동되지 않았다.
         raise HTTPException(status_code=501, detail=str(e)) from e
