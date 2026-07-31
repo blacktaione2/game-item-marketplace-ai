@@ -112,7 +112,25 @@ stands on reason 2), and temperature does not explain the residual mis-extractio
 
 **Phase 8 is underway**, in a fixed order with dependencies worked out (see the
 roadmap). Done so far: README + GitHub remote (`game-item-marketplace-ai`,
-public), and **observability stage 1** (ADR-0019). Next is **load testing**.
+public), **observability stage 1** (ADR-0019), and **load testing** (ADR-0020).
+Next is **CI/CD stage 1**.
+
+Load-test facts worth carrying (`load/`, k6):
+
+- **Overselling is 0 across ~26,600 concurrent purchases** — ADR-0001's claim
+  finally verified under real concurrency. `load/run.sh` asserts
+  `stock delta == 201 responses + 1 warmup` on every run; keep that assertion
+  if you touch the harness.
+- **The bottleneck moves with the load shape.** One contended item: 106 req/s,
+  lock *wait* 0.178s vs *hold* 0.007s (queuing). Spread over 20 items: 430
+  req/s, wait ~0, but hold rises 5× (the DB becomes the constraint). Measuring
+  only the contended profile would have stopped at "the lock is the bottleneck".
+- **LLM is 97% of AI search latency** (live p95 4.45s; ES + reranker + embedding
+  together are 82ms). Always split `cache-warm` from `live-llm` — otherwise you
+  are benchmarking OpenAI's rate limiter, not this system.
+- **`seed-loadtest.sql` is a prerequisite, not an optimisation.** Demo items have
+  `stock=10`, so any real load exhausts them in ~10 requests and you end up
+  measuring rejections instead of lock contention.
 
 Two things from ADR-0019 that change how you read this codebase:
 
@@ -296,6 +314,13 @@ Postgres and ES drift apart and search results stop resolving to real rows.
   toward it. It was reverted. The line looked obviously correct and would have
   passed review. There is a harness for exactly this:
   `scripts/evaluate_rewrite_determinism.py`.
+- **The semantic cache pays for an embedding it usually doesn't use.** `ask()`
+  encodes the query *before* calling `cache.lookup()`, but `lookup()` tries the
+  exact-match key first and that path needs only a hash of the query string.
+  Exact match is the default for every intent except FAQ (ADR-0012), so a cache
+  hit burns ~108ms of encoding for nothing — measured, and it is most of the
+  283ms p95 on the cache-hit path. Registered on the roadmap; making it lazy
+  should be verified with `load/run.sh ai cache-warm`, not assumed.
 - **A script that deliberately corrupts a file to prove a guard fires must
   restore in `finally`, and you must then verify the restore.** Injecting a
   collision is the only way to show an import-time guard actually works, so this

@@ -14,3 +14,6 @@
 
 # TypeScript 증분 빌드 산출물
 *.tsbuildinfo
+
+# 부하테스트 산출물 (실행마다 생성). 요약은 ADR/DevLog에 남긴다.
+load/out/
