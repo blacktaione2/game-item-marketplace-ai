@@ -102,3 +102,94 @@ class TestNoResultResponsesAreNotStored:
         assert is_cacheable(Intent.ANOMALY_CHECK, {"detection": {}}) is False
         assert allows_semantic(Intent.ITEM_SEARCH) is False
         assert allows_semantic(Intent.ANOMALY_CHECK) is False
+
+
+# --- 적중 경로에서 임베딩을 부르지 않는다 (ADR-0026) -------------------------
+
+
+class _FakeRedis:
+    """`lookup()`이 쓰는 만큼만 흉내낸다."""
+
+    def __init__(self, entries: dict[str, str]):
+        self._entries = entries
+
+    async def smembers(self, key: str):
+        return {k.encode() for k in self._entries}
+
+    async def mget(self, keys: list[str]):
+        return [self._entries.get(k) for k in keys]
+
+    async def srem(self, key: str, *members):
+        return 0
+
+
+def _stored_payload(query: str, vector: list[float], intent: str) -> str:
+    import base64
+    import json
+
+    import numpy as np
+
+    return json.dumps(
+        {
+            "query": query,
+            "embedding": base64.b64encode(
+                np.asarray(vector, dtype=np.float32).tobytes()
+            ).decode("ascii"),
+            "response": {"answer": "캐시된 응답"},
+            "intent": intent,
+        },
+        ensure_ascii=False,
+    )
+
+
+class TestEmbeddingIsNotComputedOnExactHit:
+    """정확 일치 적중에서 **임베딩 호출 자체가 일어나지 않아야** 한다.
+
+    적중률이나 `llm_calls`가 그대로인 것만으로는 확인되지 않는다 — 결과가 같아도
+    내부에서 여전히 즉시 계산하고 있을 수 있기 때문이다. 그래서 **부르면 터지는**
+    콜러블을 넘긴다.
+
+    이게 중요한 이유는 절약되는 15.77ms가 자기 요청에서 끝나지 않기 때문이다.
+    `encode_one`은 동기 CPU 호출이라 `async` 핸들러에서 **이벤트 루프를 막고**,
+    동시 부하에서는 그 시간이 다른 요청의 대기로 번진다(ADR-0026).
+    """
+
+    def _cache(self, entries):
+        return SemanticCache(
+            redis_client=_FakeRedis(entries), threshold=0.98, max_entries=100, version="v1"
+        )
+
+    def test_exact_hit_never_calls_embed(self):
+        import asyncio
+
+        def explode():
+            raise AssertionError("정확 일치인데 임베딩이 계산됐다")
+
+        cache = SemanticCache(
+            redis_client=None, threshold=0.98, max_entries=100, version="v1"
+        )
+        key = cache.entry_key("nexon", "롱소드 시세")
+        cache = self._cache({key: _stored_payload("롱소드 시세", [0.1] * 384, "item_search")})
+
+        hit = asyncio.run(cache.lookup("nexon", "롱소드 시세", explode))
+        assert hit is not None
+        assert hit["match_type"] == "exact"
+
+    def test_miss_calls_embed_exactly_once(self):
+        """유사도 경로는 임베딩이 필요하다 — 안 부르면 그것대로 결함이다."""
+        import asyncio
+
+        calls = []
+
+        def embed():
+            calls.append(1)
+            return [0.0] * 384
+
+        cache = SemanticCache(
+            redis_client=None, threshold=0.98, max_entries=100, version="v1"
+        )
+        key = cache.entry_key("nexon", "다른 질의")
+        cache = self._cache({key: _stored_payload("다른 질의", [0.1] * 384, "faq_smalltalk")})
+
+        asyncio.run(cache.lookup("nexon", "롱소드 시세", embed))
+        assert len(calls) == 1
