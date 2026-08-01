@@ -260,7 +260,7 @@ CI가 커밋마다 도는 건 여기까지다 — **AI 116건 + 백엔드 10건 
 | [02-AI-Pipeline](docs/02-AI-Pipeline/요청-타입별-파이프라인.md) | 요청 유형별 실행 흐름 종합 |
 | [03-API-Specs](docs/03-API-Specs/API-명세.md) | 두 서버의 엔드포인트·상태 코드 |
 | [04-DevLog](docs/04-DevLog/) | 날짜별 경과 |
-| [05-Troubleshooting](docs/05-Troubleshooting/) | 재발 조건이 실재하는 진단 패턴 12건 |
+| [05-Troubleshooting](docs/05-Troubleshooting/) | 재발 조건이 실재하는 진단 패턴 13건 |
 
 읽을 것을 하나만 고른다면 [ADR-0018](docs/01-Decisions/0018-리랭커-하한-재측정.md)
 — 하나의 결정이 기각되고, 원인이 밝혀져 되살아났다가, 분할을 전수 열거해
