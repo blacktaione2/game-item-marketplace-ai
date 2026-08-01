@@ -162,6 +162,10 @@ class TestEmbeddingIsNotComputedOnExactHit:
     def test_exact_hit_never_calls_embed(self):
         import asyncio
 
+        # **일부러 동기 함수로 둔다.** 콜러블은 async로 바뀌었지만(ADR-0028),
+        # `async def`로 쓰면 호출만으로는 코루틴이 생길 뿐 아무 일도 안 일어나고
+        # `await` 해야 터진다 — 즉 `embed()`를 부르고 기다리지 않는 구현을
+        # 통과시킨다. 동기 함수는 **호출되는 순간** 터지므로 가드가 더 강하다.
         def explode():
             raise AssertionError("정확 일치인데 임베딩이 계산됐다")
 
@@ -181,7 +185,7 @@ class TestEmbeddingIsNotComputedOnExactHit:
 
         calls = []
 
-        def embed():
+        async def embed():
             calls.append(1)
             return [0.0] * 384
 

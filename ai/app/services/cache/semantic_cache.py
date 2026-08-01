@@ -27,7 +27,7 @@ import base64
 import hashlib
 import json
 import logging
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 import numpy as np
@@ -63,7 +63,10 @@ class SemanticCache:
 
     # --- 조회 ------------------------------------------------------------
     async def lookup(
-        self, tenant_code: str, query: str, embed: Callable[[], list[float]]
+        self,
+        tenant_code: str,
+        query: str,
+        embed: Callable[[], Awaitable[list[float]]],
     ) -> dict[str, Any] | None:
         """캐시 조회. 정확 일치 우선, 그 다음 (허용된 의도에 한해) 유사도.
 
@@ -84,6 +87,10 @@ class SemanticCache:
 
         콜러블로 받으면 정확 일치일 때 **호출 자체가 일어나지 않는다.**
         캐시 모듈이 임베딩 서비스를 알게 되는 결합도 생기지 않는다.
+
+        콜러블이 **async**인 이유는 그 다음 라운드다(ADR-0028): 계산이 필요한
+        경우에도 이제 전용 스레드로 나가므로 호출자가 `await` 해야 한다.
+        미적중 경로의 15ms가 남 대신 자기 스레드에서 소모된다.
         """
         entries, keys = await self._load_entries(tenant_code)
         if not entries:
@@ -97,7 +104,7 @@ class SemanticCache:
                 return _hit(entry, key, 1.0, "exact")
 
         vectors = np.stack([entry["_vector"] for entry in entries])
-        query_vector = _normalize(np.asarray(embed(), dtype=np.float32))
+        query_vector = _normalize(np.asarray(await embed(), dtype=np.float32))
         similarities = vectors @ query_vector
 
         best = int(np.argmax(similarities))

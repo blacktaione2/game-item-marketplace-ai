@@ -19,6 +19,7 @@ from typing import Any
 import numpy as np
 from elasticsearch import AsyncElasticsearch
 
+from app.core.threadpool import run_cpu
 from app.corpus.trade_history import get_price_series, items_with_history
 from app.services.forecast.dataset import to_arrays
 from app.services.search.embedding import get_embedding_service
@@ -37,7 +38,7 @@ async def find_donors(
     if not pool:
         return []
 
-    vector = get_embedding_service().encode_one(embedding_text(item))
+    vector = await run_cpu(get_embedding_service().encode_one, embedding_text(item))
     category = item.get("category")
 
     # 1차: 같은 카테고리 안에서만. 무기 시세를 계정 시세로 설명하면 안 된다.

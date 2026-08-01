@@ -67,6 +67,11 @@ class Settings(BaseSettings):
     # 못 한다(로드맵 기술 부채 항목). 그래서 넉넉하게 잡는다.
     agent_tool_timeout_seconds: float = 20.0
 
+    # 동기 CPU 호출(임베딩·리랭커·분류기)을 내보낼 전용 스레드풀 크기.
+    # 2인 이유는 측정값이다 — 1은 직렬, 4는 torch 초과 구독으로 오히려 느려진다.
+    # 자세한 표는 app/core/threadpool.py.
+    cpu_pool_workers: int = 2
+
     semantic_cache_enabled: bool = True
     # scripts.evaluate_semantic_cache 로 산정한 값. 함정 쌍(한 글자 차이로 답이
     # 뒤집히는 질의)이 0.9787까지 올라와서, 오탐 0%를 지키려면 이 정도로
