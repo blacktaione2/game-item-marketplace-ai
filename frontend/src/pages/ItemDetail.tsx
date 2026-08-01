@@ -1,9 +1,20 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { Suspense, lazy, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
 import { api, formatWon, type Trade } from "../api";
-import PriceChart from "../components/PriceChart";
+
+/**
+ * 차트만 지연 로딩한다 (ADR-0027).
+ *
+ * Recharts는 번들의 대부분인데 **이 화면에서만** 쓰인다. 랜딩 페이지(검색)가
+ * 쓰지도 않는 차트 라이브러리를 받고 있었다.
+ *
+ * 라우트 단위가 아니라 컴포넌트 단위인 이유: `ItemDetail`·`AnomalyQueue`
+ * 자체 코드는 작아서 라우트를 쪼개도 추가 이득이 거의 없고, Suspense 경계만
+ * 세 곳으로 늘어난다.
+ */
+const PriceChart = lazy(() => import("../components/PriceChart"));
 
 // userId는 이제 요청에 안 실린다(토큰이 행위자를 정한다). 화면 표시용으로만
 // 남는다 — "내가 올린 매물"인지 판단하는 데 쓴다.
@@ -22,6 +33,14 @@ export default function ItemDetail({ userId }: { userId: number }) {
     queryKey: ["forecast", id],
     queryFn: () => api.forecast(id),
   });
+
+  // 청크 다운로드와 시세 조회는 **서로 독립**이다. 차트가 실제로 그려지는 건
+  // 예측이 도착한 뒤인데, 그때 청크를 받기 시작하면 두 대기가 직렬로 붙는다.
+  // 마운트 시 미리 받아두면 폴백이 보일 일이 거의 없다 — 지연 로딩으로 생기는
+  // 유일한 UX 변화를 그 자리에서 상쇄한다.
+  useEffect(() => {
+    void import("../components/PriceChart");
+  }, []);
 
   // 낙관적 업데이트를 하지 않는다. Redis 분산 락 경합으로 실패할 수 있고,
   // 그 실패가 이 프로젝트가 보여주려는 동작이라 그대로 드러내야 한다.
@@ -124,7 +143,20 @@ export default function ItemDetail({ userId }: { userId: number }) {
 
         {forecast.data && (
           <>
-            <PriceChart forecast={forecast.data} />
+            {/* 폴백 높이를 차트와 같은 260px로 맞춘다. 다르면 청크가 도착하는
+                순간 아래 내용이 밀려 레이아웃이 튄다. */}
+            <Suspense
+              fallback={
+                <div
+                  className="muted"
+                  style={{ height: 260, display: "flex", alignItems: "center" }}
+                >
+                  차트 불러오는 중…
+                </div>
+              }
+            >
+              <PriceChart forecast={forecast.data} />
+            </Suspense>
             <div className="muted">
               예측 기준가 {formatWon(forecast.data.anchor_price)} ·{" "}
               {/* 등록가와 기준가는 성격이 다르다. 둘을 나란히 두고 빼서

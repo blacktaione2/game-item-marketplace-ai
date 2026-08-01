@@ -110,11 +110,12 @@ temperature 1.0 (ADR-0016 reason 1 was inferred, not measured — the decision
 stands on reason 2), and temperature does not explain the residual mis-extraction
 (1/40 at both settings).
 
-**Phase 8 is underway**, in a fixed order with dependencies worked out (see the
-roadmap). Done so far: README + GitHub remote (`game-item-marketplace-ai`,
-public), **observability stage 1** (ADR-0019), **load testing** (ADR-0020), and
-**CI/CD stage 1** (ADR-0021), and **id-space prefixing** (ADR-0022, scoped down
-to the representation layer). Next is **security (JWT + rate limiting)**.
+**Phase 8 is done** (ADR-0019…0027): observability stage 1, load testing, CI/CD
+stage 1, id-space prefixing, JWT auth, rate limiting, and bundle splitting.
+Three of those rounds ended in a **correction rather than a feature**, and each
+correction was left as an inline block rather than a rewrite — see the roadmap's
+마감 정리 for the list and for what was deliberately left unstarted (ELK/tracing,
+`asyncio.to_thread`, RAGAS gate, real password auth), each with its trigger.
 
 CI is three GitHub Actions workflows (`.github/workflows/{ai,backend,frontend}.yml`),
 split into separate files so each can carry its own `paths` filter — a
