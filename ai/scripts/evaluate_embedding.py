@@ -124,7 +124,10 @@ def main() -> None:
     )
     print("정답은 전부 eval 아이템, train 아이템은 방해 문서로만 존재")
 
-    base = SentenceTransformer(settings.embedding_model)
+    # **`settings.embedding_model` 을 쓰면 안 된다** — 그건 파인튜닝 결과를
+    # 가리키므로 아래 `tuned` 와 같은 모델이 되고, before-after 가 자기 자신과의
+    # 비교가 된다(개선폭이 0으로 나온다). 이 상태로 커밋돼 있었다.
+    base = SentenceTransformer(settings.embedding_base_model)
     before, rank_before = evaluate_model(base, queries, gold_indices, corpus_texts)
 
     tuned_path = Path(args.finetuned)

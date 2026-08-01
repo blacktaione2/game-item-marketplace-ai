@@ -14,6 +14,15 @@ set -uo pipefail
 
 SUITE="${1:?purchase | ai}"
 MODE="${2:?contended|spread|step | cache-warm|live-llm}"
+
+# **모르는 스위트 이름을 조용히 넘기지 않는다.** 예전에는 else 분기가 전부 AI를
+# 돌려서, `backend contended`(존재하지 않는 이름)를 주면 구매 부하 대신 **AI
+# 부하**가 돌았다 — 즉 실수가 OpenAI 과금과 20분짜리 오해로 이어졌다. 실제로
+# 한 번 그렇게 태웠고, 다행히 대부분이 429로 막혀 실호출은 26건이었다.
+case "$SUITE" in
+  purchase|ai) ;;
+  *) echo "알 수 없는 스위트: '$SUITE' (purchase | ai)" >&2; exit 2 ;;
+esac
 VUS="${3:-20}"
 DURATION="${4:-30s}"
 

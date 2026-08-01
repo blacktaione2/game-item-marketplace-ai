@@ -189,6 +189,21 @@ turned an apparently adoptable threshold into a rejected one. Do that before
 adopting any threshold calibrated on a split.
 
 ### Infra
+**Apps are containerized since ADR-0029, behind `--profile app`** — `docker compose
+up -d` still means infra-only, and CI's backend job depends on that. `--profile app`
+adds `backend`/`ai`/`web` plus two one-shot services: `ai-init` (builds the 5 models
+into a volume, then seeds ES) and `db-seed` (applies `seed-demo.sql`, which **cannot**
+run before the backend has booted once, since Hibernate creates the tables).
+nginx reproduces the Vite dev proxy's path rules, which is why **CORS is still absent
+from both servers** — `load/verify-container.sh` asserts that behaviourally, and its
+first version was wrong (it probed a 404 path and passed even with CORS enabled).
+
+Two consequences: **the 650MB of models live in a named volume, not the image**
+(466MB of it is the XLM-R embedding matrix — 250k vocab × 384 dims — not waste), and
+**behind the proxy the `demo-token` IP rate limit collapses to one key** for the whole
+deployment. That second one is registered, not fixed: reading `X-Forwarded-For` needs
+"trust only the proxy's IP" logic, and nginx deliberately does not set the header today.
+
 `docker-compose.yml` at the repo root brings up PostgreSQL, single-node
 Elasticsearch, Redis, and RabbitMQ (see that file / `.env.example` for ports
 and credentials). Elasticsearch is **built from `docker/elasticsearch/Dockerfile`**,

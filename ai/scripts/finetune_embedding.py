@@ -63,7 +63,10 @@ def main() -> None:
         }
     )
 
-    model = SentenceTransformer(settings.embedding_model)
+    # 베이스는 스톡 모델이다. `settings.embedding_model` 은 이 스크립트의
+    # **출력 경로**라서, 그걸 쓰면 자기 출력물을 파인튜닝하려 든다(새 환경에서는
+    # 디렉터리가 없어 HuggingFace 저장소 id로 해석돼 401로 죽는다).
+    model = SentenceTransformer(settings.embedding_base_model)
     loss = MultipleNegativesRankingLoss(model)
 
     out_dir = Path(args.out)

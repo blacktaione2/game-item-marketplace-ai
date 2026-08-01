@@ -9,6 +9,20 @@ elasticsearch[async]>=8.13,<9
 sentence-transformers>=3.0
 optimum[onnxruntime]>=1.20
 
+# torch is deliberately NOT listed. On Linux the default index pulls the CUDA
+# build (gigabytes) and this project runs CPU-only, so it is installed first
+# from the CPU wheel index instead -- see .github/workflows/ai.yml and
+# ai/Dockerfile, which must stay in step. sentence-transformers below then
+# finds it already satisfied.
+#
+# Required by the SentenceTransformer trainer, which transformers only pulls in
+# under the `[torch]` extra. It was installed by hand in the dev venv and never
+# declared, so `scripts.finetune_embedding` died on a fresh container with
+# "requires accelerate>=0.26.0". Third time this repo hit an undeclared import
+# (mcp, redis, now this) -- and the first two were caught by CI, this one could
+# not be: CI runs pytest only, and no test touches a training script.
+accelerate>=0.26
+
 # Phase 4: fine-tuning + RAGAS evaluation.
 # langchain-community is pinned <0.4 on purpose: ragas 0.4.3 does an
 # unconditional top-level import of langchain_community.chat_models.vertexai,
