@@ -59,15 +59,25 @@ updated: 2026-07-31
 
 ## 오리진과 CORS
 
-브라우저는 **Vite dev proxy를 통해 단일 오리진만 본다.**
+브라우저는 **단일 오리진만 본다.** 경로 규칙은 개발과 배포가 같고, 그것을
+제공하는 주체만 다르다.
 
 ```
-/api/backend/*  →  http://localhost:8080
-/api/ai/*       →  http://localhost:8000
+개발  (Vite dev proxy, :5173)      배포  (nginx, :80 — ADR-0029)
+  /api/backend/* -> :8080/api/*      /api/backend/* -> backend:8080/api/*
+  /api/ai/*      -> :8000/api/*      /api/ai/*      -> ai:8000/api/*
 ```
 
-그래서 **양쪽 서버 모두 CORS 설정이 없다.** 추가하지 말 것 — 배포 시에는
-리버스 프록시가 같은 역할을 한다 (ADR-0013).
+그래서 **양쪽 서버 모두 CORS 설정이 없다. 추가하지 말 것.**
+`load/verify-container.sh` 가 이걸 **행동으로** 단언한다 — `Origin` 헤더를
+붙여 보내고 `access-control-*` 가 안 나오는지 본다.
+
+> 두 곳의 경로 규칙이 **어긋나면 개발에서는 되고 배포에서만 깨진다.**
+> `vite.config.ts` 를 고치면 `frontend/nginx.conf` 도 같이 고칠 것.
+
+**AI 서버의 헬스 경로는 `/health` 지 `/api/health` 가 아니다.** 즉 프록시
+경유로는 `/api/ai/health` 가 **404**다(라우터에 `/api` 접두사가 없다).
+이걸 모르고 검사를 짜서 한 번 헛돌았다 — ADR-0029.
 
 ---
 

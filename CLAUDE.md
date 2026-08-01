@@ -515,6 +515,19 @@ Postgres and ES drift apart and search results stop resolving to real rows.
   `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2` (same 384 dims,
   so the index mapping is unchanged) — but reindex either way, since stored
   vectors are model-specific.
+- **`embedding_model` is the runtime model; `embedding_base_model` is what
+  fine-tuning starts from. Never use the first as a base.** Until ADR-0029 one
+  setting served both roles, so `finetune_embedding` fine-tuned its own output
+  (fine locally where the directory exists, a HuggingFace 401 on a fresh
+  environment) and — worse — `evaluate_embedding`/`compare_eval_sets` compared
+  the tuned model **against itself**, which reports a 0 improvement without
+  failing. The Phase 4 numbers are not wrong; they were measured with
+  `EMBEDDING_MODEL` overridden to the stock model. What was wrong is that the
+  committed state could not reproduce them. General rule: **a setting that says
+  what to use but not who uses it can silently serve two roles, and it will only
+  be wrong on one side** — and any before/after comparison must assert its two
+  operands actually differ. Details in
+  `docs/05-Troubleshooting/출력-경로를-입력으로-쓴-설정값.md`.
 - **The forecast model is gitignored too** (`models/price-lstm`). Unlike the
   embedding case this one fails loudly and usefully: `/api/forecast` returns
   **503** with the exact command to run (`python -m scripts.train_forecast`,
