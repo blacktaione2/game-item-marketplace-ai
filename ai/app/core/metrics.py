@@ -73,6 +73,10 @@ rate_limited_total = Counter(
 # 명시적 표를 쓴다 — 새 키가 생겼을 때 조용히 통과하지 않고 눈에 띄게 하려고.
 _STAGE_BY_KEY: dict[str, str] = {
     "cache_ms": "cache",
+    # 캐시 단계의 분해(ADR-0025). 적중 경로에서 임베딩이 지배적인지 판정하려고
+    # 갈랐고, 지연화 이후에는 **적중 시 cache_encode가 0**이어야 한다 — 회귀 신호다.
+    "cache_encode_ms": "cache_encode",
+    "cache_lookup_ms": "cache_lookup",
     "routing_ms": "routing",
     "execution_ms": "execution",
     "query_understanding_ms": "query_understanding",

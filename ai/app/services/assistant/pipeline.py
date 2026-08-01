@@ -127,9 +127,19 @@ async def ask(
     # --- 1. 캐시 (모든 분기 이전) ---------------------------------------
     if use_cache and settings.semantic_cache_enabled:
         started = time.perf_counter()
+        # `cache_ms`를 임베딩과 조회로 **분해**한다. ADR-0020이 적중 경로의
+        # cache_ms를 107.9ms로 재고 "임베딩 낭비"로 지목했는데, 그 안에서
+        # 무엇이 지배적인지는 재본 적이 없다 — 귀속시키기 전에 가른다(ADR-0025).
+        #
+        # 분해가 영구 계측인 이유: 지연화 이후 **적중 경로의 encode_ms는 0이어야**
+        # 하고, 그게 회귀를 잡는 신호다.
+        encode_started = time.perf_counter()
         try:
             embedding = get_embedding_service().encode_one(query)
+            timings["cache_encode_ms"] = _ms(encode_started)
+            lookup_started = time.perf_counter()
             hit = await cache.lookup(tenant_code, query, embedding)
+            timings["cache_lookup_ms"] = _ms(lookup_started)
         except Exception:
             hit = None  # 캐시 장애가 요청 실패로 번지면 안 된다
         timings["cache_ms"] = _ms(started)

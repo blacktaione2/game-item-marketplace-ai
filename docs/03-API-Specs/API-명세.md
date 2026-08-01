@@ -341,9 +341,14 @@ Prometheus 텍스트 포맷. **Prometheus를 띄우지 않아도 쓸모가 있�
 > `rate_limited_total{scope}`이며, `trade.rejection`에 합치지 않았다 — 토큰
 > 발급은 거래가 아니라 이름이 거짓이 된다.
 
-`stage`: `cache` · `routing` · `execution` · `query_understanding` ·
-`embedding` · `retrieval` · `rerank` · `explain` · `forecast_window` ·
-`forecast_inference` · `anomaly_scoring` · `agent_llm` · `agent_tool`
+`stage`: `cache`(= `cache_encode` + `cache_lookup`) · `routing` · `execution` ·
+`query_understanding` · `embedding` · `retrieval` · `rerank` · `explain` ·
+`forecast_window` · `forecast_inference` · `anomaly_scoring` · `agent_llm` ·
+`agent_tool`
+
+> `cache`를 둘로 가른 이유는 적중 경로의 비용을 귀속시키려면 재야 했기 때문이다
+> (ADR-0025). 실측상 **`cache_lookup`이 73%**이고 `cache_encode`는 27%다 —
+> ADR-0020이 "임베딩 낭비"로 적은 것은 틀린 귀속이었다.
 
 `outcome`: `ok` · `no_results` · `tool_failure` — 뒤 둘은 에러가 아니지만
 부하테스트에서 구분해서 봐야 한다.

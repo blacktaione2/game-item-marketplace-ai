@@ -336,12 +336,14 @@ dependency: the backend reuses Redisson's `RRateLimiter`, the AI server uses the
   relaxed values deliberately live *outside* `application.yml` so they cannot be
   left behind, and limits are **raised, never disabled** — the limiter must still
   run so `run.sh` can assert the run wasn't contaminated.
-- **Never build a check on rendered output.** `load/out/*.diff.txt` shows only
-  the top 25 counters by absolute delta, and byte counters share that ranking
-  with request counters — a 3,057-request delta was invisible there, so the
-  contamination warning passed silently on a run that was 90% rejected. Read the
-  `before`/`after` snapshots, which are complete. This is the third time a check
-  in this harness was itself wrong; the pattern and its checklist are in
+- **Never build a check on rendered output.** `load/out/*.diff.txt` once ranked
+  all counters together by absolute delta and cut at 25, so byte counters buried
+  a 3,057-request delta and the contamination warning passed silently on a run
+  that was 90% rejected. The display is fixed (ADR-0025 splits by unit and folds
+  equal deltas) but **the check still reads the `before`/`after` snapshots**, and
+  should stay that way — a display exists for humans and its rules will change
+  again. This is the third time a check in this harness was itself wrong; the
+  pattern and its checklist are in
   `docs/05-Troubleshooting/검사-자체가-틀린-세-건.md`. Corollary: **run any new
   check against a deliberately failing case too** — a check only ever seen
   passing is indistinguishable from one that always passes.
@@ -400,13 +402,15 @@ Postgres and ES drift apart and search results stop resolving to real rows.
   toward it. It was reverted. The line looked obviously correct and would have
   passed review. There is a harness for exactly this:
   `scripts/evaluate_rewrite_determinism.py`.
-- **The semantic cache pays for an embedding it usually doesn't use.** `ask()`
-  encodes the query *before* calling `cache.lookup()`, but `lookup()` tries the
-  exact-match key first and that path needs only a hash of the query string.
-  Exact match is the default for every intent except FAQ (ADR-0012), so a cache
-  hit burns ~108ms of encoding for nothing — measured, and it is most of the
-  283ms p95 on the cache-hit path. Registered on the roadmap; making it lazy
-  should be verified with `load/run.sh ai cache-warm`, not assumed.
+- **The cache-hit path is slow, but not for the reason ADR-0020 recorded.**
+  That ADR saw `cache_ms` = 107.9ms and blamed the embedding computed before
+  `lookup()`. Decomposing it (ADR-0025) showed **encode is 27% / 18.0ms and
+  lookup is 73% / 48.1ms** — the embedding fix was declined against a
+  pre-registered bar (≥50% and ≥30ms). The real cost is
+  `semantic_cache._load_entries()`: it MGETs **every** entry and JSON-parses +
+  normalises each 384-dim vector *before* the exact-match loop runs, so an
+  exact hit pays O(all entries) where one GET would do. `cache_encode` /
+  `cache_lookup` stages exist now, so measure the fix, don't assume it.
 - **A script that deliberately corrupts a file to prove a guard fires must
   restore in `finally`, and you must then verify the restore.** Injecting a
   collision is the only way to show an import-time guard actually works, so this
