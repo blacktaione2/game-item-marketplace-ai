@@ -1,0 +1,474 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>게임 아이템 통합 거래 플랫폼 — 발표자료</title>
+<style>
+/* 자체 완결 — 외부 요청 0. 오프라인·CSP 환경에서도 그대로 열린다. */
+:root{
+  --bg:#0f1115; --surface:#161a21; --line:#252b36;
+  --ink:#e8eaed; --ink-2:#aab1bb; --ink-3:#767e8a;
+  --before:#c4762c;   /* 이전 */
+  --after:#4a90d9;    /* 이후 */
+  --warn:#c4762c;
+  --mono:"Cascadia Mono",Consolas,"D2Coding",monospace;
+  --sans:"Pretendard","Malgun Gothic","Apple SD Gothic Neo",system-ui,sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  background:var(--bg); color:var(--ink); font-family:var(--sans);
+  line-height:1.65; overflow:hidden;
+  -webkit-font-smoothing:antialiased;
+}
+#deck{height:100vh;display:flex;align-items:center;justify-content:center;padding:3.5vh 4vw 7vh}
+.slide{display:none;width:100%;max-width:1080px;max-height:90vh;overflow-y:auto}
+.slide.on{display:block;animation:in .18s ease-out}
+@keyframes in{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+
+.eyebrow{font-family:var(--mono);font-size:.78rem;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--after);margin-bottom:.9rem}
+h1{font-size:clamp(1.9rem,4.4vw,3rem);line-height:1.25;letter-spacing:-.02em}
+h2{font-size:clamp(1.35rem,2.9vw,2rem);line-height:1.3;letter-spacing:-.015em;margin-bottom:1.4rem}
+h2 .q{color:var(--ink-3);font-weight:400}
+p{margin-bottom:.9rem;color:var(--ink-2)}
+p.lead{font-size:1.08rem;color:var(--ink)}
+strong{color:var(--ink);font-weight:600}
+em{font-style:normal;color:var(--after);font-weight:600}
+.warnx{color:var(--warn);font-weight:600}
+code,.mono{font-family:var(--mono);font-size:.92em}
+code{background:var(--surface);border:1px solid var(--line);border-radius:4px;padding:.08em .38em;color:var(--ink)}
+ul{list-style:none;margin-bottom:1rem}
+li{position:relative;padding-left:1.15rem;margin-bottom:.55rem;color:var(--ink-2)}
+li::before{content:"";position:absolute;left:0;top:.72em;width:5px;height:5px;
+  background:var(--ink-3);border-radius:50%}
+li.key::before{background:var(--after);width:6px;height:6px;top:.68em}
+
+table{width:100%;border-collapse:collapse;margin:.4rem 0 1.1rem;font-size:.95rem}
+th,td{text-align:left;padding:.5rem .7rem;border-bottom:1px solid var(--line);vertical-align:top}
+th{color:var(--ink-3);font-weight:500;font-size:.82rem;letter-spacing:.05em;text-transform:uppercase}
+td.num{font-family:var(--mono);text-align:right;white-space:nowrap}
+td.after{color:var(--after);font-weight:600}
+td.before{color:var(--before)}
+tbody tr:last-child td{border-bottom:none}
+
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(215px,1fr));gap:.85rem;margin:1rem 0}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:9px;padding:1rem 1.1rem}
+.card .n{font-family:var(--mono);font-size:1.55rem;color:var(--after);line-height:1.15}
+.card .n.warn{color:var(--warn)}
+.card .l{font-size:.83rem;color:var(--ink-3);margin-top:.3rem}
+
+.bars{margin:.6rem 0 1.2rem}
+.bar-row{display:grid;grid-template-columns:11rem 1fr;gap:.9rem;align-items:center;margin-bottom:.55rem}
+.bar-lab{font-size:.87rem;color:var(--ink-2);text-align:right}
+.bar-track{display:flex;flex-direction:column;gap:3px}
+.bar{height:13px;border-radius:0 3px 3px 0;display:flex;align-items:center;
+  padding-left:.5rem;font-family:var(--mono);font-size:.72rem;color:#0f1115;font-weight:700;
+  min-width:3.2rem;white-space:nowrap}
+.bar.b{background:var(--before)}
+.bar.a{background:var(--after)}
+.legend{display:flex;gap:1.2rem;font-size:.8rem;color:var(--ink-3);margin-bottom:.7rem}
+.legend i{display:inline-block;width:11px;height:11px;border-radius:2px;margin-right:.35rem;vertical-align:-1px}
+
+.flow{font-family:var(--mono);font-size:.86rem;line-height:1.85;color:var(--ink-2);
+  background:var(--surface);border:1px solid var(--line);border-radius:9px;padding:1.1rem 1.3rem;
+  white-space:pre;overflow-x:auto;margin-bottom:1rem}
+.flow b{color:var(--after);font-weight:600}
+.flow s{color:var(--ink-3);text-decoration:none}
+
+.note{border-left:2px solid var(--after);padding:.15rem 0 .15rem 1rem;margin:1rem 0;
+  color:var(--ink-2);font-size:.95rem}
+.note.warn{border-left-color:var(--warn)}
+.punch{font-size:1.12rem;color:var(--ink);border-top:1px solid var(--line);
+  padding-top:.95rem;margin-top:1.1rem}
+
+.steps{counter-reset:s;margin:.5rem 0 1rem}
+.steps li{padding-left:2.3rem;margin-bottom:.85rem}
+.steps li::before{counter-increment:s;content:counter(s);
+  background:none;width:auto;height:auto;top:.05em;left:0;
+  font-family:var(--mono);font-size:.8rem;color:var(--after);
+  border:1px solid var(--line);border-radius:50%;
+  width:1.55rem;height:1.55rem;display:flex;align-items:center;justify-content:center}
+
+.cols{display:grid;grid-template-columns:1fr 1fr;gap:1.6rem}
+@media (max-width:760px){.cols{grid-template-columns:1fr}.bar-row{grid-template-columns:7.5rem 1fr}}
+
+/* 타이틀 슬라이드 */
+.title-wrap{text-align:center}
+.title-wrap h1{margin-bottom:1.1rem}
+.title-wrap .sub{color:var(--ink-2);font-size:1.05rem;margin-bottom:2rem}
+.stack{font-family:var(--mono);font-size:.82rem;color:var(--ink-3);line-height:2}
+
+/* 크롬 */
+#bar{position:fixed;left:0;top:0;height:2px;background:var(--after);width:0;
+  transition:width .18s ease;z-index:10}
+#chrome{position:fixed;right:1.5rem;bottom:1.1rem;display:flex;align-items:center;gap:.55rem;
+  font-family:var(--mono);font-size:.78rem;color:var(--ink-3);z-index:10}
+#chrome button{background:var(--surface);color:var(--ink-2);border:1px solid var(--line);
+  border-radius:5px;width:1.9rem;height:1.9rem;cursor:pointer;font-size:.85rem;line-height:1}
+#chrome button:hover{color:var(--ink);border-color:var(--ink-3)}
+#hint{position:fixed;left:1.5rem;bottom:1.1rem;font-family:var(--mono);font-size:.74rem;
+  color:var(--ink-3);z-index:10}
+
+@media print{
+  body{overflow:visible;background:#fff;color:#111}
+  #deck{display:block;height:auto;padding:0}
+  .slide{display:block!important;max-height:none;page-break-after:always;padding:2.5rem;max-width:none}
+  #bar,#chrome,#hint{display:none}
+  .card,.flow{background:#f6f7f9}
+  p,li,.bar-lab{color:#333}
+  th{color:#666}
+}
+</style>
+</head>
+<body>
+<div id="bar"></div>
+<div id="deck">
+
+<!-- 1 -->
+<section class="slide title-wrap">
+  <div class="eyebrow">Portfolio · 2026</div>
+  <h1>게임 아이템 통합 거래 플랫폼</h1>
+  <p class="sub">여러 게임사의 아이템을 한곳에서 거래하는 <strong>멀티테넌트 AI 거래소</strong><br>
+     요청 유형마다 다른 파이프라인을 태워 지연과 비용을 유형 단위로 통제한다</p>
+  <div class="stack">Spring Boot 4 · Java 21 · FastAPI · Python 3.11 · React<br>
+     PostgreSQL · Elasticsearch(nori) · Redis · RabbitMQ · Docker</div>
+</section>
+
+<!-- 2 -->
+<section class="slide">
+  <div class="eyebrow">한 장 요약</div>
+  <h2>무엇을, 어디까지 만들었나</h2>
+  <div class="cards">
+    <div class="card"><div class="n">Phase 0–8</div><div class="l">인프라부터 관측성·보안까지</div></div>
+    <div class="card"><div class="n">ADR 28건</div><div class="l">결정마다 배경·대안·영향</div></div>
+    <div class="card"><div class="n">테스트 128건</div><div class="l">AI 118 · 백엔드 10</div></div>
+    <div class="card"><div class="n">LLM 0~6회</div><div class="l">요청 유형에 따라</div></div>
+  </div>
+  <ul>
+    <li class="key"><strong>도메인 배경</strong> — 게임 GM 약 2년. 이상거래·시세·문의 유형을 겪어본 쪽에서 설계했다</li>
+    <li class="key"><strong>이 발표에서 강조할 것</strong> — 기능 목록이 아니라 <em>주장에 근거가 붙어 있는가</em>다.
+        그래서 개선한 것과 <span class="warnx">기각한 것</span>을 같이 가져왔다</li>
+  </ul>
+</section>
+
+<!-- 3 -->
+<section class="slide">
+  <div class="eyebrow">설계 목표</div>
+  <h2>"LLM API를 감싸기만 한 서비스"가 되지 않는 것</h2>
+  <p class="lead">모든 요청을 하나의 LLM 호출로 흘려보내면 구현은 간단하다.
+     대신 <strong>FAQ 한 줄에도 검색 한 번과 똑같은 비용과 지연</strong>이 붙는다.</p>
+  <div class="flow"><s>[ 흔한 구조 ]</s>
+  질의 ─────────────────────────────► LLM ──► 응답        비용·지연 = 항상 동일
+
+<b>[ 이 프로젝트 ]</b>
+  질의 ──► <b>시맨틱 캐시</b> ──► 적중 ─────────────► 응답   <b>LLM 0회</b>
+              │
+              └─ 미적중 ──► <b>Intent Router</b> ──┬──► FAQ        <b>0회</b>
+                            규칙 → KoELECTRA   ├──► 검색      1~2회
+                                               ├──► 시세      2회
+                                               ├──► 이상거래  1회
+                                               └──► 에이전트  1~6회</div>
+  <p>요청이 <strong>무엇인지 먼저 판별</strong>하고 종류마다 다른 경로를 태운다.
+     라우터는 규칙(정규식)이 먼저 답하고, 애매할 때만 KoELECTRA로 넘긴다.</p>
+</section>
+
+<!-- 4 -->
+<section class="slide">
+  <div class="eyebrow">설계 목표가 수치로 나타나는 곳</div>
+  <h2>요청 유형별 파이프라인</h2>
+  <table>
+    <thead><tr><th>요청 유형</th><th>파이프라인</th><th style="text-align:right">LLM 호출</th></tr></thead>
+    <tbody>
+      <tr><td>FAQ · 스몰토크</td><td>정적 응답</td><td class="num after">0회</td></tr>
+      <tr><td>아이템 검색</td><td>Rewrite+Text-to-DSL → BM25+kNN → RRF → 크로스인코더 재순위</td><td class="num">1~2회</td></tr>
+      <tr><td>시세 문의</td><td>거래 이력 충분 시 LSTM, 부족하면 Cold Start 백오프</td><td class="num">2회</td></tr>
+      <tr><td>이상거래 점검</td><td>오토인코더 재구성 오차 + 피처별 기여도 분해</td><td class="num">1회</td></tr>
+      <tr><td>복합 질의</td><td>MCP 도구를 부르는 순차 에이전트</td><td class="num">1~6회</td></tr>
+    </tbody>
+  </table>
+  <ul>
+    <li><strong>Rewrite와 Text-to-DSL을 한 호출로 합쳤다</strong> — 따로 부르면 검색 한 번에 왕복이 2회 붙는다</li>
+    <li><strong>RRF는 앱 레이어 구현</strong> — ES 네이티브 RRF는 Platinum 라이선스, 이 클러스터는 basic이다</li>
+    <li><strong>리랭커는 다국어 mMARCO</strong> — 영어 전용 모델은 한국어를 자모로 쪼개 재순위가 <em>안 하느니만 못했다</em></li>
+  </ul>
+</section>
+
+<!-- 5 -->
+<section class="slide">
+  <div class="eyebrow">아키텍처</div>
+  <h2>두 서버, 하나의 오리진</h2>
+  <div class="flow">  React SPA :5173
+       │  Vite dev proxy — 브라우저에는 <b>단일 오리진</b>으로 보인다
+       │  (그래서 <b>양쪽 서버 모두 CORS 설정이 없다</b>)
+       ├──────────────► Spring Boot :8080 ──► PostgreSQL
+       │                      │            └► Redis (분산 락)
+       │                      └ 헬스체크 ──┐
+       └──────────────► FastAPI :8000 ◄────┘
+                              ├──► Elasticsearch (nori, 인덱스-per-테넌트)
+                              ├──► Redis (시맨틱 캐시)
+                              └──► OpenAI API</div>
+  <div class="cols">
+    <ul>
+      <li class="key"><strong>멀티테넌시</strong> — ES는 <em>인덱스-per-테넌트</em>. 물리 격리 대신 업계 표준을 택한 의도적 트레이드오프</li>
+      <li><strong>MCP는 인메모리 전송</strong> — 프로토콜은 실제 MCP, 전송만 인프로세스. 자기 자신에게 HTTP를 걸지 않는다</li>
+    </ul>
+    <ul>
+      <li><strong>배포 대상은 4 OCPU 공유</strong> — 모델은 상주시키지 않고 지연 로딩, ES는 데모 때만 기동</li>
+      <li><strong>Prometheus/Grafana는 opt-in</strong> — 부하 측정 중 스크레이프가 측정 대상의 CPU를 뺏는다</li>
+    </ul>
+  </div>
+</section>
+
+<!-- 6 -->
+<section class="slide">
+  <div class="eyebrow">측정된 결과 · 개선</div>
+  <h2>수치로 말할 수 있는 것</h2>
+  <div class="legend"><span><i style="background:var(--before)"></i>이전</span><span><i style="background:var(--after)"></i>이후</span></div>
+  <div class="bars">
+    <div class="bar-row"><div class="bar-lab">임베딩 Recall@1<br><span style="color:var(--ink-3);font-size:.78rem">홀드아웃</span></div>
+      <div class="bar-track"><div class="bar b" style="width:38%">0.148</div><div class="bar a" style="width:100%">0.389</div></div></div>
+    <div class="bar-row"><div class="bar-lab">캐시 적중 p95</div>
+      <div class="bar-track"><div class="bar b" style="width:100%">279ms</div><div class="bar a" style="width:9%">25.9ms</div></div></div>
+    <div class="bar-row"><div class="bar-lab">캐시 적중 처리량</div>
+      <div class="bar-track"><div class="bar b" style="width:15%">48/s</div><div class="bar a" style="width:100%">316/s</div></div></div>
+    <div class="bar-row"><div class="bar-lab">프론트 첫 로드<br><span style="color:var(--ink-3);font-size:.78rem">gzip</span></div>
+      <div class="bar-track"><div class="bar b" style="width:100%">201.3KB</div><div class="bar a" style="width:46%">92.2KB</div></div></div>
+  </div>
+  <table>
+    <tbody>
+      <tr><td>하드 필터 — 부적합 검색 결과</td><td class="num before">50건</td><td class="num after">14건</td><td style="color:var(--ink-3)">적합 손실 0</td></tr>
+      <tr><td>질의 재작성 결정성 — 모드 일치율</td><td class="num before">0.840</td><td class="num after">0.990</td><td style="color:var(--ink-3)"><code>temperature</code>가 미설정이었다</td></tr>
+      <tr><td>이벤트 루프 지연 — p99</td><td class="num before">29.33ms</td><td class="num after">10.65ms</td><td style="color:var(--ink-3)">동기 CPU 호출 분리</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- 7 -->
+<section class="slide">
+  <div class="eyebrow">측정된 결과 · 기각</div>
+  <h2>그런데 더 오래 붙잡은 건 <span class="q">— </span>기각한 것들이다</h2>
+  <p class="lead">해보고 접은 것을 지우면 남은 기록은 전부 성공처럼 보인다.
+     <strong>기각도 결론이므로 근거와 함께 남겼다.</strong></p>
+  <table>
+    <thead><tr><th>기각한 것</th><th>결론</th></tr></thead>
+    <tbody>
+      <tr><td><strong>리랭커 점수 하한</strong></td><td><strong>2회 측정, 2회 기각.</strong> 사유가 서로 달랐다 — 처음엔 노이즈, 두 번째는 점수 눈금의 성질</td></tr>
+      <tr><td><strong>시맨틱 캐시 유사도 매칭</strong></td><td>함정 쌍(<code>+8 롱소드</code> vs <code>+9 롱소드</code>) 0.9787 &gt; 동의 쌍 0.845.
+        <strong>함정이 더 유사하다</strong> → FAQ에만 허용</td></tr>
+      <tr><td><strong>프롬프트로 혼동 방지</strong></td><td><code>불속성</code>/<code>무속성</code>을 구분하라는 <strong>한 줄</strong>이 정답률을
+        <span class="warnx">97.5% → 22%</span>로 떨어뜨렸다. 되돌림</td></tr>
+      <tr><td><strong><code>asyncio.to_thread</code></strong></td><td>로드맵에 그 이름으로 등록해뒀는데 <strong>측정이 기각했다</strong> —
+        기본 실행기에서 torch가 <span class="warnx">+85% 느려진다</span></td></tr>
+    </tbody>
+  </table>
+  <div class="note">전부 <strong>기록을 다시 쓰지 않고 정정 블록으로</strong> 남겼다. 나중에 그 ADR만 단독으로 읽는 사람이 틀린 결론을 진실로 받아들이지 않도록.</div>
+</section>
+
+<!-- 8 -->
+<section class="slide">
+  <div class="eyebrow">사례 1 — 임계값</div>
+  <h2>같은 데이터를 두 번 재고, 두 번 기각했다</h2>
+  <ol class="steps">
+    <li><strong>1차 — 보류.</strong> 적합/부적합 마진이 0.3~0.6인데
+        <strong>LLM 질의 재작성의 흔들림이 1.31점</strong>이었다. 재려는 신호보다 노이즈가 크다</li>
+    <li><strong>노이즈를 없앴다.</strong> 원인은 <code>temperature</code>가 API에 아예 안 넘어가고 있던 것(기본 1.0).
+        0으로 두니 산포 <strong>0.319</strong>, 10회 실행이 전부 같은 판정. <em>임계값이 채택 가능해 보였다</em></li>
+    <li><strong>2차 — 기각.</strong> 같은 데이터를 질의 단위로 재분할해 <strong>126가지 전수 열거</strong>했더니
+        임계값을 안전하게 만드는 부등호가 <span class="warnx">44%의 분할에서만</span> 성립했다.
+        <strong>쓰고 있던 분할은 83백분위</strong>였다 — 운이 좋았던 것</li>
+  </ol>
+  <div class="note warn"><strong>뿌리는 구조적이다.</strong> 질의별 적합 최솟값이 −3.84~+2.90(폭 6.74)로 움직이는데
+    전역 부적합 최댓값은 −2.54다. 크로스인코더 로짓은 <strong>질의를 가로질러 비교 가능한 눈금이 아니다.</strong>
+    <code>temperature</code>를 더 만져도 이 결론은 안 바뀐다.</div>
+  <p class="punch">교훈 — <strong>같은 분할을 반복 실행하면 노이즈를 재는 것이지 일반화를 재는 게 아니다.</strong>
+     전수 열거는 추가 API 호출 없이 공짜였고, 채택 직전의 임계값을 뒤집었다.</p>
+</section>
+
+<!-- 9 -->
+<section class="slide">
+  <div class="eyebrow">사례 2 — 상관과 인과</div>
+  <h2>27%가 나머지 73%를 만들고 있었다</h2>
+  <div class="cols">
+    <div>
+      <p><strong>1차 결론 (틀렸다)</strong></p>
+      <p>캐시 적중이 느려서 <code>cache_ms</code>를 분해했다.</p>
+      <table><tbody>
+        <tr><td>임베딩 계산</td><td class="num">27%</td></tr>
+        <tr><td>Redis 조회</td><td class="num">73%</td></tr>
+      </tbody></table>
+      <p>→ <em>"임베딩은 27%뿐이니 여기가 아니다"</em> 라고 <strong>착수를 접었다.</strong></p>
+    </div>
+    <div>
+      <p><strong>격리해서 다시 쟀더니</strong></p>
+      <table><tbody>
+        <tr><td>Redis 조회 <span style="color:var(--ink-3)">(단독)</span></td><td class="num after">1.05ms</td></tr>
+        <tr><td>임베딩 <span style="color:var(--ink-3)">(단독)</span></td><td class="num before">15.77ms</td></tr>
+      </tbody></table>
+      <p><code>encode_one</code>은 <strong>동기 CPU 호출</strong>인데 <code>async</code> 핸들러 안에 있었다.
+         부르는 순간 <strong>이벤트 루프 전체가 멈춘다.</strong></p>
+      <p>즉 <strong>73%의 정체는 남의 임베딩이 끝나기를 기다린 시간</strong>이었다.</p>
+    </div>
+  </div>
+  <div class="note">검증은 싸다 — 10ms 간격 타이머를 같이 돌려보니 <strong>평균 17.28ms 늦게</strong> 깨어났다.</div>
+  <p class="punch">고친 결과 <strong>p95 279 → 25.9ms, 처리량 48 → 316 req/s.</strong>
+     교훈 — <strong>부하 중 wall-time은 그 단계의 작업량이 아니다.</strong> 남의 대기를 흡수한다.</p>
+</section>
+
+<!-- 10 -->
+<section class="slide">
+  <div class="eyebrow">사례 3 — 검사 자체가 틀린다</div>
+  <h2>측정 하네스에서 <span class="q">틀린 건 시스템이 아니라 </span>검사였다 — 4건</h2>
+  <table>
+    <thead><tr><th>방향</th><th>증상</th><th>발견 난이도</th></tr></thead>
+    <tbody>
+      <tr><td><strong>오보</strong> ×2</td><td>정상 시스템에 실패 보고</td><td>쉽다 — 확인하다 드러난다</td></tr>
+      <tr><td><strong>침묵</strong> ×1</td><td>90% 거절된 실행을 <strong>조용히 통과</strong>시켰다</td><td class="warnx">어렵다 — 아무 일도 안 일어난다</td></tr>
+      <tr><td><strong>동전 던지기</strong> ×1</td><td>같은 코드에서 통과와 실패가 갈린다</td><td class="warnx">어렵다 — 한 번만 돌리면 안 보인다</td></tr>
+    </tbody>
+  </table>
+  <p><strong>가장 최근 건</strong> — 동기 호출을 스레드로 빼면서 판정 기준을 <em>측정 전에</em> 걸었다:
+     <code>이벤트 루프 지연 max &lt; 20ms</code>. 그런데 같은 코드가 <strong>32.75ms(실패)와 17.89ms(통과)</strong>를 냈다.</p>
+  <div class="note warn"><strong>부하를 전혀 안 건 유휴 서버가 이미 max 16.34ms였다</strong>(OS 타이머 분해능).
+     판정선은 잡음 바닥 위에 <strong>3.66ms</strong>만 남겨두고 있었고, 하필 3,600표본 중 <strong>하나</strong>로
+     결정되는 <code>max</code>에 걸려 있었다.</div>
+  <p class="punch"><strong>판정선을 고쳐서 통과시키지 않았다.</strong> 결과를 보고 기준을 바꾸면 그건 사전 등록이 아니라 사후 합리화다.
+     실패로 기록하고, 두 실행이 일치한 <code>p99</code>(29.33 → 10.65ms)와 초과 건수(49 → 0~1)로 채택을 판단했다.</p>
+</section>
+
+<!-- 11 -->
+<section class="slide">
+  <div class="eyebrow">부하테스트 (k6)</div>
+  <h2>지연 목표를 걸지 않고, 이진 기준만 검증했다</h2>
+  <div class="cards">
+    <div class="card"><div class="n">오버셀 0건</div><div class="l">동시 구매 26,600여 건</div></div>
+    <div class="card"><div class="n">107 req/s</div><div class="l">단일 아이템 경합 상한</div></div>
+    <div class="card"><div class="n">429 req/s</div><div class="l">20개로 분산 시 (4배)</div></div>
+    <div class="card"><div class="n">97%</div><div class="l">AI 검색 지연 중 LLM 몫</div></div>
+  </div>
+  <ul>
+    <li class="key"><strong>ADR-0001의 주장을 처음 검증했다.</strong> "Redis 분산 락 + 낙관적 락이 오버셀을 막는다"는
+        <strong>실동시성에서 확인된 적이 없었다.</strong> 이제 매 실행마다 <code>재고 감소분 == 성공 응답 수</code>를 단언한다</li>
+    <li class="key"><strong>병목은 하나가 아니라 부하 형태에 따라 옮겨간다.</strong>
+        단일 경합에서는 락 <strong>대기 0.178s vs 보유 0.007s</strong>(큐잉)인데,
+        분산하면 처리량이 4배가 되는 대신 <strong>보유 시간이 5배</strong>로 올라 <strong>DB가 제약</strong>이 된다.
+        대조군 없이 쟀으면 <em>"락이 병목"</em>에서 끝났을 것이다</li>
+    <li class="key"><strong>캐시 적중과 실 LLM을 반드시 분리한다.</strong> 안 나눴으면
+        <em>"우리 검색이 p95 4.45초"</em>라고 결론냈을 것이다 — 우리 코드(ES+리랭커+임베딩)는 합쳐서 <strong>82ms</strong>다</li>
+  </ul>
+  <p style="color:var(--ink-3);font-size:.88rem">부하 생성기가 측정 대상과 같은 박스(4 OCPU 공유)에 있어 보수적인 수치다.</p>
+</section>
+
+<!-- 12 -->
+<section class="slide">
+  <div class="eyebrow">멀티테넌시 · 보안</div>
+  <h2>신원은 헤더가 아니라 서명된 클레임에서 온다</h2>
+  <div class="flow">  <s>이전</s>  X-Tenant-Id: 1   ← 그냥 문자열. <s>누구나 아무 테넌트나 주장할 수 있다</s>
+  <b>이후</b>  JWT { sub, tenant_id, tenant_code, role, exp, iss }
+        └─ 백엔드(Java)와 AI 서버(Python)가 <b>같은 토큰</b>을 각자 검증
+        └─ 요청 본문·쿼리에서 tenant_code를 <b>전부 제거</b></div>
+  <table>
+    <tbody>
+      <tr><td>인증 비용</td><td class="num after">0.7ms</td><td style="color:var(--ink-3)">312ms 요청의 0.22% — 실측</td></tr>
+      <tr><td>헤더 위조</td><td class="num after">무시됨</td><td style="color:var(--ink-3)">정상 토큰에 <code>X-Tenant-Id: 2</code>를 덧붙여도</td></tr>
+      <tr><td>역할 인가</td><td class="num after">403</td><td style="color:var(--ink-3)">GM 큐 — 메뉴를 숨기는 것과 달리 URL 직접 접근도 막힌다</td></tr>
+      <tr><td>인증 후 오버셀</td><td class="num after">0건</td><td style="color:var(--ink-3)">834 == 834</td></tr>
+    </tbody>
+  </table>
+  <ul>
+    <li><strong>왜 두 서버가 각자 검증하는가</strong> — API Gateway를 두지 않았다. 4 OCPU에 상시 프로세스를 하나 더 얹는 비용이 크고,
+        <strong>AI 서버는 포트가 직접 열려 있어 어차피 자기가 검증해야 한다</strong></li>
+    <li><strong>요청 한도는 두 곳</strong> — 돈이 나가는 경로(<code>/api/assistant</code>)와 <strong>토큰 없이 닿는 경로</strong>.
+        AI 리미터는 <em>fail-open</em>(비용 방어), 구매 락은 <em>fail-closed</em>(정확성) — 같은 Redis, 반대 정책</li>
+  </ul>
+  <div class="note warn"><strong>토큰 발급은 데모다.</strong> 비밀번호가 없다 — 검증은 진짜지만 발급은 userId만 알면 누구에게나 내준다.
+    <strong>이 상태의 서버는 외부에 노출하지 않는다.</strong> README 최상단에 같은 경고가 있다.</div>
+</section>
+
+<!-- 13 -->
+<section class="slide">
+  <div class="eyebrow">한계</div>
+  <h2>아는 것만 적는다 <span class="q">— 모르는 걸 안다고 하지 않고</span></h2>
+  <table>
+    <thead><tr><th>영역</th><th>알려진 한계</th></tr></thead>
+    <tbody>
+      <tr><td><code>"무속성"</code> 필터</td><td>추출이 <strong>50회 중 8회</strong> — 모델이 "속성 언급 없음"으로 읽는다. 결정성이 아니라 <strong>정확도</strong> 문제다</td></tr>
+      <tr><td>리랭커 점수 하한</td><td><strong>구조적으로 불가.</strong> 질의별 점수 정규화가 먼저 필요하다 (사례 1)</td></tr>
+      <tr><td>예측·탐지 데이터</td><td><strong>합성 데이터다.</strong> 그래서 MAPE 단독으로 판단하지 않고 <strong>항상 naive 기준선을 같이 출력</strong>한다</td></tr>
+      <tr><td>오토인코더</td><td>신규 계정 거래는 <strong>단순 규칙이 100%, AE는 놓친다.</strong> 상호 보완이지 대체가 아니다</td></tr>
+      <tr><td>백엔드 테스트</td><td>인증·격리 10건뿐. CRUD·거래 도메인 규칙은 여전히 수동 검증이다</td></tr>
+      <tr><td>UI 검증</td><td>자동화 도구가 없어 레이아웃·폴백은 <strong>사람이 직접 본다</strong></td></tr>
+    </tbody>
+  </table>
+  <div class="note">미착수 항목에는 전부 <strong>관찰 가능한 재착수 트리거</strong>를 달아뒀다 —
+    "나중에"가 아니라 <em>"무엇이 관측되면"</em>. 예: 분산 트레이싱은 <strong>"로그를 뒤져야 답이 나오는 사건이 생기면"</strong>.</div>
+</section>
+
+<!-- 14 -->
+<section class="slide">
+  <div class="eyebrow">마무리</div>
+  <h2>이 프로젝트가 남긴 습관 세 가지</h2>
+  <ol class="steps">
+    <li><strong>기준선 없이 숫자를 말하지 않는다.</strong>
+        모든 모델을 단순 기준선(naive 예측, <code>max|z|</code> 규칙)과 비교했고 <strong>진 것은 진 대로 적었다.</strong>
+        오토인코더는 신규 계정 시나리오에서 규칙에 완패했고, 그 사실이 문서에 그대로 남아 있다</li>
+    <li><strong>판정 기준을 측정 전에 박고, 틀리면 틀린 채로 남긴다.</strong>
+        마지막 라운드에서 내가 건 판정선이 <strong>계측기의 잡음 안에 있었다.</strong>
+        고쳐서 통과시키는 대신 실패로 기록하고, 왜 틀렸는지를 체크리스트로 만들었다</li>
+    <li><strong>집계는 원인을 지목하지 않는다.</strong>
+        "27%뿐"이라 접었던 항목이 알고 보니 나머지 73%의 원인이었다.
+        <strong>합계를 재고 그 안의 원인을 코드를 읽어 지목하는 건 측정이 아니다</strong></li>
+  </ol>
+  <div class="note"><strong>문서는 결과가 아니라 과정이다.</strong>
+     마지막 Phase에서 가장 값어치 있었던 산출물은 기능이 아니라 <strong>세 번의 정정</strong>이었다.
+     매끈하게 다시 쓰는 대신 <strong>정정 블록</strong>으로 남겼다 — 그래야 그 문서만 읽는 사람이 틀린 결론을 진실로 받아들이지 않는다.</div>
+  <p class="punch" style="text-align:center;color:var(--ink-3)">감사합니다 &nbsp;·&nbsp; 질문 환영합니다</p>
+</section>
+
+</div>
+
+<div id="hint">← → 이동 · F 전체화면 · P 인쇄(PDF)</div>
+<div id="chrome">
+  <button id="prev" aria-label="이전">‹</button>
+  <span id="count"></span>
+  <button id="next" aria-label="다음">›</button>
+</div>
+
+<script>
+(function(){
+  var slides = Array.prototype.slice.call(document.querySelectorAll('.slide'));
+  var i = 0;
+  var count = document.getElementById('count');
+  var bar = document.getElementById('bar');
+
+  function show(n){
+    i = Math.max(0, Math.min(slides.length - 1, n));
+    slides.forEach(function(s, k){ s.classList.toggle('on', k === i); });
+    count.textContent = (i + 1) + ' / ' + slides.length;
+    bar.style.width = ((i + 1) / slides.length * 100) + '%';
+    slides[i].scrollTop = 0;
+    if (location.hash !== '#' + (i + 1)) history.replaceState(null, '', '#' + (i + 1));
+  }
+
+  document.addEventListener('keydown', function(e){
+    if (e.key === 'ArrowRight' || e.key === 'PageDown' || e.key === ' ') { e.preventDefault(); show(i + 1); }
+    else if (e.key === 'ArrowLeft' || e.key === 'PageUp') { e.preventDefault(); show(i - 1); }
+    else if (e.key === 'Home') show(0);
+    else if (e.key === 'End') show(slides.length - 1);
+    else if (e.key === 'f' || e.key === 'F') {
+      if (document.fullscreenElement) document.exitFullscreen();
+      else document.documentElement.requestFullscreen();
+    }
+    else if (e.key === 'p' || e.key === 'P') window.print();
+  });
+
+  document.getElementById('next').onclick = function(){ show(i + 1); };
+  document.getElementById('prev').onclick = function(){ show(i - 1); };
+
+  var start = parseInt((location.hash || '').slice(1), 10);
+  show(isNaN(start) ? 0 : start - 1);
+})();
+</script>
+</body>
+</html>

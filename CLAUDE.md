@@ -725,8 +725,8 @@ resource usage, startup behavior, and always-on services/daemons.
 
 This project keeps an Obsidian vault at `docs/` alongside the code, with these
 folders: `00-Architecture`, `01-Decisions` (ADRs), `02-AI-Pipeline`,
-`03-API-Specs`, `04-DevLog`, `05-Troubleshooting`. Keep it up to date as work
-happens, without being asked each time:
+`03-API-Specs`, `04-DevLog`, `05-Troubleshooting`, `06-발표`. Keep it up to date
+as work happens, without being asked each time:
 
 - **Architecture/technology decision finalized** (e.g. choosing a library,
   picking an algorithm, changing a prior choice): propose creating or updating
