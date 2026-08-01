@@ -143,7 +143,7 @@ tbody tr:last-child td{border-bottom:none}
   <div class="cards">
     <div class="card"><div class="n">Phase 0–8</div><div class="l">인프라부터 관측성·보안까지</div></div>
     <div class="card"><div class="n">ADR 28건</div><div class="l">결정마다 배경·대안·영향</div></div>
-    <div class="card"><div class="n">테스트 128건</div><div class="l">AI 118 · 백엔드 10</div></div>
+    <div class="card"><div class="n">테스트 147건</div><div class="l">AI 118 · 백엔드 29</div></div>
     <div class="card"><div class="n">LLM 0~6회</div><div class="l">요청 유형에 따라</div></div>
   </div>
   <ul>
@@ -397,7 +397,7 @@ tbody tr:last-child td{border-bottom:none}
       <tr><td>리랭커 점수 하한</td><td><strong>구조적으로 불가.</strong> 질의별 점수 정규화가 먼저 필요하다 (사례 1)</td></tr>
       <tr><td>예측·탐지 데이터</td><td><strong>합성 데이터다.</strong> 그래서 MAPE 단독으로 판단하지 않고 <strong>항상 naive 기준선을 같이 출력</strong>한다</td></tr>
       <tr><td>오토인코더</td><td>신규 계정 거래는 <strong>단순 규칙이 100%, AE는 놓친다.</strong> 상호 보완이지 대체가 아니다</td></tr>
-      <tr><td>백엔드 테스트</td><td>인증·격리 10건뿐. CRUD·거래 도메인 규칙은 여전히 수동 검증이다</td></tr>
+      <tr><td>백엔드 테스트</td><td>인증·격리 + 도메인 규칙 <strong>29건</strong>으로 메웠다. 남은 공백은 <strong>동시성 단위 테스트</strong>인데, 이건 재현이 안 돼서 <strong>부하테스트가 대신</strong> 오버셀 0건을 단언한다</td></tr>
       <tr><td>UI 검증</td><td>자동화 도구가 없어 레이아웃·폴백은 <strong>사람이 직접 본다</strong></td></tr>
     </tbody>
   </table>
