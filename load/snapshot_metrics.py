@@ -35,6 +35,38 @@ from urllib.request import urlopen
 if hasattr(sys.stdout, "buffer"):
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 
+# 카운터 순위를 단위군별로 가른다 (ADR-0025). 이름 접미사로 판별한다 —
+# Prometheus 관례상 단위가 이름에 들어간다.
+_COUNT, _BYTES, _TIME = "count", "bytes", "time"
+
+
+def _collapse_equal(entries: list[tuple[str, float]]) -> list[tuple[str, float, int]]:
+    """증가분이 같은 계열을 한 줄로 접는다.
+
+    같은 값이면 담고 있는 정보도 같다. 인증을 붙이자 `spring_security_filterchains_*`
+    20개 계열이 **전부 요청 수와 같은 값**으로 순위를 잠식했고, 그 바람에
+    `rate_limited_total`이 표시에서 밀려나 오염 경고가 조용히 통과했다(ADR-0024).
+    자리를 늘리는 대신 중복을 접는다.
+    """
+    collapsed: list[tuple[str, float, int]] = []
+    for key, delta in entries:
+        if collapsed and abs(collapsed[-1][1] - delta) < 1e-9:
+            first, value, same = collapsed[-1]
+            collapsed[-1] = (first, value, same + 1)
+            continue
+        collapsed.append((key, delta, 0))
+    return collapsed
+
+
+def _unit_group(key: str) -> str:
+    name = key.split("{", 1)[0]
+    if "_bytes" in name:
+        return _BYTES
+    if any(unit in name for unit in ("_seconds", "_ns", "_ms", "_time")):
+        return _TIME
+    return _COUNT
+
+
 TARGETS = {
     "backend": "http://localhost:8080/actuator/prometheus",
     "ai": "http://localhost:8000/metrics",
@@ -114,9 +146,25 @@ def diff(before: dict[str, float], after: dict[str, float]) -> None:
             continue
         print(f"  {key[:56]:<58}{count:>7.0f}{total / count:>10.4f}s")
 
-    print("\n[카운터] 증가분")
-    for key, delta in sorted(counters, key=lambda e: -abs(e[1]))[:25]:
-        print(f"  {key[:66]:<68}{delta:>9.1f}")
+    # **단위군을 갈라서 줄 세운다.** 예전에는 전부 한 순위에 넣고 상위 25개만
+    # 뽑았는데, 바이트(억 단위)와 나노초가 요청 수(천 단위)를 언제나 밀어냈다.
+    # 실제로 rate_limited 증가분 3,057이 표시에서 사라져 오염 경고가 조용히
+    # 통과한 적이 있다(ADR-0024). 비교 가능한 것끼리만 줄 세워야 순위가 뜻을 갖는다.
+    for title, group, top in (
+        ("[카운터] 증가분 — 횟수", _COUNT, 20),
+        ("[카운터] 증가분 — 바이트", _BYTES, 8),
+        ("[카운터] 증가분 — 시간", _TIME, 8),
+    ):
+        selected = [(k, d) for k, d in counters if _unit_group(k) == group]
+        if not selected:
+            continue
+        print(f"\n{title}")
+        shown = _collapse_equal(sorted(selected, key=lambda e: -abs(e[1])))
+        for key, delta, same in shown[:top]:
+            suffix = f"  (+ 동일 증가분 {same}개)" if same else ""
+            print(f"  {key[:66]:<68}{delta:>9.1f}{suffix}")
+        if len(shown) > top:
+            print(f"  … 이 군에서 {len(shown) - top}종 생략")
 
     moved = [(k, o, n) for k, o, n in gauges if abs(n - o) > 1e-9]
     if moved:
