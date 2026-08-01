@@ -53,6 +53,27 @@ cd ai && RATE_LIMIT_ASSISTANT_PER_MIN=100000 python -m uvicorn app.main:app --po
 `run.sh`가 매 실행마다 스냅샷 → k6 → 스냅샷 → 차분 → **재고 정합성 확인**까지
 한다. 결과는 `load/out/`에.
 
+> **첫 인자는 `purchase` 또는 `ai` 둘 뿐이고, 다른 값은 거절된다.** 예전에는
+> 검증이 없어서 `backend contended`(존재하지 않는 이름)를 주면 `else` 로 흘러
+> **AI 부하가 20 VU로 돌았다** — 구매 부하를 재려던 실행이 OpenAI 과금 경로를
+> 태웠다. 실제로 한 번 그렇게 태웠고, 다행히 대부분 429로 막혀 실호출은 26건이었다.
+
+## 컨테이너 기동 검증 (ADR-0029)
+
+```bash
+docker compose --profile app up -d
+bash load/verify-container.sh          # 판정 1·3·4
+./load/run.sh purchase contended       # 판정 2 (오버셀 0)
+```
+
+`verify-container.sh` 는 **새 판정선을 만들지 않는다** — 4분기 응답 / SPA 폴백 /
+CORS 부재만 본다. 컨테이너화는 성능 작업이 아니라서 p95 를 걸면 도커 오버헤드를
+잰다.
+
+> **CORS 검사는 경로가 실재하는지 먼저 단언한다.** 초안은 `/api/ai/health` 를
+> 봤는데 그건 404였고(AI 헬스는 `/health` 다), 404 에는 미들웨어가 헤더를 안
+> 붙여서 **CORS 를 일부러 켜고 돌려도 통과했다.** 지금은 404 면 실패로 보고한다.
+
 ## 판독 규칙 (측정 전에 정해둔 것)
 
 사후에 그럴듯한 해석을 붙이지 않으려고 미리 적어둔다.
