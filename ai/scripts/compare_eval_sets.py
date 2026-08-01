@@ -60,7 +60,8 @@ def main() -> None:
     corpus_texts = [item_text(i) for i in ALL_ITEMS]
     id_to_index = {item["item_id"]: idx for idx, item in enumerate(ALL_ITEMS)}
 
-    base = SentenceTransformer(settings.embedding_model)
+    # evaluate_embedding 과 같은 이유로 베이스는 스톡 모델이다.
+    base = SentenceTransformer(settings.embedding_base_model)
     tuned = SentenceTransformer(args.finetuned)
 
     results = {}

@@ -25,6 +25,19 @@ class Settings(BaseSettings):
     # models/ 는 gitignore 대상이라 새로 clone한 환경에는 없다 —
     # scripts.finetune_embedding 으로 먼저 생성해야 한다.
     embedding_model: str = "models/embedding-finetuned"
+    # **파인튜닝의 출발점.** `embedding_model` 과 반드시 달라야 한다 —
+    # 그건 파인튜닝의 *출력* 경로다.
+    #
+    # 이 값이 없던 동안 세 스크립트가 `embedding_model` 을 베이스로 썼고, 그래서
+    # (1) 새 환경에서 finetune_embedding 이 자기 출력물을 베이스로 찾다가
+    #     HuggingFace 저장소 id로 해석돼 401로 죽었고(컨테이너화가 드러냈다),
+    # (2) evaluate_embedding / compare_eval_sets 의 before-after 비교가
+    #     **같은 모델을 자기 자신과 비교**하고 있었다.
+    # Phase 4 수치가 틀렸다는 뜻은 아니다 — 당시엔 EMBEDDING_MODEL 환경변수로
+    # 스톡 모델을 가리켜 쟀을 것이다. 틀린 건 **커밋된 상태의 재현성**이다.
+    embedding_base_model: str = (
+        "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+    )
     embedding_dims: int = 384
 
     # ms-marco-MiniLM 계열 중 다국어 버전(mMARCO). 영어 전용

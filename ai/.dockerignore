@@ -1,0 +1,9 @@
+# 650MB. 이미지에 넣지 않는다 — 볼륨에 두고 ai-init 이 채운다.
+models/
+.venv/
+__pycache__/
+**/__pycache__/
+*.pyc
+# 키가 들어 있다. 이미지 레이어에 남으면 이미지를 받는 누구나 읽는다.
+.env
+.pytest_cache/
