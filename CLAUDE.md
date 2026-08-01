@@ -402,15 +402,23 @@ Postgres and ES drift apart and search results stop resolving to real rows.
   toward it. It was reverted. The line looked obviously correct and would have
   passed review. There is a harness for exactly this:
   `scripts/evaluate_rewrite_determinism.py`.
-- **The cache-hit path is slow, but not for the reason ADR-0020 recorded.**
-  That ADR saw `cache_ms` = 107.9ms and blamed the embedding computed before
-  `lookup()`. Decomposing it (ADR-0025) showed **encode is 27% / 18.0ms and
-  lookup is 73% / 48.1ms** — the embedding fix was declined against a
-  pre-registered bar (≥50% and ≥30ms). The real cost is
-  `semantic_cache._load_entries()`: it MGETs **every** entry and JSON-parses +
-  normalises each 384-dim vector *before* the exact-match loop runs, so an
-  exact hit pays O(all entries) where one GET would do. `cache_encode` /
-  `cache_lookup` stages exist now, so measure the fix, don't assume it.
+- **A stage's wall-time under load is not its work.** This cost two wrong
+  attributions in a row on the cache-hit path. ADR-0025 decomposed `cache_ms`
+  into encode 27% / lookup 73% and declined to touch the embedding — but those
+  were **10-VU wall-times**. Isolated, `lookup()` is **1.05ms** and
+  `encode_one` is **15.77ms**, and `encode_one` is a *synchronous* CPU call
+  inside an `async` handler, so it **blocks the whole event loop** (a 10ms
+  ticker slipped by 17.28ms on average). The 73% was other requests waiting for
+  the 27%. Deferring the embedding on exact hits (ADR-0026) took p95 from
+  **279ms to 25.9ms** and throughput from 48 to 316 req/s.
+  - **`encode_one`, the reranker, KoELECTRA and the autoencoder are all still
+    synchronous** — the fix only removed one of them from the cache-hit path.
+    Moving them to `asyncio.to_thread` is registered, not done.
+  - When a stage looks far larger than an isolated measurement would predict,
+    suspect this first. Checking is cheap: run a 10ms `asyncio.sleep` ticker
+    alongside and see how late it wakes.
+  - `cache_encode` / `cache_lookup` exist as stages; on a hit `cache_encode`
+    must be **absent**, which is the regression signal.
 - **A script that deliberately corrupts a file to prove a guard fires must
   restore in `finally`, and you must then verify the restore.** Injecting a
   collision is the only way to show an import-time guard actually works, so this

@@ -27,6 +27,7 @@ import base64
 import hashlib
 import json
 import logging
+from collections.abc import Callable
 from typing import Any
 
 import numpy as np
@@ -62,13 +63,27 @@ class SemanticCache:
 
     # --- 조회 ------------------------------------------------------------
     async def lookup(
-        self, tenant_code: str, query: str, embedding: list[float]
+        self, tenant_code: str, query: str, embed: Callable[[], list[float]]
     ) -> dict[str, Any] | None:
         """캐시 조회. 정확 일치 우선, 그 다음 (허용된 의도에 한해) 유사도.
 
         유사도 매칭을 조건부로 두는 이유는 policy.allows_semantic 주석 참고 —
         요약하면 이 도메인의 질의는 한 글자 차이로 답이 뒤집히는데 문장
         임베딩이 그걸 구분하지 못한다.
+
+        ## 임베딩을 값이 아니라 **콜러블**로 받는다 (ADR-0026)
+
+        정확 일치는 질의 해시 키만 쓰므로 임베딩이 필요 없다. 그런데 값으로
+        받으면 호출자가 **미리 계산할 수밖에 없고**, 그 계산은 동기 CPU 호출이라
+        `async` 핸들러에서 **이벤트 루프를 통째로 막는다**(실측 15.77ms, 그동안
+        10ms 타이머가 평균 17.28ms 밀렸다).
+
+        그 대가는 자기 요청의 15ms에서 끝나지 않는다 — 동시 부하에서는 **다른
+        요청의 `await`가 그만큼 밀려** 남의 단계 시간으로 잡힌다. 부하 중
+        `cache_lookup`이 48.1ms로 찍혔는데 격리 측정은 1.05ms였다.
+
+        콜러블로 받으면 정확 일치일 때 **호출 자체가 일어나지 않는다.**
+        캐시 모듈이 임베딩 서비스를 알게 되는 결합도 생기지 않는다.
         """
         entries, keys = await self._load_entries(tenant_code)
         if not entries:
@@ -77,10 +92,12 @@ class SemanticCache:
         exact_key = self.entry_key(tenant_code, query)
         for entry, key in zip(entries, keys):
             if key == exact_key:
+                # **여기서 반환하면 embed()는 불리지 않는다.** 그게 이 설계의 요점이고
+                # tests/test_cache.py 가 "부르면 터지는" 콜러블로 고정한다.
                 return _hit(entry, key, 1.0, "exact")
 
         vectors = np.stack([entry["_vector"] for entry in entries])
-        query_vector = _normalize(np.asarray(embedding, dtype=np.float32))
+        query_vector = _normalize(np.asarray(embed(), dtype=np.float32))
         similarities = vectors @ query_vector
 
         best = int(np.argmax(similarities))

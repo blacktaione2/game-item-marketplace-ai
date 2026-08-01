@@ -124,21 +124,32 @@ async def ask(
     cache = get_semantic_cache()
     embedding: list[float] | None = None
 
+    def embed() -> list[float]:
+        """임베딩을 **필요할 때만** 계산한다 (ADR-0026).
+
+        동기 CPU 호출이라 부르는 순간 이벤트 루프가 멈춘다(실측 15.77ms).
+        정확 일치 캐시 적중은 질의 해시만 쓰므로 부를 이유가 없고, 부하 중에는
+        그 15ms가 **다른 요청의 대기로 번진다.**
+
+        결과를 기억해두는 이유는 유사도 조회와 저장이 같은 값을 쓰기 때문이다 —
+        두 번 계산하면 루프를 두 번 막는다.
+        """
+        nonlocal embedding
+        if embedding is None:
+            started = time.perf_counter()
+            embedding = get_embedding_service().encode_one(query)
+            timings["cache_encode_ms"] = _ms(started)
+        return embedding
+
     # --- 1. 캐시 (모든 분기 이전) ---------------------------------------
     if use_cache and settings.semantic_cache_enabled:
         started = time.perf_counter()
-        # `cache_ms`를 임베딩과 조회로 **분해**한다. ADR-0020이 적중 경로의
-        # cache_ms를 107.9ms로 재고 "임베딩 낭비"로 지목했는데, 그 안에서
-        # 무엇이 지배적인지는 재본 적이 없다 — 귀속시키기 전에 가른다(ADR-0025).
-        #
-        # 분해가 영구 계측인 이유: 지연화 이후 **적중 경로의 encode_ms는 0이어야**
-        # 하고, 그게 회귀를 잡는 신호다.
-        encode_started = time.perf_counter()
+        # 임베딩을 **값이 아니라 콜러블로** 넘긴다. 정확 일치면 lookup이 부르지
+        # 않으므로 적중 경로에서 `cache_encode_ms` 키 자체가 생기지 않는다 —
+        # 그게 이 최적화가 실제로 걸렸다는 런타임 증거다(ADR-0026).
         try:
-            embedding = get_embedding_service().encode_one(query)
-            timings["cache_encode_ms"] = _ms(encode_started)
             lookup_started = time.perf_counter()
-            hit = await cache.lookup(tenant_code, query, embedding)
+            hit = await cache.lookup(tenant_code, query, embed)
             timings["cache_lookup_ms"] = _ms(lookup_started)
         except Exception:
             hit = None  # 캐시 장애가 요청 실패로 번지면 안 된다
@@ -196,12 +207,13 @@ async def ask(
         and is_cacheable(intent, response)
     ):
         try:
-            if embedding is None:
-                embedding = get_embedding_service().encode_one(query)
+            # embed()가 결과를 기억하므로, 유사도 조회에서 이미 계산했다면
+            # 다시 계산하지 않는다. 여기까지 왔다는 건 캐시 미적중이라 어차피
+            # 한 번은 계산해야 한다.
             await cache.store(
                 tenant_code=tenant_code,
                 query=query,
-                embedding=embedding,
+                embedding=embed(),
                 response=response,
                 intent=intent.value,
                 ttl=ttl_seconds(intent),
