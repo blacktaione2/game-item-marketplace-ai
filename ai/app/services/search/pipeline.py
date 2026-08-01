@@ -18,6 +18,7 @@ from typing import Any
 from elasticsearch import AsyncElasticsearch
 
 from app.core.config import get_settings
+from app.core.threadpool import run_cpu
 from app.services.llm.base import LLMClient
 from app.services.search.embedding import get_embedding_service
 from app.services.search.filters import QueryUnderstanding
@@ -43,7 +44,9 @@ async def search(
     timings["query_understanding_ms"] = _elapsed_ms(started)
 
     started = time.perf_counter()
-    vector = get_embedding_service().encode_one(understanding.rewritten_query)
+    # 동기 CPU 호출이라 전용 스레드로 내보낸다 — 그냥 부르면 계산이 끝날 때까지
+    # 이벤트 루프가 멈춘다(app/core/threadpool.py).
+    vector = await run_cpu(get_embedding_service().encode_one, understanding.rewritten_query)
     timings["embedding_ms"] = _elapsed_ms(started)
 
     started = time.perf_counter()
@@ -59,7 +62,10 @@ async def search(
 
     if use_rerank and documents:
         started = time.perf_counter()
-        documents = get_reranker().rerank(understanding.rewritten_query, documents)
+        # 이 경로에서 가장 큰 동기 블록이다(격리 median 103~189ms — 임베딩의 4~5배).
+        documents = await run_cpu(
+            get_reranker().rerank, understanding.rewritten_query, documents
+        )
         timings["rerank_ms"] = _elapsed_ms(started)
 
     return {

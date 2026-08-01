@@ -343,11 +343,20 @@ dependency: the backend reuses Redisson's `RRateLimiter`, the AI server uses the
   that was 90% rejected. The display is fixed (ADR-0025 splits by unit and folds
   equal deltas) but **the check still reads the `before`/`after` snapshots**, and
   should stay that way — a display exists for humans and its rules will change
-  again. This is the third time a check in this harness was itself wrong; the
+  again. This is the third of four times a check here was itself wrong; the
   pattern and its checklist are in
-  `docs/05-Troubleshooting/검사-자체가-틀린-세-건.md`. Corollary: **run any new
+  `docs/05-Troubleshooting/검사-자체가-틀린-사례들.md`. Corollary: **run any new
   check against a deliberately failing case too** — a check only ever seen
   passing is indistinguishable from one that always passes.
+- **Measure the instrument's idle floor before you set a threshold on it, and
+  never set one on `max`.** ADR-0028 pre-registered "ticker max < 20ms", then
+  got 32.75ms and 17.89ms from the *same code* — because an idle server with
+  zero load already hits 16.34ms (Windows timer resolution), leaving the bar
+  3.66ms of headroom, and `max` is decided by one sample out of 3,600. The bar
+  was left failed rather than rewritten after the fact; the adoption case rests
+  on p99 and the over-threshold count, which agreed across both runs. General
+  rule: a threshold whose derivation never mentions the noise floor has no
+  derivation, and **any bar worth trusting must be run twice**.
 - The AI limiter **fails open** when Redis is down (it protects cost, not
   correctness). The purchase lock is the opposite and rejects — same Redis,
   deliberately opposite policies.
@@ -412,9 +421,24 @@ Postgres and ES drift apart and search results stop resolving to real rows.
   ticker slipped by 17.28ms on average). The 73% was other requests waiting for
   the 27%. Deferring the embedding on exact hits (ADR-0026) took p95 from
   **279ms to 25.9ms** and throughput from 48 to 316 req/s.
-  - **`encode_one`, the reranker, KoELECTRA and the autoencoder are all still
-    synchronous** — the fix only removed one of them from the cache-hit path.
-    Moving them to `asyncio.to_thread` is registered, not done.
+  - **The rest was moved off the loop in ADR-0028**, via a dedicated
+    `ThreadPoolExecutor(max_workers=2)` behind `run_cpu()` in
+    `app/core/threadpool.py` — **not** `asyncio.to_thread`, whose default
+    executor (8 on the target box, 16 here) measured *worse*: torch is 85%
+    slower at 4 workers because it already runs intra-op threads. Wrap new
+    synchronous CPU calls in `run_cpu`, but **only above an isolated median of
+    5ms** — below that the 0.211ms thread hop costs more than it saves, which
+    is why the autoencoder (0.31ms) and the LSTM (0.45ms) stay inline.
+  - **Three things the pre-work overturned**: the reranker is the dominant
+    blocker (103–189ms, 4–5× `encode_one`), not the embedding; the autoencoder
+    was never a target; and `/api/anomaly/*` never blocked the loop at all
+    because its handlers are `def`, not `async def` — FastAPI already offloads
+    those. The same `detect_trade` **did** block via `/api/assistant`, where
+    `build_timeline()` froze the loop for 2.3–3.4s on first call.
+  - What this bought is **loop responsiveness only** — ticker p99 29.33 →
+    10.65ms, 20ms-overruns 49 → 0~1. Throughput did not move and was never
+    predicted to: `cache-warm` went 436.56 → 436.93 req/s. Moving work to a
+    thread does not make it faster.
   - When a stage looks far larger than an isolated measurement would predict,
     suspect this first. Checking is cheap: run a 10ms `asyncio.sleep` ticker
     alongside and see how late it wakes.

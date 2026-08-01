@@ -29,6 +29,7 @@ from elasticsearch import AsyncElasticsearch
 from app.core.config import get_settings
 from app.core.ids import IdSpace
 from app.core.metrics import record_response
+from app.core.threadpool import run_cpu
 from app.services.agent.agent import run_agent
 from app.services.anomaly.pipeline import detect_trade
 from app.services.cache.dependencies import get_semantic_cache
@@ -124,20 +125,20 @@ async def ask(
     cache = get_semantic_cache()
     embedding: list[float] | None = None
 
-    def embed() -> list[float]:
+    async def embed() -> list[float]:
         """임베딩을 **필요할 때만** 계산한다 (ADR-0026).
 
-        동기 CPU 호출이라 부르는 순간 이벤트 루프가 멈춘다(실측 15.77ms).
-        정확 일치 캐시 적중은 질의 해시만 쓰므로 부를 이유가 없고, 부하 중에는
-        그 15ms가 **다른 요청의 대기로 번진다.**
+        정확 일치 캐시 적중은 질의 해시만 쓰므로 부를 이유가 없다. 계산이 필요한
+        경우에도 전용 스레드로 내보내므로 루프를 막지 않는다(ADR-0028) — 그래서
+        `async`다.
 
         결과를 기억해두는 이유는 유사도 조회와 저장이 같은 값을 쓰기 때문이다 —
-        두 번 계산하면 루프를 두 번 막는다.
+        두 번 계산하면 스레드를 두 번 점유한다.
         """
         nonlocal embedding
         if embedding is None:
             started = time.perf_counter()
-            embedding = get_embedding_service().encode_one(query)
+            embedding = await run_cpu(get_embedding_service().encode_one, query)
             timings["cache_encode_ms"] = _ms(started)
         return embedding
 
@@ -174,7 +175,10 @@ async def ask(
 
     # --- 2. 라우팅 -------------------------------------------------------
     started = time.perf_counter()
-    decision = route(query)
+    # 룰이 기권하면 KoELECTRA가 돌고, 그건 동기 CPU 호출이다(격리 median
+    # 17~35ms). 룰에서 확정되는 경우는 순수 정규식이라 스레드 왕복(0.21ms)이
+    # 손해지만, 어느 쪽으로 갈지는 불러봐야 알므로 호출 단위로 내보낸다.
+    decision = await run_cpu(route, query)
     timings["routing_ms"] = _ms(started)
     intent: Intent = decision["intent"]
 
@@ -213,7 +217,7 @@ async def ask(
             await cache.store(
                 tenant_code=tenant_code,
                 query=query,
-                embedding=embed(),
+                embedding=await embed(),
                 response=response,
                 intent=intent.value,
                 ttl=ttl_seconds(intent),
@@ -269,7 +273,11 @@ async def _execute(
         # 자연어에서 뽑은 번호가 어느 평면인지 알 길이 없다. 합성 코퍼스로
         # 해석하되 그 사실을 답변에 밝히게 한다 — 사용자가 자기 거래 번호를
         # 말한 것일 수도 있고, 두 id 범위는 겹친다.
-        result = detect_trade(tenant_code, trade_id, IdSpace.SYNTHETIC)
+        # 점수 계산 자체는 0.31ms지만, 이 함수는 첫 호출에서 `build_timeline()`을
+        # 태운다 — 26,702건 합성 코퍼스 구축에 **실측 2.3~3.4초**다. 그동안 루프
+        # 전체가 멈춘다. `/api/anomaly/*`는 `def` 핸들러라 FastAPI가 이미 스레드로
+        # 넘기고 있어서, 이 경로만 노출돼 있었다(ADR-0028).
+        result = await run_cpu(detect_trade, tenant_code, trade_id, IdSpace.SYNTHETIC)
         answer, explain_ms = await _timed_complete(
             llm_client, _ANOMALY_PROMPT.format(query=query, result=result)
         )
