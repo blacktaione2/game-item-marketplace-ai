@@ -131,7 +131,12 @@ docs-only commit runs nothing. Two things about it are load-bearing:
   containers.** Service containers cannot set `command`, so Redis can't run with
   `--requirepass`, and `RedissonConfig` unconditionally sends AUTH. Using compose
   also keeps CI identical to local. Only `postgres` and `redis` — the backend has
-  no ES or AMQP dependency.
+  no ES dependency. **It also does not bring up RabbitMQ, and the reason changed:**
+  the backend gained an AMQP dependency in ADR-0030, but `NotificationFlowTest` is
+  written to verify the publish *phase* and consumer idempotency **without a broker**
+  (the spy records the call; the real send fails and is swallowed by fail-open).
+  Green CI therefore says nothing about the broker path — `load/verify-mq.sh` is what
+  covers queue drain, DLQ, and broker-down latency.
 
 Note what the green badges do and don't mean: the backend suite is still the
 single Initializr `contextLoads()` and asserts no behaviour. It is worth running
