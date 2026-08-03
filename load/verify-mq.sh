@@ -68,9 +68,11 @@ drain() {
 # 이제는 username + 비밀번호다. 스크립트가 재실행되지 않아 계약 변경이 드러나지
 # 않았고, 실행하면 404 본문을 JSON 으로 파싱하다 traceback 이 났다.
 DEMO_PW="${DEMO_PASSWORD:?DEMO_PASSWORD 가 필요합니다}"
+# 자격증명은 테넌트 + 아이디 + 비밀번호 셋이다 (ADR-0034).
+TENANT_CODE="${TENANT_CODE:-nexon}"
 token() {  # username -> JWT
   curl -s -X POST "$BACKEND/api/auth/login" -H 'Content-Type: application/json' \
-    -d "{\"username\":\"$1\",\"password\":\"$DEMO_PW\"}" \
+    -d "{\"tenantCode\":\"$TENANT_CODE\",\"username\":\"$1\",\"password\":\"$DEMO_PW\"}" \
     | python -c "import sys,json;print(json.load(sys.stdin).get('token',''))" 2>/dev/null
 }
 # **/api/notifications 의 길이를 세면 안 된다.** 그 엔드포인트는 최근 20건 상한이라
@@ -97,7 +99,8 @@ if [ -n "$TOK" ]; then
 else
   # 코드를 같이 낸다 — 429(한도 소진)와 401(비밀번호 불일치)은 처방이 정반대다.
   LC="$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BACKEND/api/auth/login" \
-    -H 'Content-Type: application/json' -d "{\"username\":\"buyer_lee\",\"password\":\"$DEMO_PW\"}")"
+    -H 'Content-Type: application/json' \
+    -d "{\"tenantCode\":\"$TENANT_CODE\",\"username\":\"buyer_lee\",\"password\":\"$DEMO_PW\"}")"
   case "$LC" in
     429) bad "로그인 429 — 한도 소진. 다른 검사 직후라면 1분 기다렸다 다시 돌린다" ;;
     401) bad "로그인 401 — DEMO_PASSWORD 가 기동 시 주입된 값과 다르다" ;;

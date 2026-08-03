@@ -98,7 +98,8 @@ function issueToken(username) {
   }
   const issued = http.post(
     `${BACKEND}/api/auth/login`,
-    JSON.stringify({ username, password }),
+    // tenantCode 가 자격증명의 일부다 (ADR-0034) — 아이디는 테넌트 안에서만 유일하다.
+    JSON.stringify({ tenantCode: __ENV.TENANT_CODE || "nexon", username, password }),
     { headers: { "Content-Type": "application/json" } },
   );
   if (issued.status !== 200) {

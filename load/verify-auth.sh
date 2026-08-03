@@ -27,18 +27,20 @@ DEMO_PW="${DEMO_PASSWORD:?DEMO_PASSWORD 가 필요합니다}"
 ADMIN_PW="${ADMIN_PASSWORD:?ADMIN_PASSWORD 가 필요합니다}"
 DEMO_USERS="seller_kim buyer_lee trader_park newbie_choi"
 ADMIN_USER="gm_admin"
+# 자격증명은 테넌트 + 아이디 + 비밀번호 셋이다 (ADR-0034).
+TENANT_CODE="${TENANT_CODE:-nexon}"
 PASS=0; FAIL=0
 ok()  { printf '  [PASS] %s\n' "$1"; PASS=$((PASS+1)); }
 bad() { printf '  [FAIL] %s\n' "$1"; FAIL=$((FAIL+1)); }
 
-login_code() {  # 사용자, 비밀번호 -> HTTP 코드
+login_code() {  # 사용자, 비밀번호, [테넌트] -> HTTP 코드
   curl -s -o /dev/null -w '%{http_code}' -X POST "$WEB/api/backend/auth/login" \
     -H 'Content-Type: application/json' \
-    -d "{\"username\":\"$1\",\"password\":\"$2\"}"
+    -d "{\"tenantCode\":\"${3:-$TENANT_CODE}\",\"username\":\"$1\",\"password\":\"$2\"}"
 }
 login_token() {
   curl -s -X POST "$WEB/api/backend/auth/login" -H 'Content-Type: application/json' \
-    -d "{\"username\":\"$1\",\"password\":\"$2\"}" \
+    -d "{\"tenantCode\":\"$TENANT_CODE\",\"username\":\"$1\",\"password\":\"$2\"}" \
     | python -c "import sys,json;print(json.load(sys.stdin).get('token',''))" 2>/dev/null
 }
 
@@ -54,9 +56,18 @@ CODE="$(curl -s -o /dev/null -w '%{http_code}' -X POST "$WEB/api/backend/auth/de
 
 echo
 echo "== 판정 2: 비밀번호 검증 =="
+# **본문 값은 ASCII 로 둔다.** 예전에는 "틀린값"·"없는계정" 이었는데, Windows 셸에서
+# 한글 인자가 cp949 로 재인코딩돼 **깨진 JSON** 이 나갔다. 그때 서버는 400 을 냈지만
+# `/error` 가 보안 체인에 걸려 **401 로 가려졌고**(ADR-0034), 그래서 이 두 검사가
+# 통과했다 — 비밀번호 검증을 잰 적이 없는데 초록이었다.
+#
+# F1(=/error 허용)을 고치자 400 이 드러나며 즉시 실패했다. **검사가 틀린 이유로
+# 통과하고 있었다는 것을 다른 수정이 알려준 사례다.**
 [ "$(login_code buyer_lee "$DEMO_PW")" = "200" ] && ok "올바른 비밀번호 -> 200" || bad "올바른 비밀번호가 거절됐다"
-[ "$(login_code buyer_lee "틀린값")" = "401" ] && ok "틀린 비밀번호 -> 401" || bad "틀린 비밀번호가 401 이 아니다"
-[ "$(login_code 없는계정 "$DEMO_PW")" = "401" ] && ok "없는 사용자도 401 (사용자 열거 차단)" || bad "없는 사용자가 401 이 아니다"
+[ "$(login_code buyer_lee "wrong-password")" = "401" ] && ok "틀린 비밀번호 -> 401" || bad "틀린 비밀번호가 401 이 아니다"
+[ "$(login_code no_such_user "$DEMO_PW")" = "401" ] && ok "없는 사용자도 401 (사용자 열거 차단)" || bad "없는 사용자가 401 이 아니다"
+[ "$(login_code no_such_tenant_xyz "$DEMO_PW" "no_such_tenant_xyz")" = "401" ] \
+  && ok "없는 테넌트도 401 (테넌트 열거 차단)" || bad "없는 테넌트가 401 이 아니다"
 
 echo
 echo "== 판정 3: 비밀번호 분리 — 양방향 =="
@@ -92,7 +103,7 @@ XFF_LIMIT_HIT=0
 for i in $(seq 40); do
   C="$(curl -s -o /dev/null -w '%{http_code}' -X POST "$WEB/api/backend/auth/login" \
     -H "X-Forwarded-For: 10.9.9.$i" -H 'Content-Type: application/json' \
-    -d '{"username":"buyer_lee","password":"wrong"}')"
+    -d "{\"tenantCode\":\"$TENANT_CODE\",\"username\":\"buyer_lee\",\"password\":\"wrong\"}")"
   [ "$C" = "429" ] && { XFF_LIMIT_HIT=1; break; }
 done
 [ "$XFF_LIMIT_HIT" = "1" ] \

@@ -390,7 +390,16 @@ is why neither server has CORS configured; don't add it. Screens: `/`
 `/anomalies` (GM queue). State is TanStack Query only; there is no global store.
 
 **Authentication is real since ADR-0031** — `POST /api/auth/login
-{username, password}` with BCrypt. `demo-token` is **gone**, and a test asserts
+{tenantCode, username, password}` with BCrypt. **The credential is three parts, not
+two** (ADR-0034): `users` is unique on `(tenant_id, username)`, so a username alone
+does not identify a row. It used to be looked up by username only, with a repository
+comment asserting "usernames are globally unique because there is one demo tenant" —
+a claim the schema never made. Adding a second tenant with the same username produced
+`NonUniqueResultException`, which surfaced as **401**, i.e. that account became
+permanently unable to log in and the symptom said "wrong password". Login is the one
+place a request may carry tenant, because it is the credential-presentation step;
+everything after it still reads tenant from the token only. A missing `tenantCode` is
+**400**, an unknown one is **401** (a 404 would leak the tenant list). `demo-token` is **gone**, and a test asserts
 it 404s *while holding a valid token* (a plain 401 would only prove the security
 layer fired, not that the handler is absent). There is **no signup**: accounts are
 seeded and fixed, deliberately, because opening registration drags in email
@@ -468,6 +477,22 @@ element is exactly what `clientIp()` already read. Two lasting rules:
   an open, unmetered OpenAI relay that bypassed all three cost layers. The router is
   deleted, and `ai/tests/test_route_auth_coverage.py` now pins that **no route lacks
   an auth dependency**, since per-route `Depends` fails silently when forgotten.
+
+**`/error` must stay in `PUBLIC_PATHS`** (ADR-0034). Spring Security 6+ filters the
+ERROR dispatch, so without it Boot's error forward hits `anyRequest().authenticated()`
+and **every 400 and 500 on an unauthenticated path comes back as 401**. That single
+omission disguised two real defects as "wrong password" — the duplicate-username case
+above and a `JWT_SECRET` shorter than 256 bits. The control that proves the mechanism:
+an *authenticated* request to a missing path correctly returns 404. Nothing leaks,
+because `server.error.include-stacktrace` defaults to `never`.
+
+**A short `JWT_SECRET` is rejected in `SecurityConfig`'s constructor, not in
+`SecretGuard`.** The old comment there claimed `SecretKeySpec` fails fast on a short
+key; it does not (only an empty array is refused), and Nimbus raises
+`KeyLengthException` at the *first login* instead. Measured: a 5-byte secret boots
+**healthy**, passes the health check, and only login fails — as a 401. `SecretGuard`
+is the wrong home for this because it is `prod`-only and asks "is this the repo
+default"; a short key is broken in every profile.
 
 - **Load tests trip these limits**, so both servers need the relaxed config:
   `SPRING_PROFILES_ACTIVE=loadtest` and `RATE_LIMIT_ASSISTANT_PER_MIN=…`. The

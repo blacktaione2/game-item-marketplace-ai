@@ -239,15 +239,19 @@ export interface DemoToken {
 
 export const api = {
   /**
-   * 로그인 (ADR-0031). `demo-token` 을 대체한다 — 그건 비밀번호를 확인하지 않아
-   * userId 만 알면 누구나 그 사용자가 될 수 있었다.
+   * 로그인 (ADR-0031, 테넌트는 ADR-0034). `demo-token` 을 대체한다 — 그건 비밀번호를
+   * 확인하지 않아 userId 만 알면 누구나 그 사용자가 될 수 있었다.
    *
    * userId 가 아니라 username+password 를 보낸다. 신원을 요청이 주장하지 않는다.
+   *
+   * **`tenantCode` 가 함께 간다.** 아이디는 테넌트 안에서만 유일해서(제약이
+   * `(tenant_id, username)`) 아이디 하나로는 계정이 특정되지 않는다. 이건 로그인
+   * **한 곳뿐**이다 — 발급 이후의 요청은 여전히 테넌트를 싣지 않고 토큰에서 읽는다.
    */
-  login: (username: string, password: string) =>
+  login: (tenantCode: string, username: string, password: string) =>
     request<LoginResult>("/api/backend/auth/login", {
       method: "POST",
-      body: JSON.stringify({ username, password }),
+      body: JSON.stringify({ tenantCode, username, password }),
     }),
 
   getItem: (itemId: number) => request<Item>(`/api/backend/items/${itemId}`),

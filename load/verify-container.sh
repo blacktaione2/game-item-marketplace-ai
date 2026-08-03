@@ -36,7 +36,8 @@ echo "== 로그인 =="
 # 아무도 눈치채지 못했다 — 계약이 바뀌면 그 계약을 쓰는 검사를 다시 돌려야 한다.
 GM_PW="${ADMIN_PASSWORD:?ADMIN_PASSWORD 가 필요합니다 (gm_admin 으로 로그인한다)}"
 LOGIN_BODY="$(curl -s -w '\n%{http_code}' -X POST "$WEB/api/backend/auth/login" \
-  -H 'Content-Type: application/json' -d "{\"username\":\"gm_admin\",\"password\":\"$GM_PW\"}")"
+  -H 'Content-Type: application/json' \
+  -d "{\"tenantCode\":\"${TENANT_CODE:-nexon}\",\"username\":\"gm_admin\",\"password\":\"$GM_PW\"}")"
 LOGIN_CODE="$(printf '%s' "$LOGIN_BODY" | tail -1)"
 TOKEN="$(printf '%s' "$LOGIN_BODY" | sed '$d' \
   | python -c "import sys,json;print(json.load(sys.stdin).get('token',''))" 2>/dev/null)"
