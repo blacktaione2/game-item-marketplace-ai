@@ -11,17 +11,19 @@
 [![backend](https://github.com/blacktaione2/game-item-marketplace-ai/actions/workflows/backend.yml/badge.svg)](https://github.com/blacktaione2/game-item-marketplace-ai/actions/workflows/backend.yml)
 [![frontend](https://github.com/blacktaione2/game-item-marketplace-ai/actions/workflows/frontend.yml/badge.svg)](https://github.com/blacktaione2/game-item-marketplace-ai/actions/workflows/frontend.yml)
 
-> ## ⚠️ 토큰 발급이 데모입니다
+> ## ⚠️ 공개 데모 계정입니다
 >
-> 신원·테넌트·역할은 **서명된 JWT 클레임**에서만 옵니다. 검증은 실제로
-> 동작합니다 — 서명·만료·발급자·필수 클레임, 401/403([ADR-0023](docs/01-Decisions/0023-jwt-인증.md)).
+> **비밀번호 로그인이 실제로 동작합니다**([ADR-0031](docs/01-Decisions/0031-공개-준비-인증-비용-신뢰프록시.md)) —
+> BCrypt 검증, 401, 사용자 열거 차단. 회원가입은 **일부러 없습니다**: 계정은 시드로
+> 고정이고, 가입을 열면 이메일 인증·비밀번호 재설정·스팸 계정 방어가 따라옵니다.
 >
-> 다만 **발급에 비밀번호가 없습니다.** `POST /api/auth/demo-token {userId}`는
-> userId만 알면 누구에게나 그 사용자의 토큰을 내줍니다. 로그인 화면 대신
-> 데모 사용자 드롭다운을 쓰기 위한 선택입니다. HTTPS도 없습니다.
-> **이 상태의 서버를 외부에 노출하지 마세요.**
+> **데모 계정 비밀번호를 공개하는 것은 모순이 아닙니다.** 로그인 게이트의 목적은
+> 접근 제한이 아니라 **익명 대량 호출 차단**입니다 — LLM 호출에 실제로 돈이 나가기
+> 때문입니다. 비밀번호가 알려져도 (a) 봇이 자동으로 넘지 못하고 (b) 사용자당
+> **하루 50회** 한도가 걸립니다. 진짜 상한은 OpenAI 월 사용량 한도입니다.
 >
-> 저장소 공개와 서버 노출은 다른 문제입니다 — 코드에 비밀정보는 없습니다.
+> **GM 계정 비밀번호는 공개하지 않습니다** — 그게 비밀번호를 둘로 나눈 이유입니다.
+> 이상거래 큐는 GM 전용이라, 하나였다면 역할 인가가 무의미해집니다.
 
 ---
 
@@ -254,11 +256,11 @@ npm run dev                # :5173
 ### 테스트
 
 ```bash
-cd ai && python -m pytest  # 118건. 외부 서비스·모델 불필요
-cd backend && ./gradlew test   # 36건. Postgres·Redis·RabbitMQ 필요
+cd ai && python -m pytest  # 121건. 외부 서비스·모델 불필요
+cd backend && ./gradlew test   # 42건. Postgres·Redis·RabbitMQ 필요
 ```
 
-CI가 커밋마다 도는 건 여기까지다 — **AI 118건 + 백엔드 36건 + 프론트 빌드.**
+CI가 커밋마다 도는 건 여기까지다 — **AI 121건 + 백엔드 42건 + 프론트 빌드.**
 부하테스트는 CI에 넣지 않았다(환경이 달라 수치가 비교 불가, 걸 SLO가 아직 없음,
 `live-llm`이 실제 과금). 근거는
 [ADR-0021](docs/01-Decisions/0021-ci-cd-1단계.md).
@@ -281,11 +283,11 @@ CI가 커밋마다 도는 건 여기까지다 — **AI 118건 + 백엔드 36건 
 | 폴더 | 내용 |
 |---|---|
 | [00-Architecture](docs/00-Architecture/) | 기획서, 개발 로드맵 |
-| [01-Decisions](docs/01-Decisions/) | **ADR 30건.** 상태/배경/결정/고려한 대안/영향 |
+| [01-Decisions](docs/01-Decisions/) | **ADR 31건.** 상태/배경/결정/고려한 대안/영향 |
 | [02-AI-Pipeline](docs/02-AI-Pipeline/요청-타입별-파이프라인.md) | 요청 유형별 실행 흐름 종합 |
 | [03-API-Specs](docs/03-API-Specs/API-명세.md) | 두 서버의 엔드포인트·상태 코드 |
 | [04-DevLog](docs/04-DevLog/) | 날짜별 경과 |
-| [05-Troubleshooting](docs/05-Troubleshooting/) | 재발 조건이 실재하는 진단 패턴 14건 |
+| [05-Troubleshooting](docs/05-Troubleshooting/) | 재발 조건이 실재하는 진단 패턴 15건 |
 | [06-발표](docs/06-발표/발표자료.html) | 발표 슬라이드 14장(자체 완결 HTML) + 발표 노트 |
 
 읽을 것을 하나만 고른다면 [ADR-0018](docs/01-Decisions/0018-리랭커-하한-재측정.md)
@@ -308,7 +310,7 @@ CI가 커밋마다 도는 건 여기까지다 — **AI 118건 + 백엔드 36건 
 | `"무속성"` 필터 | 추출이 50회 중 8회라 **사실상 무력** — 모델이 "속성 언급 없음"으로 읽는다 |
 | 등급(`전설`) 축 | 필드가 없어 텍스트 신호로만 동작 |
 | 식별자 공간 | 합성 코퍼스와 PostgreSQL의 users·trades id 범위가 겹친다. 참조가 접두사로 공간을 들고 오고(`syn:3`), 미연동 공간은 **501**로 막힌다. 완전 통합은 미착수 |
-| 백엔드 테스트 | 인증·격리 + 도메인 규칙 + 알림 흐름 **36건**. 동시성은 테스트가 아니라 **부하테스트가** 오버셀 0건으로 단언한다 — 단위 테스트로는 재현이 안 되는 영역이다 |
+| 백엔드 테스트 | 인증·로그인·격리 + 도메인 규칙 + 알림 흐름 **42건**. 동시성은 테스트가 아니라 **부하테스트가** 오버셀 0건으로 단언한다 — 단위 테스트로는 재현이 안 되는 영역이다 |
 | 동기 CPU 호출 | 임베딩·리랭커·분류기는 전용 스레드풀로 나갔지만([ADR-0028](docs/01-Decisions/0028-동기-cpu-호출-스레드-분리.md)), **격리 5ms 미만은 일부러 남겼다**(오토인코더 0.31ms, LSTM 0.45ms — 스레드 왕복이 더 비싸다). `torch` intra-op 스레드 수는 손대지 않았다 |
 | UI 검증 | 자동화 도구가 없어 레이아웃·폴백은 사람이 직접 확인한다 |
 | 배포 | **컨테이너로 뜨는 것까지 확인했다**(x86). ARM 이미지·실배포는 미착수 — 리랭커 양자화가 `avx2`(x86 전용)라 arm64 재생성이 필요하다 |

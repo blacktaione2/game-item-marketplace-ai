@@ -66,11 +66,24 @@ rate-limit:
   trade:
     permits: 10
     window-seconds: 1
-  # 토큰 발급 — IP 단위(인증 이전이라 신원이 없다).
-  # 정상 사용은 사용자 전환당 1~2회다(개발 모드 StrictMode 이중 호출 포함).
-  demo-token:
+  # 로그인 — IP 단위(인증 이전이라 신원이 없다).
+  # 정상 사용은 세션당 1~2회다. 무차별 대입을 늦추는 것도 겸한다.
+  login:
     permits: 30
     window-seconds: 60
+  # **X-Forwarded-For 를 신뢰할 출처.** 비어 있으면 헤더를 아예 안 읽는다(기본).
+  # 배포에서 nginx 의 컨테이너 IP 를 넣는다 — ADR-0031.
+  # 잊으면 한도가 프록시 하나로 합쳐질 뿐 뚫리지는 않는다(안전한 쪽 실패).
+  trusted-proxies: ${TRUSTED_PROXIES:}
+
+# 데모 계정 비밀번호 (ADR-0031). **기본값이 없다** — 설정을 빠뜨리면 아무도
+# 로그인하지 못한다. 시드의 자리표시자가 BCrypt 형식이 아니라서 그렇게 실패한다.
+#
+# ADMIN 을 나눈 이유: 하나면 데모 비밀번호를 아는 사람이 곧바로 GM 이 되고,
+# 이상거래 큐가 GM 전용인 것(ADR-0023)이 무의미해진다.
+demo:
+  password: ${DEMO_PASSWORD:}
+  admin-password: ${ADMIN_PASSWORD:}
 
 ai-server:
   base-url: ${AI_SERVER_URL:http://localhost:8000}

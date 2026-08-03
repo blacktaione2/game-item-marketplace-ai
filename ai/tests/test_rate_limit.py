@@ -78,10 +78,73 @@ def test_one_over_the_limit_is_rejected(fake_redis):
 
 
 def test_expire_is_set_only_once_per_window(fake_redis):
-    """매 요청마다 만료를 갱신하면 창이 밀려 한도가 사라진다."""
+    """매 요청마다 만료를 갱신하면 창이 밀려 한도가 사라진다.
+
+    **창이 둘이라 2건이 맞다** — 분당과 일당(ADR-0031). 각 창의 첫 요청에서
+    한 번씩 걸리고, 이후 4번의 호출에서는 더 걸리지 않는다. 규칙 자체는 그대로다.
+    """
     for _ in range(5):
         call(actor())
-    assert len(fake_redis.expire_calls) == 1
+    assert len(fake_redis.expire_calls) == 2
+    assert len(set(fake_redis.expire_calls)) == 2  # 서로 다른 키
+
+    minute_keys = [k for k in fake_redis.expire_calls if ":assistant:" in k]
+    daily_keys = [k for k in fake_redis.expire_calls if ":assistant_daily:" in k]
+    assert len(minute_keys) == 1
+    assert len(daily_keys) == 1
+
+
+def test_daily_key_carries_the_kst_date(fake_redis):
+    """일일 창은 **키에 날짜가 들어가** 한국시간 자정에 리셋된다 (ADR-0031).
+
+    Redis 만료에 맡기면 창이 그 사용자의 첫 호출 기준이라 사람마다 리셋 시각이
+    다르고 예측이 안 된다. 날짜가 키에 있으면 "한국시간 자정"이라고 설명할 수 있다.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    call(actor())
+    expected = (datetime.now(timezone.utc) + timedelta(hours=9)).strftime("%Y-%m-%d")
+    daily = [k for k in fake_redis.counts if ":assistant_daily:" in k]
+    assert len(daily) == 1
+    assert expected in daily[0]
+
+
+def test_daily_limit_rejects_beyond_its_cap(fake_redis, monkeypatch):
+    """분당 한도를 안 넘겨도 **일일 한도**에 걸린다.
+
+    분당 한도를 크게 올려 그쪽이 개입하지 않게 한 뒤, 일일 한도만 넘긴다.
+    """
+    settings = get_settings()
+    monkeypatch.setattr(settings, "rate_limit_assistant_per_min", 100_000)
+    monkeypatch.setattr(settings, "rate_limit_assistant_per_day", 3)
+
+    for _ in range(3):
+        assert call(actor()) is not None
+
+    with pytest.raises(HTTPException) as exc:
+        call(actor())
+    assert exc.value.status_code == 429
+
+
+def test_minute_rejection_does_not_consume_daily_budget(fake_redis, monkeypatch):
+    """분당에 막힌 요청이 **일일 한도를 갉아먹으면 안 된다.**
+
+    먼저 올리고 나중에 검사하면 그렇게 된다 — 사용자가 잠깐 몰아친 대가로
+    하루치를 잃는다.
+    """
+    settings = get_settings()
+    monkeypatch.setattr(settings, "rate_limit_assistant_per_min", 2)
+    monkeypatch.setattr(settings, "rate_limit_assistant_per_day", 50)
+
+    for _ in range(6):
+        try:
+            call(actor())
+        except HTTPException:
+            pass
+
+    daily_key = next(k for k in fake_redis.counts if ":assistant_daily:" in k)
+    # 6번 시도했지만 분당을 통과한 것은 2번뿐이다.
+    assert fake_redis.counts[daily_key] == 2
 
 
 def test_users_do_not_share_a_bucket(fake_redis):

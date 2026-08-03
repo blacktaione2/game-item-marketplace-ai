@@ -35,11 +35,11 @@ public class SecurityConfig {
      *   <li>{@code /actuator/prometheus} — 부하 하네스({@code load/snapshot_metrics.py})가 실행 전후로
      *       스크레이프한다. 잠그면 측정이 조용히 깨진다(에러가 아니라 빈 차분이 나온다)
      *   <li>{@code /actuator/health}, {@code /api/health} — 헬스체크. docker-compose와 수동 확인용
-     *   <li>{@code /api/auth/demo-token} — 토큰을 받으러 오는 길이라 잠글 수 없다
+     *   <li>{@code /api/auth/login} — 토큰을 받으러 오는 길이라 잠글 수 없다
      * </ul>
      */
     private static final String[] PUBLIC_PATHS = {
-        "/api/auth/demo-token", "/api/health", "/actuator/health", "/actuator/prometheus"
+        "/api/auth/login", "/api/health", "/actuator/health", "/actuator/prometheus"
     };
 
     private final SecretKey secretKey;
@@ -48,6 +48,18 @@ public class SecurityConfig {
         // HS256은 키가 256비트 이상이어야 한다. 짧으면 여기서 즉시 실패하는 게 맞다 —
         // 조용히 약한 키로 도는 것보다 기동이 안 되는 쪽이 낫다.
         this.secretKey = new SecretKeySpec(secret.getBytes(StandardCharsets.UTF_8), "HmacSHA256");
+    }
+
+    /**
+     * 비밀번호 해시 (ADR-0031). BCrypt 는 솔트를 해시 문자열 안에 담으므로 별도 컬럼이 없다.
+     *
+     * <p>시드의 자리표시자(`$2a$10$demoDemo...`)는 <b>29자로 BCrypt 형식이 아니다</b> —
+     * 60자가 정상이다. 그래서 어떤 비밀번호와도 매칭되지 않고, 초기화가 실패하면
+     * 아무도 로그인하지 못한다(조용히 열리는 쪽이 아니라 조용히 닫히는 쪽으로 실패한다).
+     */
+    @Bean
+    org.springframework.security.crypto.password.PasswordEncoder passwordEncoder() {
+        return new org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder();
     }
 
     @Bean

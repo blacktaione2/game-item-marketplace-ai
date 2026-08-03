@@ -276,3 +276,42 @@ th {
   font-size: 12px;
   font-variant-numeric: tabular-nums;
 }
+
+/* 로그인 화면 (ADR-0031). 드롭다운을 대체했다. */
+.login-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  padding: 24px;
+}
+.login-card {
+  width: 100%;
+  max-width: 360px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.login-card label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.login-card input {
+  padding: 8px 10px;
+  font-size: 14px;
+}
+.login-error {
+  color: var(--bad, #d9534f);
+  font-size: 13px;
+  margin: 0;
+}
+.linklike {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 13px;
+  padding: 0;
+  text-decoration: underline;
+}
