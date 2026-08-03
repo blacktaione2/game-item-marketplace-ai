@@ -20,6 +20,36 @@ from app.core.config import get_settings
 logger = logging.getLogger(__name__)
 
 
+def _quantization_config(auto_config):
+    """int8 동적 양자화 설정. **아키텍처와 무관하게 avx2 다** (ADR-0032).
+
+    이름이 x86 을 가리키지만 산출물은 이식 가능한 ONNX 이고, ARM 의 ONNX Runtime
+    에서도 실행된다. `machine()` 을 읽지 않는다 — 읽었다가 되돌렸다.
+
+    ## arm64 설정을 기각한 이유 (측정)
+
+    같은 모델을 두 설정으로 양자화해 평가 질의 5건 × 후보 20건을 비교했다.
+
+    | | 결과 |
+    |---|---|
+    | arm64 모델이 x86 에서 실행되는가 | **된다** (비교가 가능했다) |
+    | top-1 일치 | **5/5** |
+    | **top-5 순위 일치** | **0/5** |
+    | 점수차 | 0.064 ~ 0.268 |
+
+    2~5위가 매번 재배열된다. 그리고 **기록된 품질 수치는 전부 avx2 로 측정한
+    것이다** — 하드 필터 부적합 50 → 14(ADR-0014·0015), 임베딩 Recall@1 등.
+    양자화를 바꾸면 그 수치가 배포된 시스템을 더 이상 설명하지 않는다.
+
+    바꿀 이유는 "ARM 에서 더 빠를 수 있다"인데 **그건 측정한 적이 없다.**
+    재보지 않은 성능 이득을 위해 재본 품질 수치를 버리는 거래라서 기각했다.
+
+    되살릴 조건: **ARM 에서 리랭킹이 실제로 병목으로 지목될 때.** 그때는
+    `evaluate_hard_filters` 를 다시 돌려 품질 수치를 갱신하는 것이 전환의 일부다.
+    """
+    return auto_config.avx2(is_static=False, per_channel=False)
+
+
 def build_quantized_model(model_id: str, output_dir: Path) -> None:
     """HF 모델을 ONNX로 변환하고 int8 동적 양자화해서 output_dir에 저장."""
     from optimum.onnxruntime import ORTModelForSequenceClassification, ORTQuantizer
@@ -33,10 +63,11 @@ def build_quantized_model(model_id: str, output_dir: Path) -> None:
     tokenizer = AutoTokenizer.from_pretrained(model_id)
 
     quantizer = ORTQuantizer.from_pretrained(model)
-    # 동적 양자화(is_static=False): 캘리브레이션 데이터셋 없이 가중치만 int8로
-    # 낮춘다. avx2 설정은 x86 개발 환경 기준 — 배포 대상인 Oracle Cloud ARM에
-    # 올릴 때는 AutoQuantizationConfig.arm64로 다시 생성하는 편이 좋다.
-    qconfig = AutoQuantizationConfig.avx2(is_static=False, per_channel=False)
+    # 동적 양자화(is_static=False): 캘리브레이션 데이터셋 없이 가중치만 int8로 낮춘다.
+    #
+    # 설정은 `_quantization_config` 이 정한다 — **아키텍처와 무관하게 avx2** 이고,
+    # ARM 용 설정을 측정 후 기각한 근거가 그 함수 docstring 에 있다(ADR-0032).
+    qconfig = _quantization_config(AutoQuantizationConfig)
     quantizer.quantize(save_dir=output_dir, quantization_config=qconfig)
     tokenizer.save_pretrained(output_dir)
     logger.info("크로스인코더 int8 양자화 완료: %s", output_dir)
