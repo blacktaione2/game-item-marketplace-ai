@@ -28,6 +28,6 @@ public class AuthController {
 
     @PostMapping("/login")
     public LoginResponse login(@Valid @RequestBody LoginRequest request) {
-        return authService.login(request.username(), request.password());
+        return authService.login(request.tenantCode(), request.username(), request.password());
     }
 }

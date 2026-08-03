@@ -46,6 +46,7 @@ const SPREAD_ITEMS = Array.from({ length: 20 }, (_, i) => 9002 + i);
 // 나란히 둔다 — 한쪽만 남기면 다른 쪽을 찾을 때 seed SQL 을 열어야 한다.
 const BUYERS = [3, 4, 5];
 const USERNAME_BY_ID = { 3: "buyer_lee", 4: "trader_park", 5: "newbie_choi" };
+const TENANT_CODE = __ENV.TENANT_CODE || "nexon";
 
 const rejected = new Counter("rejected_409");
 const created = new Counter("created_201");
@@ -100,7 +101,8 @@ export function setup() {
     const username = USERNAME_BY_ID[userId];
     const issued = http.post(
       `${BASE}/api/auth/login`,
-      JSON.stringify({ username, password }),
+      // tenantCode 가 자격증명의 일부다 (ADR-0034) — 아이디는 테넌트 안에서만 유일하다.
+      JSON.stringify({ tenantCode: TENANT_CODE, username, password }),
       { headers: { "Content-Type": "application/json" } },
     );
     if (issued.status !== 200) {

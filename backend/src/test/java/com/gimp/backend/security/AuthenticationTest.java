@@ -178,8 +178,24 @@ class AuthenticationTest {
         // 403 이 아니다 — 403 은 "인증은 됐는데 권한이 없다"는 뜻이다.
         mockMvc.perform(post("/api/auth/login")
                         .contentType("application/json")
-                        .content("{\"username\": \"없는사람\", \"password\": \"아무거나\"}"))
+                        .content("{\"tenantCode\": \"nexon\", \"username\": \"없는사람\","
+                                + " \"password\": \"아무거나\"}"))
                 .andExpect(status().isUnauthorized());
+    }
+
+    /**
+     * 인증 이전 경로에서 나는 오류가 <b>401 로 가려지지 않는다</b> (ADR-0034).
+     *
+     * <p>{@code /error} 가 {@code PUBLIC_PATHS} 에 없으면 Boot 의 에러 디스패치가 보안
+     * 체인에 다시 걸려 <b>400 도 500 도 전부 401</b> 이 된다. 그 상태에서 실제 결함 두 건이
+     * "비밀번호가 틀렸다"로 보였다 — 중복 아이디와 짧은 {@code JWT_SECRET}.
+     */
+    @Test
+    void 잘못된_요청은_401이_아니라_400이다() throws Exception {
+        mockMvc.perform(post("/api/auth/login")
+                        .contentType("application/json")
+                        .content("{\"username\":"))
+                .andExpect(status().isBadRequest());
     }
 
     @Test

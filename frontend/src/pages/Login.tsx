@@ -24,7 +24,9 @@ export default function Login({ onSuccess }: { onSuccess: (r: LoginResult) => vo
     setBusy(true);
     setError(null);
     try {
-      onSuccess(await api.login(username, password));
+      // 테넌트 코드는 상수다 (ADR-0034). 배포에 테넌트가 하나뿐이라 선택 UI 를 두지
+      // 않았고, 둘 이상이 되면 여기가 선택기로 바뀌는 자리다.
+      onSuccess(await api.login(TENANT.code, username, password));
     } catch {
       // 서버가 아이디와 비밀번호를 구분하지 않으므로 화면도 구분하지 않는다 —
       // 여기서 갈라 말하면 서버가 막아둔 사용자 열거가 화면에서 열린다.

@@ -69,9 +69,10 @@ if [ -z "${DEMO_PASSWORD:-}" ]; then
 else
   CODE="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 -X POST \
     "http://localhost/api/backend/auth/login" -H 'Content-Type: application/json' \
-    -d "{\"username\":\"buyer_lee\",\"password\":\"${DEMO_PASSWORD}\"}")"
+    -d "{\"tenantCode\":\"${TENANT_CODE:-nexon}\",\"username\":\"buyer_lee\",\"password\":\"${DEMO_PASSWORD}\"}")"
   case "$CODE" in
     200) ok "프록시 경유 로그인 200" ;;
+    400) bad "로그인 400 — 요청이 불완전하다. tenantCode 가 빠졌는가 (ADR-0034)" ;;
     401) bad "로그인 401 — 비밀번호가 안 걸렸다. 기동 후 'restart backend web' 을 했는가" ;;
     502) bad "로그인 502 — nginx 가 옛 IP 를 물고 있다. 'restart web' 이 필요하다" ;;
     *)   bad "로그인이 $CODE" ;;
