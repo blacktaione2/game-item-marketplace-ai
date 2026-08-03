@@ -29,6 +29,7 @@ import org.springframework.security.oauth2.jwt.JwsHeader;
 import org.springframework.security.oauth2.jwt.JwtClaimsSet;
 import org.springframework.security.oauth2.jwt.JwtEncoder;
 import org.springframework.security.oauth2.jwt.JwtEncoderParameters;
+import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -44,6 +45,7 @@ import org.springframework.transaction.annotation.Transactional;
  */
 @SpringBootTest
 @AutoConfigureMockMvc
+@TestPropertySource(properties = "rate-limit.enabled=false")
 @Transactional
 class AuthenticationTest {
 
@@ -171,25 +173,27 @@ class AuthenticationTest {
     }
 
     @Test
-    void 토큰_발급_경로는_인증_없이_열려_있다() throws Exception {
-        // 토큰을 받으러 오는 길이라 잠글 수 없다. 없는 사용자면 401이 아니라 404여야
-        // 한다 — 401이면 "인증하고 다시 오라"는 순환이 된다.
-        mockMvc.perform(post("/api/auth/demo-token")
+    void 로그인_경로는_인증_없이_열려_있다() throws Exception {
+        // 토큰을 받으러 오는 길이라 잠글 수 없다. 자격증명이 틀리면 401 이지
+        // 403 이 아니다 — 403 은 "인증은 됐는데 권한이 없다"는 뜻이다.
+        mockMvc.perform(post("/api/auth/login")
                         .contentType("application/json")
-                        .content("{\"userId\": 999999}"))
-                .andExpect(status().isNotFound());
+                        .content("{\"username\": \"없는사람\", \"password\": \"아무거나\"}"))
+                .andExpect(status().isUnauthorized());
     }
 
-    // --- 발급 ---------------------------------------------------------------
-
     @Test
-    void 클레임은_요청이_아니라_DB에서_온다() throws Exception {
+    void demo_token_경로는_사라졌다() throws Exception {
+        // ADR-0031 이 제거했다. **경로가 없어졌다는 것 자체가 판정**이라 되살아나면 실패한다.
+        //
+        // **유효한 토큰을 들고 간다.** 인증 없이 가면 보안 계층이 먼저 401 을 내는데,
+        // 그건 "핸들러가 없다"가 아니라 "인증하고 오라"는 뜻이라 증거가 약하다 —
+        // 누군가 이 엔드포인트를 인증 뒤에 되살려도 똑같이 401 이 나온다.
+        // 토큰을 들고 가면 보안을 통과하므로, 404 는 **핸들러가 없다는 직접 증거**다.
         mockMvc.perform(post("/api/auth/demo-token")
+                        .header("Authorization", "Bearer " + validToken())
                         .contentType("application/json")
-                        .content("{\"userId\": " + sellerId + "}"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.token").isNotEmpty())
-                .andExpect(jsonPath("$.username").value("seller_test"))
-                .andExpect(jsonPath("$.role").value("USER"));
+                        .content("{\"userId\": 1}"))
+                .andExpect(status().isNotFound());
     }
 }

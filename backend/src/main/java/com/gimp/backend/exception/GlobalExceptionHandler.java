@@ -30,6 +30,22 @@ public class GlobalExceptionHandler {
         meterRegistry.counter("trade.rejection", "reason", reason).increment();
     }
 
+    /**
+     * 로그인 실패 (ADR-0031).
+     *
+     * <p><b>핸들러가 없으면 500 이 나간다.</b> Spring Security 의 예외 변환은 필터 체인에서
+     * 던져진 것만 다루는데, 이건 컨트롤러 안쪽(서비스)에서 나온다. 자격증명이 틀렸을 뿐인데
+     * 서버 오류로 보고하면 (1) 클라이언트가 재시도를 하고 (2) 로그가 오류로 오염된다.
+     *
+     * <p>메시지는 <b>아이디와 비밀번호를 구분하지 않는다</b> — 갈리면 사용자 열거가 된다.
+     */
+    @ExceptionHandler(org.springframework.security.authentication.BadCredentialsException.class)
+    public ResponseEntity<ErrorResponse> handleBadCredentials(
+            org.springframework.security.authentication.BadCredentialsException e) {
+        countRejection("bad_credentials");
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(ErrorResponse.of(e.getMessage()));
+    }
+
     @ExceptionHandler(ResourceNotFoundException.class)
     public ResponseEntity<ErrorResponse> handleNotFound(ResourceNotFoundException e) {
         countRejection("not_found");

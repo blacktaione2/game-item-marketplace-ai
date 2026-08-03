@@ -62,4 +62,9 @@ public class User extends BaseTimeEntity {
         this.passwordHash = passwordHash;
         this.role = role == null ? UserRole.USER : role;
     }
+
+    /** 기동 시 데모 비밀번호를 주입할 때만 쓴다 (ADR-0031, DemoAccountInitializer). */
+    public void changePassword(String encodedPassword) {
+        this.passwordHash = encodedPassword;
+    }
 }

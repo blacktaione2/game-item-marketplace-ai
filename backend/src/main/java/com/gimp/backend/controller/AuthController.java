@@ -1,7 +1,7 @@
 package com.gimp.backend.controller;
 
-import com.gimp.backend.dto.auth.DemoTokenRequest;
-import com.gimp.backend.dto.auth.DemoTokenResponse;
+import com.gimp.backend.dto.auth.LoginRequest;
+import com.gimp.backend.dto.auth.LoginResponse;
 import com.gimp.backend.service.AuthService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -11,14 +11,13 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * 데모 사용자 전환용 토큰 발급.
+ * 로그인 (ADR-0031).
  *
- * <p><b>경로 이름이 곧 경고다.</b> {@code /login}이 아니라 {@code /demo-token}인 이유는 이것이 인증이 아니기
- * 때문이다 — 비밀번호를 확인하지 않으므로 <b>userId만 알면 누구나 그 사용자의 토큰을 받는다.</b> 이 서버를
- * 외부에 노출하면 안 되는 이유가 여전히 유효하고, README에도 같은 경고가 있다.
+ * <p><b>{@code /demo-token} 은 제거됐다.</b> 그건 비밀번호를 확인하지 않아 userId 만 알면
+ * 누구나 그 사용자의 토큰을 받을 수 있었고, 공개 배포에서는 성립하지 않는 전제였다.
+ * 경로가 사라졌다는 것 자체를 테스트가 404 로 고정한다.
  *
- * <p>발급이 데모라고 해서 검증도 데모인 것은 아니다. 발급된 토큰은 서명·만료·클레임이 전부 실제로 검증된다
- * (ADR-0023).
+ * <p>회원가입 경로는 <b>일부러 없다</b> — 계정은 시드로 고정이다. 사유는 {@code AuthService}.
  */
 @RestController
 @RequestMapping("/api/auth")
@@ -27,8 +26,8 @@ public class AuthController {
 
     private final AuthService authService;
 
-    @PostMapping("/demo-token")
-    public DemoTokenResponse demoToken(@Valid @RequestBody DemoTokenRequest request) {
-        return authService.issueDemoToken(request.userId());
+    @PostMapping("/login")
+    public LoginResponse login(@Valid @RequestBody LoginRequest request) {
+        return authService.login(request.username(), request.password());
     }
 }

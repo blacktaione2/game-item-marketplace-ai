@@ -122,6 +122,14 @@ export interface Forecast {
   }[];
 }
 
+export interface LoginResult {
+  token: string;
+  expiresIn: number;
+  userId: number;
+  username: string;
+  role: "USER" | "ADMIN";
+}
+
 export type NotificationType =
   | "PURCHASE_COMPLETED"
   | "ITEM_SOLD"
@@ -231,14 +239,15 @@ export interface DemoToken {
 
 export const api = {
   /**
-   * 데모 사용자 전환용 토큰 발급. **로그인이 아니다** — 비밀번호를 확인하지
-   * 않으므로 userId만 알면 누구나 받는다. 이 배포를 외부에 노출하면 안 되는
-   * 이유가 여전히 유효하다(ADR-0023).
+   * 로그인 (ADR-0031). `demo-token` 을 대체한다 — 그건 비밀번호를 확인하지 않아
+   * userId 만 알면 누구나 그 사용자가 될 수 있었다.
+   *
+   * userId 가 아니라 username+password 를 보낸다. 신원을 요청이 주장하지 않는다.
    */
-  demoToken: (userId: number) =>
-    request<DemoToken>("/api/backend/auth/demo-token", {
+  login: (username: string, password: string) =>
+    request<LoginResult>("/api/backend/auth/login", {
       method: "POST",
-      body: JSON.stringify({ userId }),
+      body: JSON.stringify({ username, password }),
     }),
 
   getItem: (itemId: number) => request<Item>(`/api/backend/items/${itemId}`),

@@ -137,6 +137,14 @@ services:
     profiles: [app]
     environment:
       DB_HOST: postgres
+      # **자격증명도 같이 넘긴다.** 이걸 빠뜨리면 postgres 는 새 비밀번호로
+      # 초기화되는데 앱은 application.yml 의 기본값을 쓴다 — 시크릿을 교체한
+      # 배포에서만 드러나고, 증상은 "password authentication failed" 라 원인이
+      # 애플리케이션 쪽으로 보인다. RABBITMQ_HOST·DEMO_PASSWORD 에 이은 세 번째다.
+      # **compose 의 environment 는 셸 환경을 자동 상속하지 않는다.**
+      DB_NAME: ${POSTGRES_DB:-gimp}
+      DB_USERNAME: ${POSTGRES_USER:-gimp}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-gimp_local_pw}
       REDIS_HOST: redis
       REDIS_PASSWORD: ${REDIS_PASSWORD:-gimp_local_pw}
       # ADR-0030에서 빠뜨렸던 것. 컨테이너 안의 localhost 는 자기 자신이라
@@ -151,6 +159,16 @@ services:
       # 되돌리는 걸 잊을 수 없게 기동 인자로만 넘긴다(ADR-0024와 같은 이유).
       #   SPRING_PROFILES_ACTIVE=loadtest docker compose --profile app up -d backend
       SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-}
+      # 데모 계정 비밀번호 (ADR-0031). **기본값이 없다** — 안 넘기면 아무도 로그인
+      # 못 한다(시드의 자리표시자가 BCrypt 형식이 아니라서 그렇게 실패한다).
+      #
+      # 여기 선언을 빠뜨리면 셸에서 넘겨도 컨테이너에 안 들어간다. RABBITMQ_HOST 를
+      # 같은 방식으로 빠뜨린 전례가 있다 — compose 의 environment 는 **자동 상속이
+      # 아니다.**
+      DEMO_PASSWORD: ${DEMO_PASSWORD:-}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      # X-Forwarded-For 를 신뢰할 출처. 비면 헤더를 안 읽는다(안전한 쪽 기본값).
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-}
     ports:
       # nginx 뒤에 있어도 직접 노출한다. `load/` 하네스가 8080 을 때리고
       # snapshot_metrics.py 가 /actuator/prometheus 를 긁는다 — 막으면 측정 도구가

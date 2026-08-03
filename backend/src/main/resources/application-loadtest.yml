@@ -22,6 +22,6 @@ rate-limit:
   trade:
     permits: 100000
     window-seconds: 1
-  demo-token:
+  login:
     permits: 100000
     window-seconds: 60

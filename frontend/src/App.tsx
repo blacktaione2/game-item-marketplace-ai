@@ -1,63 +1,50 @@
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { NavLink, Route, Routes } from "react-router-dom";
 
-import { api, setAccessToken } from "./api";
-import { DEFAULT_USER_ID, DEMO_USERS, TENANT } from "./demo";
+import { api, setAccessToken, type LoginResult } from "./api";
+import { TENANT } from "./demo";
 import AnomalyQueue from "./pages/AnomalyQueue";
 import Assistant from "./pages/Assistant";
 import ItemDetail from "./pages/ItemDetail";
+import Login from "./pages/Login";
 
 export default function App() {
-  // 로그인 화면이 없으므로 "누구로 접속했는가"를 드롭다운으로 고른다. 다만
-  // 선택 결과가 그대로 헤더로 나가던 예전과 달리, 이제는 **서버가 그 사용자의
-  // 토큰을 발급**하고 이후 요청은 전부 그 토큰으로 나간다 (ADR-0023).
-  const [userId, setUserId] = useState(DEFAULT_USER_ID);
-  const [tokenState, setTokenState] = useState<"loading" | "ready" | "error">(
-    "loading",
-  );
-  const currentUser = DEMO_USERS.find((user) => user.id === userId)!;
+  // **드롭다운이 로그인 화면으로 바뀌었다** (ADR-0031). 예전에는 userId 를 고르면
+  // demo-token 이 나왔는데, 비밀번호를 확인하지 않아 공개 배포에서는 성립하지 않는
+  // 전제였다. 이제 서버가 자격증명을 검증한 뒤에 토큰을 준다.
+  //
+  // 세션은 여전히 메모리에만 둔다 — 새로고침하면 다시 로그인한다. localStorage 에
+  // 넣으면 XSS 한 번에 토큰이 새므로, 데모 편의를 위해 그 위험을 지지 않는다.
+  const [session, setSession] = useState<LoginResult | null>(null);
 
-  useEffect(() => {
-    let cancelled = false;
-    setTokenState("loading");
-    // 사용자가 바뀌는 동안 **이전 토큰으로 요청이 나가면 안 된다.** 먼저 지운다.
+  function handleLogin(result: LoginResult) {
+    setAccessToken(result.token);
+    setSession(result);
+  }
+
+  function logout() {
     setAccessToken(null);
+    setSession(null);
+  }
 
-    api
-      .demoToken(userId)
-      .then((issued) => {
-        if (cancelled) return;
-        setAccessToken(issued.token);
-        setTokenState("ready");
-      })
-      .catch(() => {
-        if (!cancelled) setTokenState("error");
-      });
+  if (!session) {
+    return <Login onSuccess={handleLogin} />;
+  }
 
-    return () => {
-      cancelled = true;
-    };
-  }, [userId]);
+  const currentUser = session;
 
   return (
     <div className="layout">
       <header className="topbar">
         <span className="brand">{TENANT.name} 아이템 거래소</span>
 
-        <label className="row" style={{ gap: 6 }}>
-          <span className="muted">데모 사용자</span>
-          <select
-            value={userId}
-            onChange={(event) => setUserId(Number(event.target.value))}
-          >
-            {DEMO_USERS.map((user) => (
-              <option key={user.id} value={user.id}>
-                {user.username} ({user.role})
-              </option>
-            ))}
-          </select>
-        </label>
+        <span className="muted">
+          {currentUser.username} ({currentUser.role})
+        </span>
+        <button type="button" className="linklike" onClick={logout}>
+          로그아웃
+        </button>
 
         <nav>
           <NavLink to="/" end>
@@ -70,21 +57,11 @@ export default function App() {
         </nav>
       </header>
 
-      {/* 토큰이 없는 동안 화면을 그리면 하위 쿼리가 전부 401로 실패한다.
-          발급이 한 번의 왕복이라 스피너 대신 짧은 안내로 충분하다. */}
-      {tokenState === "ready" ? (
-        <Routes>
-          <Route path="/" element={<Assistant />} />
-          <Route path="/items/:itemId" element={<ItemDetail userId={userId} />} />
-          <Route path="/anomalies" element={<AnomalyQueue />} />
-        </Routes>
-      ) : (
-        <main className="card muted">
-          {tokenState === "loading"
-            ? "토큰 발급 중…"
-            : "토큰 발급에 실패했습니다. 백엔드가 실행 중인지 확인하세요."}
-        </main>
-      )}
+      <Routes>
+        <Route path="/" element={<Assistant />} />
+        <Route path="/items/:itemId" element={<ItemDetail userId={currentUser.userId} />} />
+        <Route path="/anomalies" element={<AnomalyQueue />} />
+      </Routes>
     </div>
   );
 }

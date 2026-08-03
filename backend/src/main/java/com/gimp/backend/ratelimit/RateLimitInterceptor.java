@@ -34,11 +34,18 @@ public class RateLimitInterceptor implements HandlerInterceptor {
     @Value("${rate-limit.trade.window-seconds}")
     private int tradeWindowSeconds;
 
-    @Value("${rate-limit.demo-token.permits}")
-    private int demoTokenPermits;
+    @Value("${rate-limit.login.permits}")
+    private int loginPermits;
 
-    @Value("${rate-limit.demo-token.window-seconds}")
-    private int demoTokenWindowSeconds;
+    @Value("${rate-limit.login.window-seconds}")
+    private int loginWindowSeconds;
+
+    /**
+     * 이 주소들에서 온 요청만 {@code X-Forwarded-For} 를 신뢰한다.
+     * 비어 있으면(기본) 헤더를 아예 안 읽는다 — 로컬 실행이 현행과 같아진다.
+     */
+    @Value("${rate-limit.trusted-proxies:}")
+    private java.util.Set<String> trustedProxies = java.util.Set.of();
 
     public RateLimitInterceptor(RateLimiterService rateLimiter) {
         this.rateLimiter = rateLimiter;
@@ -50,11 +57,11 @@ public class RateLimitInterceptor implements HandlerInterceptor {
             return true;
         }
 
-        boolean isTokenIssue = request.getRequestURI().startsWith("/api/auth/");
-        RateLimitScope scope = isTokenIssue ? RateLimitScope.DEMO_TOKEN : RateLimitScope.TRADE;
-        String subject = isTokenIssue ? clientIp(request) : String.valueOf(currentUserId());
-        int permits = isTokenIssue ? demoTokenPermits : tradePermits;
-        int window = isTokenIssue ? demoTokenWindowSeconds : tradeWindowSeconds;
+        boolean isLogin = request.getRequestURI().startsWith("/api/auth/");
+        RateLimitScope scope = isLogin ? RateLimitScope.LOGIN : RateLimitScope.TRADE;
+        String subject = isLogin ? clientIp(request) : String.valueOf(currentUserId());
+        int permits = isLogin ? loginPermits : tradePermits;
+        int window = isLogin ? loginWindowSeconds : tradeWindowSeconds;
 
         if (!rateLimiter.tryAcquire(scope, subject, permits, window)) {
             throw new RateLimitExceededException(scope.tag(), window);
@@ -71,11 +78,30 @@ public class RateLimitInterceptor implements HandlerInterceptor {
         throw new IllegalStateException("인증된 요청인데 JWT 토큰이 없습니다.");
     }
 
+    /**
+     * 클라이언트 IP. <b>신뢰하는 프록시에서 온 요청일 때만</b> {@code X-Forwarded-For} 를 읽는다.
+     *
+     * <p>ADR-0024 는 이 헤더를 아예 안 읽었다. 근거는 "신뢰할 프록시가 전제되지 않으면
+     * 누구나 값을 바꿔 새 버킷을 받는다"였고, 그때는 맞았다. <b>ADR-0029 의 nginx 로 그 전제가
+     * 생겼고</b>, 공개 배포에서는 안 읽는 쪽이 오히려 문제가 된다 — 모든 요청의 IP 가 프록시
+     * 하나로 합쳐져 한도가 배포 전체 합계가 된다.
+     *
+     * <p><b>기본값은 빈 목록이다.</b> 즉 설정을 안 하면 예전과 똑같이 XFF 를 무시한다.
+     * 잊은 배포가 <b>더 안전한 쪽</b>으로 실패해야 하기 때문이다.
+     *
+     * <p>맨 마지막 값을 쓴다. XFF 는 {@code 클라이언트, 프록시1, 프록시2} 순으로 쌓이는데,
+     * 앞쪽은 클라이언트가 위조해 넣을 수 있고 <b>맨 뒤가 우리 프록시가 붙인 값</b>이다.
+     */
     private String clientIp(HttpServletRequest request) {
-        // **X-Forwarded-For를 보지 않는다.** 신뢰할 프록시가 없는 상태에서 그 헤더를 읽으면
-        // 누구나 값을 바꿔가며 새 버킷을 받을 수 있다 — 한도를 거는 코드가 스스로 우회로를
-        // 만드는 셈이다. 리버스 프록시를 두게 되면 그때 ForwardedHeaderFilter로 신뢰 경계를
-        // 세우고 나서 XFF를 읽어야 한다. 순서가 반대면 안 된다.
-        return request.getRemoteAddr();
+        String remote = request.getRemoteAddr();
+        if (!trustedProxies.contains(remote)) {
+            return remote;
+        }
+        String forwarded = request.getHeader("X-Forwarded-For");
+        if (forwarded == null || forwarded.isBlank()) {
+            return remote;
+        }
+        String[] parts = forwarded.split(",");
+        return parts[parts.length - 1].trim();
     }
 }

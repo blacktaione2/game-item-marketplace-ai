@@ -209,6 +209,21 @@ Two consequences: **the 650MB of models live in a named volume, not the image**
 deployment. That second one is registered, not fixed: reading `X-Forwarded-For` needs
 "trust only the proxy's IP" logic, and nginx deliberately does not set the header today.
 
+**A public deploy uses `docker-compose.deploy.yml` on top** (ADR-0031): it publishes
+**only nginx's 80**, sets `SPRING_PROFILES_ACTIVE=prod` (which arms `SecretGuard`,
+refusing to boot on the repo's default secrets), and requires `restart backend web`
+afterwards. Three traps live here, all invisible without actually running it:
+
+- **`ports: []` does not remove ports** — Compose *appends* sequences. Use
+  `!override []`.
+- **`environment:` does not inherit your shell** — `RABBITMQ_HOST`, `DEMO_PASSWORD`,
+  and `DB_PASSWORD` were each forgotten in turn, and the symptoms pointed at the
+  application ("password authentication failed"), not at compose.
+- **A closed port and a dead container look identical from outside.** The first run of
+  `verify-deploy.sh` passed "8080 closed" while the backend had actually refused to
+  boot. It now asserts the stack is running *first*, and ends with a real
+  proxy-path login.
+
 `docker-compose.yml` at the repo root brings up PostgreSQL, single-node
 Elasticsearch, Redis, and RabbitMQ (see that file / `.env.example` for ports
 and credentials). Elasticsearch is **built from `docker/elasticsearch/Dockerfile`**,
@@ -355,11 +370,28 @@ is why neither server has CORS configured; don't add it. Screens: `/`
 (assistant + search), `/items/:id` (detail + price chart + purchase/bid),
 `/anomalies` (GM queue). State is TanStack Query only; there is no global store.
 
-**Authentication exists since ADR-0023, but token *issuance* is a demo.**
-`POST /api/auth/demo-token {userId}` hands out a JWT for any userId with no
-password, because there is no login screen — the demo-user dropdown calls it on
-every switch. Verification, by contrast, is real on both servers (signature,
-`exp`, `iss`, required claims, 401/403). Still don't expose this deployment.
+**Authentication is real since ADR-0031** — `POST /api/auth/login
+{username, password}` with BCrypt. `demo-token` is **gone**, and a test asserts
+it 404s *while holding a valid token* (a plain 401 would only prove the security
+layer fired, not that the handler is absent). There is **no signup**: accounts are
+seeded and fixed, deliberately, because opening registration drags in email
+verification, password reset, and spam-account defence.
+
+Three things about it are load-bearing:
+
+- **Passwords never live in the repo.** `seed-demo.sql` is generated and committed,
+  so its hash is a 29-char placeholder that matches nothing;
+  `DemoAccountInitializer` injects the real ones from `DEMO_PASSWORD` /
+  `ADMIN_PASSWORD` at startup. Forgetting them fails **closed** — nobody can log in.
+- **The GM password is separate on purpose.** One shared password would mean anyone
+  who knows the demo password is a GM, making ADR-0023's role check meaningless.
+  `LoginTest` checks this **both ways** — the reverse direction (admin password
+  against every ordinary account) is what catches an initializer that assigned
+  them backwards.
+- **`db-seed` overwrites the injected passwords**, because it runs after the backend
+  is healthy (Hibernate must create the tables first). nginx separately caches the
+  backend's IP at startup. Both are fixed by `restart backend web` after `up`, and
+  `load/verify-deploy.sh` fails with 401 or 502 if that step is skipped.
 
 Three consequences worth carrying:
 
@@ -387,6 +419,18 @@ purchase/bid (10/s per user), and `/api/auth/demo-token` (30/min **per IP** — 
 one place keyed by address, since it runs before identity exists). No new
 dependency: the backend reuses Redisson's `RRateLimiter`, the AI server uses the
 `redis.asyncio` client the semantic cache already opens.
+
+**Since ADR-0031 there is also a daily cap** (50/day per user) on `/api/assistant`,
+keyed with the **KST date inside the key string** so it resets at a time you can
+explain ("midnight KST") rather than at each user's first call. It accepts the
+fixed-window 2× boundary at day scale — the real ceiling is the OpenAI monthly cap,
+and this layer targets ordinary abuse, not adversarial precision. **A request
+rejected by the per-minute limit must not consume the daily budget** (increment only
+after the first check passes). `X-Forwarded-For` is now read too — but **only from
+addresses in `rate-limit.trusted-proxies`, which defaults to empty**, so an
+unconfigured deployment behaves exactly as before instead of trusting a spoofable
+header. `load/verify-auth.sh` proves this by forging 40 different XFF values against
+the backend port directly; through nginx the scenario cannot be reproduced at all.
 
 - **Load tests trip these limits**, so both servers need the relaxed config:
   `SPRING_PROFILES_ACTIVE=loadtest` and `RATE_LIMIT_ASSISTANT_PER_MIN=…`. The

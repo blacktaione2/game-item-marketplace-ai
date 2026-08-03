@@ -112,6 +112,16 @@ class Settings(BaseSettings):
     # 포함되고 `ai_rate_limited_total`이 0인지로 오염을 확인할 수 있어서다.
     rate_limit_enabled: bool = True
     rate_limit_assistant_per_min: int = 20
+    # 일일 한도 (ADR-0031). 공개 배포에서 **로그인한 사람의 폭주**를 막는 계층이다.
+    #
+    # 50 의 근거: 분당 20회면 물리 상한이 하루 28,800회인데, 데모 목적으로 필요한 건
+    # 한 번 둘러보는 정도(검색 몇 번 + 시세 + 이상거래 + 에이전트 = 20~30회)다.
+    # 그 2배로 잡았다. 계정 5개를 다 소진해도 하루 250회이고 요청당 LLM 2회이므로
+    # 최악 500호출이다.
+    #
+    # **이건 세 계층 중 하나일 뿐이다.** 실제 비용 상한은 OpenAI 대시보드의 월
+    # 사용량 한도이고, 그게 최후 안전망이다.
+    rate_limit_assistant_per_day: int = 50
 
 
 @lru_cache

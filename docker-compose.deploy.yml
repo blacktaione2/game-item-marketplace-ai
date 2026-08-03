@@ -1,0 +1,74 @@
+# 배포용 오버레이 (ADR-0031).
+#
+#   docker compose -f docker-compose.yml -f docker-compose.deploy.yml --profile app up -d
+#
+# ## 무엇이 달라지는가
+#
+# **백엔드 8080 과 AI 8000 을 호스트에 노출하지 않는다.** ADR-0029 는 부하 하네스가
+# 직접 스크레이프할 수 있게 둘을 열어뒀는데, 로컬에서는 맞는 선택이지만 **공개 배포에서는
+# nginx 를 우회하는 경로**가 된다:
+#
+#   - `/api/assistant` 를 프록시 없이 직접 칠 수 있다 (요청 한도의 IP 키가 다르게 걸린다)
+#   - X-Forwarded-For 위조를 시도할 대상이 생긴다
+#   - "단일 오리진"이라는 전제가 우회된다
+#
+# 포트 미노출이 **1차 방어선**이고 XFF 신뢰 목록이 2차다. 둘은 서로를 대체하지 않는다 —
+# 디버깅하려고 포트를 잠깐 열거나, 앞에 로드밸런서를 두거나, 컨테이너 네트워크에 접근이
+# 생기면 1차가 무너진다. 그때 2차가 남아 있어야 한다.
+#
+# ## 부하테스트는 배포 대상에서 돌리지 않는다
+#
+# 그래서 잃는 게 없다. 필요하면 SSH 터널로 접근한다:
+#   ssh -L 8080:localhost:8080 user@host
+#
+# ## prod 프로파일이 필수다
+#
+# `SecretGuard` 가 기본 시크릿을 거부하는데 **그건 prod 에서만 산다.** 이 오버레이가
+# 프로파일을 박아두는 이유다 — 잊으면 방어가 통째로 꺼진다.
+#
+# ## 기동 후 재시작이 필요하다 (두 가지 이유가 겹친다)
+#
+#   docker compose -f docker-compose.yml -f docker-compose.deploy.yml --profile app up -d
+#   docker compose -f docker-compose.yml -f docker-compose.deploy.yml --profile app #       restart backend web
+#
+# 1. **비밀번호가 시드에 덮인다.** `DemoAccountInitializer` 는 백엔드 기동 시 돌지만,
+#    `db-seed` 는 백엔드가 healthy 가 된 **뒤에** 실행된다(테이블을 Hibernate 가
+#    만들기 때문에 그 순서를 피할 수 없다). 그래서 seed-demo.sql 의 자리표시자
+#    해시가 초기화기의 결과를 지운다 — 재시작해야 비밀번호가 실제로 걸린다.
+# 2. **nginx 가 옛 IP 를 물고 있다.** `proxy_pass` 에 호스트명을 literal 로 쓰면
+#    nginx 는 기동 시점에 한 번 DNS 를 풀고 캐시한다. 백엔드를 재생성하면 IP 가
+#    바뀌어 502 가 난다(로그에 옛 IP 가 그대로 찍힌다).
+#
+# **`verify-deploy.sh` 가 로그인 성공을 확인하므로 이 단계를 잊으면 검사가 실패한다.**
+
+services:
+  backend:
+    # **`!override` 가 필요하다.** Compose 는 시퀀스를 병합할 때 **이어 붙이므로**
+    # 그냥 `ports: []` 를 쓰면 아무것도 안 지워지고 기본 파일의 포트가 그대로 남는다.
+    # 실제로 그렇게 짰다가 "포트가 닫혔다"고 잘못 읽을 뻔했다 — `!override` 는
+    # 병합 대신 교체를 지시한다.
+    #
+    # 컴포즈 네트워크 안에서는 여전히 backend:8080 으로 닿으므로 nginx 는 그대로 동작한다.
+    ports: !override []
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      # nginx 컨테이너에서 온 요청만 X-Forwarded-For 를 신뢰한다.
+      # **컴포즈 네트워크의 IP 는 고정이 아니므로** 배포 시 실제 값으로 채운다 —
+      # 비워두면 헤더를 안 읽을 뿐(안전한 쪽 실패)이라 조용히 뚫리지는 않는다.
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-}
+
+  ai:
+    ports: !override []
+
+  # 관리 UI 도 열지 않는다. 큐 상태는 SSH 터널로 본다.
+  rabbitmq:
+    ports: !override []
+
+  elasticsearch:
+    ports: !override []
+
+  postgres:
+    ports: !override []
+
+  redis:
+    ports: !override []
