@@ -18,7 +18,11 @@ class SearchRequest(BaseModel):
     # tenant_code는 **토큰 클레임에서 온다.** 본문에도 두면 같은 사실의 출처가
     # 둘이 되고, 어긋나게 보낼 수 있으면서 어긋난 걸 검출할 방법이 없다 —
     # ADR-0022에서 trade_id + id_space를 한 값으로 합친 것과 같은 이유다.
-    query: str
+    # **`size`는 묶여 있는데 `query`는 안 묶여 있었다** (ADR-0035). 같은 DTO 안에서
+    # 크기는 상한을 두고 길이는 빠뜨린 것이라, 그 대비 자체가 이 결함의 발견 단서였다.
+    # 상한 근거는 `assistant.py` 참고 — 파이프라인이 128/256토큰에서 자르고,
+    # 데이터셋 질의 547건의 최댓값이 33자다.
+    query: str = Field(min_length=1, max_length=500)
     size: int = Field(default=10, ge=1, le=50)
     # 리랭킹 전/후 비교를 위해 끌 수 있게 열어둠 (RAGAS 평가에서 사용 예정)
     use_rerank: bool = True

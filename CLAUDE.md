@@ -494,6 +494,17 @@ key; it does not (only an empty array is refused), and Nimbus raises
 is the wrong home for this because it is `prod`-only and asks "is this the repo
 default"; a short key is broken in every profile.
 
+- **All three cost layers count requests, not cost — so request *size* is bounded
+  separately** (ADR-0035). `query` had no `max_length` and nothing truncated it:
+  a 19,800-char query returned **200** in 16.4s (a normal one is ~50 chars / 4.5s),
+  which multiplies the daily budget while staying inside the daily cap. Now
+  `min_length=1, max_length=500` on both `/api/assistant` and `/api/search`. The
+  number is derived, not guessed: the embedding truncates at **128 tokens** and the
+  reranker at **256**, so text past that only inflates the LLM bill — and the 547
+  queries in `data/` top out at **33 characters**. The give-away was in the same
+  class: `size` was already `ge=1, le=50` while `query` was unbounded. **When one
+  field in a DTO is bounded and its neighbour isn't, the unbounded one is an
+  omission, not a decision.**
 - **Load tests trip these limits**, so both servers need the relaxed config:
   `SPRING_PROFILES_ACTIVE=loadtest` and `RATE_LIMIT_ASSISTANT_PER_MIN=…`. The
   relaxed values deliberately live *outside* `application.yml` so they cannot be

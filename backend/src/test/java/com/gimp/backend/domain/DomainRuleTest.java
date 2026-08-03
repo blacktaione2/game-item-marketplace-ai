@@ -152,6 +152,42 @@ class DomainRuleTest {
                                     + "\"price\":1000,\"stock\":1}"))
                     .andExpect(status().isBadRequest());
         }
+
+        /**
+         * 컬럼이 {@code varchar(200)} 인데 DTO 에 {@code @Size} 가 없어서 201자가 검증을
+         * 통과하고 <b>INSERT 시점에 터져 500</b> 이 나왔다 (ADR-0035, 실측 300자 → 500).
+         *
+         * <p><b>경계로 잰다.</b> "길다"만 확인하면 상한을 하나 어긋나게 잡아도 통과한다.
+         */
+        @Test
+        void 이름이_200자를_넘으면_400이다() throws Exception {
+            mockMvc.perform(post("/api/items")
+                            .header("Authorization", bearer(seller))
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"name\":\"" + "A".repeat(201) + "\",\"saleType\":\"FIXED_PRICE\","
+                                    + "\"price\":1000,\"stock\":1}"))
+                    .andExpect(status().isBadRequest());
+        }
+
+        @Test
+        void 이름이_정확히_200자면_등록된다() throws Exception {
+            mockMvc.perform(post("/api/items")
+                            .header("Authorization", bearer(seller))
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"name\":\"" + "A".repeat(200) + "\",\"saleType\":\"FIXED_PRICE\","
+                                    + "\"price\":1000,\"stock\":1}"))
+                    .andExpect(status().isCreated());
+        }
+
+        /** 등록만 막고 수정을 열어두면 같은 결함이 경로 하나로 남는다. */
+        @Test
+        void 수정에서도_이름_길이가_막힌다() throws Exception {
+            mockMvc.perform(put("/api/items/" + fixedPriceItem.getId())
+                            .header("Authorization", bearer(seller))
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"name\":\"" + "A".repeat(201) + "\",\"price\":1000}"))
+                    .andExpect(status().isBadRequest());
+        }
     }
 
     // --- 구매 ---------------------------------------------------------------
