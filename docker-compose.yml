@@ -139,6 +139,11 @@ services:
       DB_HOST: postgres
       REDIS_HOST: redis
       REDIS_PASSWORD: ${REDIS_PASSWORD:-gimp_local_pw}
+      # ADR-0030에서 빠뜨렸던 것. 컨테이너 안의 localhost 는 자기 자신이라
+      # 백엔드가 5672 를 자기한테 물었고, **actuator/health 가 503** 이 됐다.
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_USER: ${RABBITMQ_USER:-gimp}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-gimp_local_pw}
       AI_SERVER_URL: http://ai:8000
       # 대칭키라 AI 서버와 **같은 값**이어야 한다. 다르면 발급은 되는데 AI 만 401.
       JWT_SECRET: ${JWT_SECRET:-gimp_local_dev_secret_change_me_32b}
@@ -155,6 +160,10 @@ services:
       postgres:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      # 알림 큐(ADR-0030). **다만 이건 기동 순서일 뿐 보호막이 아니다** —
+      # 브로커가 나중에 죽어도 거래는 계속돼야 한다(fail-open).
+      rabbitmq:
         condition: service_healthy
     healthcheck:
       # 포트가 아니라 **애플리케이션**에 묻는다. 포트만 보면 아직 기동 중인
