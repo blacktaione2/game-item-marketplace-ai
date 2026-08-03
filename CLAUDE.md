@@ -230,6 +230,24 @@ and credentials). Elasticsearch is **built from `docker/elasticsearch/Dockerfile
 not pulled directly — it bakes in the `analysis-nori` Korean plugin, which
 would otherwise be lost whenever the container is recreated.
 
+**The deployment target is ARM, and nothing in the build branches on architecture**
+(ADR-0032). All four images cross-build for `linux/arm64` and every dependency
+resolves to an aarch64 wheel (`torch-2.13.0+cpu` from the CPU index — verified,
+since `download.pytorch.org/whl/cpu` only gained `cp311` aarch64 wheels at 2.7.0 —
+plus `onnxruntime-1.28.0`, numpy, scipy, tokenizers). Two things not to redo:
+
+- **The reranker's int8 config stays `avx2` on ARM.** The name says x86 but the
+  artifact is portable ONNX and was confirmed loading and inferring on emulated
+  aarch64. Switching to `AutoQuantizationConfig.arm64` was measured and
+  **rejected**: top-1 agreed 5/5 but **top-5 ordering agreed 0/5**, and every
+  recorded quality number in this repo is avx2-based — it trades measured quality
+  for an unmeasured speed guess. Revisit only if reranking is *shown* to be the
+  ARM bottleneck, and re-run `evaluate_hard_filters` as part of the switch.
+- **Cross-building is for confidence, not for artifacts** — build on the target,
+  which is native. Use `--output type=cacheonly`; a 3GB emulated image on the dev
+  box is pure cost, and its build cache is what filled the disk and killed the
+  daemon (see the prune/compact gotcha above).
+
 **Trade processing is synchronous on purpose; the queue carries what comes after**
 (ADR-0030). The plan's flow was `lock → publish → consumer does the DB work`, which
 would turn purchase into `202 Accepted` and break the shape of ADR-0020's
@@ -576,6 +594,21 @@ Postgres and ES drift apart and search results stop resolving to real rows.
   a server, confirm the start actually succeeded (the log line, not the port),
   and kill leftovers by PID — `netstat -ano | grep :8080` then
   `taskkill //F //PID <pid>`, since stopping the wrapper does not do it.
+- **`docker … prune` frees space inside the vhdx; it does not shrink the file.**
+  Pruning 19.35GB of build cache moved host free space by **1.3GB**; the other
+  15.7GB needed `diskpart compact vdisk` on `docker_data.vhdx` (Windows Home has
+  no `Optimize-VHD`), with Docker fully stopped and `wsl --shutdown` first.
+  General rule: **in layered storage, "I deleted it" is a statement by the top
+  layer — measure what was actually freed from the outermost one** (`Get-PSDrive C`).
+  Two corollaries measured here: `fstrim` reporting **`0 B trimmed` does not mean
+  there is nothing to reclaim** (compaction still recovered 15.7GB), and a
+  host-side exhaustion surfaces under a different name one layer up — the guest
+  says **`read-only file system`**, containerd dumps goroutines, and **the
+  `docker` CLI itself stops responding**, so the tool you would diagnose with is
+  the victim. Check the host first. Also: restarting Docker Desktop while its old
+  processes survive **does not boot the VM at all** — watch `init.log`'s
+  timestamp, not the clock. See
+  `docs/05-Troubleshooting/도커-디스크-고갈-vhdx-압축.md`.
 - **A long-lived dev venv hides missing dependency declarations.** `mcp` and
   `redis` were installed by hand in Phase 6 and never added to
   `requirements.txt`; six months of work ran fine locally and CI failed on its
