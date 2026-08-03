@@ -40,6 +40,11 @@ export default function Assistant() {
           style={{ flex: 1, minWidth: 260 }}
           placeholder="무엇이든 물어보세요 — 검색·시세·이상거래를 알아서 나눠 처리합니다"
           value={query}
+          // 서버 상한과 같은 값이다 (ADR-0035). **서버가 막으니 됐다고 두지 않는다** —
+          // 붙여넣기로 500자를 넘기면 422 가 오고, 사용자에게는 원인이 안 보이는
+          // 오류로만 보인다. 여기서 막으면 애초에 그 상태가 안 생긴다.
+          // 서버 검증은 그대로 남는다(프론트를 거치지 않는 호출이 있다).
+          maxLength={500}
           onChange={(event) => setQuery(event.target.value)}
         />
         <button className="primary" type="submit" disabled={ask.isPending}>

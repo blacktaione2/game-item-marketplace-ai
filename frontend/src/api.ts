@@ -220,6 +220,32 @@ export function setSessionExpiredHandler(handler: (() => void) | null): void {
   onSessionExpired = handler;
 }
 
+/**
+ * 에러 본문에서 **사람이 읽을 문자열 하나**를 뽑는다. 항상 문자열이거나 null 이다 —
+ * 호출부가 이 값을 JSX 에 그대로 렌더하기 때문이다.
+ *
+ * 형태가 셋이다.
+ *   백엔드          `{ message: "…" }`
+ *   AI 서버(HTTPException) `{ detail: "…" }`
+ *   AI 서버(검증 422)      `{ detail: [{ msg, loc, … }, …] }`  ← 배열이다
+ */
+function normalizeErrorMessage(body: unknown): string | null {
+  if (typeof body !== "object" || body === null) return null;
+  const { detail, message } = body as { detail?: unknown; message?: unknown };
+
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail)) {
+    // `input` 은 넣지 않는다 — 422 본문은 **입력 전체를 되돌려주므로** 그대로 쓰면
+    // 500자짜리 오류 메시지가 화면에 박힌다.
+    const reasons = detail
+      .map((entry) => (typeof entry?.msg === "string" ? entry.msg : null))
+      .filter((msg): msg is string => msg !== null);
+    return reasons.length > 0 ? reasons.join(", ") : "입력값이 올바르지 않습니다.";
+  }
+  if (typeof message === "string") return message;
+  return null;
+}
+
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers);
   headers.set("Content-Type", "application/json; charset=utf-8");
@@ -238,10 +264,19 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
       onSessionExpired?.();
     }
     // 백엔드는 {message}, AI 서버는 {detail} 로 에러를 준다. 둘 다 흡수한다.
+    //
+    // **`detail` 이 문자열이라고 가정하면 안 된다.** FastAPI 의 검증 실패(422)는
+    // `detail` 에 **객체 배열**을 담는다(`[{type, loc, msg, input}, …]`). 그대로
+    // `message` 에 넣으면 `{error.message}` 를 렌더하는 순간 React 가
+    // "Objects are not valid as a React child" 로 죽는다.
+    //
+    // 이 경로는 ADR-0035 이전에는 **도달할 수 없었다** — 422 를 낼 수 있는 필드가
+    // UI 가 보내지 않는 `size` 뿐이었다. 질의 길이 상한을 걸면서 500자 초과를
+    // 붙여넣는 경로가 처음 열렸고, 그때 이 가정이 드러났다.
     let message = `요청 실패 (HTTP ${response.status})`;
     try {
       const body = await response.json();
-      message = body.detail ?? body.message ?? message;
+      message = normalizeErrorMessage(body) ?? message;
     } catch {
       /* 본문이 JSON이 아니면 기본 메시지를 쓴다 */
     }
