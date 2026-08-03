@@ -238,6 +238,18 @@ post-trade notifications. Four things are load-bearing:
 - **Counting notifications right after load is a false-failure trap.** Consumption is
   async; wait until `messages_ready` **and** `messages_unacknowledged` are both 0
   (`load/verify-mq.sh`), and treat the timeout as a failure, not a pass.
+- **A new infra dependency needs its failure policy set in three places, not one** —
+  the call site (swallow or propagate), `depends_on`, and **the health check**. Miss
+  the last one and the first two are moot: Spring auto-registers a `rabbit` health
+  indicator and `/actuator/health` ANDs them, so a dead broker made the whole instance
+  `unhealthy` — trading and search included — while the code was carefully fail-open.
+  Hence `management.health.rabbit.enabled: false`; publish failures are a *metric*
+  (`trade_event_published_total{outcome="failed"}`), not a health verdict. The same
+  round also shipped without `RABBITMQ_HOST` in compose, because **`localhost` is the
+  correct value locally** and only wrong inside a container. Both defects are invisible
+  to the local dev loop by construction —
+  `docs/05-Troubleshooting/로컬-프로세스로는-볼-수-없는-결함.md` lists what that loop
+  cannot see. **Close a round's bars only after running it containerized.**
 
 ### backend/ (Spring Boot 4.x, Java 21, Gradle)
 Package layout: `domain` (entities per aggregate: `tenant`, `user`, `item`,

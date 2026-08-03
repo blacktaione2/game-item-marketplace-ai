@@ -19,6 +19,21 @@ DLQ="gimp.trade.completed.dlq"
 # application.yml 의 spring.rabbitmq.connection-timeout 에서 나온 값이다.
 # 여기 숫자만 바꾸면 근거가 사라진다 — 설정과 같이 움직여야 한다.
 CONNECT_TIMEOUT_MS=2000
+
+# **상한은 타임아웃 자체가 아니라 그 1.5배다.** 처음엔 "증가 <= 타임아웃"으로
+# 걸었는데 그건 산술적으로 통과할 수 없다:
+#
+#   지연 증가 = (정상 + 타임아웃) - 정상 = 타임아웃 + 측정 오버헤드
+#
+# 오버헤드가 0 이 아닌 한 항상 초과한다(실측 2,002ms / 2,004ms vs 상한 2,000ms).
+# 결과를 보고 낮춘 게 아니라 **도출이 틀린 것을 고쳤다**(ADR-0030 정정 참고).
+#
+# **이 검사가 무엇을 못 하는지도 적어둔다.** 처음엔 "재시도가 도는가를 가린다"고
+# 적었는데 **틀렸다** — `template.retry.enabled: true` 로 바꿔 실측했더니 지연이
+# 1,997ms 로 그대로였다(재시도가 연결 실패에는 걸리지 않는다). 이 검사가 보장하는
+# 것은 **fail-open 의 지연이 타임아웃 1회분을 크게 넘지 않는다**는 것뿐이고,
+# 재시도 설정의 회귀는 잡지 못한다.
+LATENCY_CAP_MS=$(( CONNECT_TIMEOUT_MS * 3 / 2 ))
 PASS=0; FAIL=0
 ok()  { printf '  [PASS] %s\n' "$1"; PASS=$((PASS+1)); }
 bad() { printf '  [FAIL] %s\n' "$1"; FAIL=$((FAIL+1)); }
@@ -53,9 +68,16 @@ token() {
   curl -s -X POST "$BACKEND/api/auth/demo-token" -H 'Content-Type: application/json' \
     -d "{\"userId\":$1}" | python -c "import sys,json;print(json.load(sys.stdin).get('token',''))"
 }
-notif_count() {  # 토큰 -> 알림 수
-  curl -s "$BACKEND/api/notifications" -H "Authorization: Bearer $1" \
-    | python -c "import sys,json;print(len(json.load(sys.stdin)))" 2>/dev/null || echo -1
+# **/api/notifications 의 길이를 세면 안 된다.** 그 엔드포인트는 최근 20건 상한이라
+# 20건이 쌓인 뒤로는 몇 건을 더 만들어도 길이가 20 -> 20 이다. 실제로 그걸 세다가
+# "구매 5건인데 알림 0건"이라는 거짓 실패를 두 번 봤고, 계측을 확인하고서야
+# (발행 ok=99 / 큐 consumers=1) 시스템이 아니라 검사가 틀렸음을 알았다.
+#
+# unread-count 는 상한이 없는 진짜 집계다. 이 흐름에서 알림을 읽음 처리하지
+# 않으므로 총계와 같다.
+notif_count() {  # 토큰 -> 알림 수 (상한 없음)
+  curl -s "$BACKEND/api/notifications/unread-count" -H "Authorization: Bearer $1" \
+    | python -c "import sys,json;print(json.load(sys.stdin)['count'])" 2>/dev/null || echo -1
 }
 
 echo "== 사전 확인 =="
@@ -116,9 +138,30 @@ docker start gimp-rabbitmq >/dev/null 2>&1
   || bad "브로커 정지 시 구매가 $DOWN_CODE — fail-open 이 아니다"
 
 INCREASE=$((DOWN_MS - NORMAL_MS))
-[ "$INCREASE" -le "$CONNECT_TIMEOUT_MS" ] \
-  && ok "지연 증가 ${INCREASE}ms <= 상한 ${CONNECT_TIMEOUT_MS}ms (정상 ${NORMAL_MS}ms -> 정지 ${DOWN_MS}ms)" \
-  || bad "지연 증가 ${INCREASE}ms > 상한 ${CONNECT_TIMEOUT_MS}ms — 어딘가에서 재시도가 돌고 있다"
+[ "$INCREASE" -le "$LATENCY_CAP_MS" ] \
+  && ok "지연 증가 ${INCREASE}ms <= 상한 ${LATENCY_CAP_MS}ms (타임아웃 ${CONNECT_TIMEOUT_MS}ms x1.5). 정상 ${NORMAL_MS}ms -> 정지 ${DOWN_MS}ms" \
+  || bad "지연 증가 ${INCREASE}ms > 상한 ${LATENCY_CAP_MS}ms — 재시도가 돌고 있다 (2배 이상이면 재시도다)"
+
+echo
+echo "== 판정 9: 브로커가 돌아오면 발행이 재개된다 =="
+# **이 검사가 없으면 이 스크립트를 연달아 두 번 못 돌린다.** 판정 5가 브로커를
+# 정지시켰다 살리는데, 백엔드의 캐시된 연결은 곧바로 복구되지 않는다. 그 상태로
+# 다음 실행의 판정 2가 돌면 "구매 5건인데 알림 0건"이 나온다 — 시스템이 아니라
+# 실행 순서가 만든 거짓 실패다(실제로 한 번 겪었다).
+#
+# 그래서 끝에서 복구를 **기다리고 확인한다.** 덤으로 "브로커가 돌아오면 알림이
+# 다시 만들어진다"는 진짜 성질을 단언하게 된다.
+RECOVERED=0
+BEFORE_R="$(notif_count "$TOK")"
+for _ in $(seq 30); do
+  curl -s -o /dev/null -X POST "$BACKEND/api/items/9001/purchase" \
+    -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' -d '{"quantity":1}'
+  sleep 2
+  [ "$(notif_count "$TOK")" -gt "$BEFORE_R" ] && { RECOVERED=1; break; }
+done
+[ "$RECOVERED" = "1" ] \
+  && ok "브로커 복구 후 알림 생성 재개" \
+  || bad "60초 안에 발행이 재개되지 않았다 — 연결 복구가 안 되고 있다"
 
 echo
 echo "----------------------------------------"

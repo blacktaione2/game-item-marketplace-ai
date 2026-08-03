@@ -78,6 +78,21 @@ ai-server:
 # 관측성. Prometheus를 상시 띄우지 않아도 /actuator/prometheus 는 쓸모가 있다 —
 # 히스토그램이 누적값이라 부하테스트 전후로 받아 차분하면 실행 구간 집계가 나온다.
 management:
+  # **알림 브로커는 이 인스턴스의 건강을 결정하지 않는다** (ADR-0030).
+  #
+  # 스프링이 자동 등록하는 rabbit 헬스 인디케이터를 그대로 두면, 브로커가 죽었을 때
+  # /actuator/health 가 503 이 되고 컨테이너가 unhealthy 로 표시된다. 그러면
+  # depends_on 이 걸린 web 이 안 뜨고, 로드밸런서라면 인스턴스를 빼버린다.
+  #
+  # 그건 **코드의 fail-open 과 정반대**다. 발행 실패는 거래를 실패시키지 않는데
+  # 헬스체크만 fail-closed 로 동작하는 셈이라, 알림 하나 때문에 거래·검색까지
+  # 멈춘다. 이 인스턴스는 브로커 없이도 요청을 처리할 수 있으므로 UP 이 맞다.
+  #
+  # 대신 발행 실패는 `trade_event_published_total{outcome="failed"}` 로 보고,
+  # 쌓인 메시지는 DLQ 로 본다 — 건강 여부가 아니라 관측 대상이다.
+  health:
+    rabbit:
+      enabled: false
   endpoints:
     web:
       exposure:
