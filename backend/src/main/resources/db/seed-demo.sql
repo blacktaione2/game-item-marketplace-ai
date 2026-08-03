@@ -6,7 +6,12 @@
 BEGIN;
 
 -- 재실행 가능하게 기존 데모 데이터를 먼저 지운다.
--- trades → items → users → tenants 순서 (FK 역순).
+-- notifications → trades → items → users → tenants 순서 (FK 역순).
+--
+-- notifications 가 맨 앞인 이유는 tenant_id·recipient_id 로 tenants·users 를
+-- 참조하기 때문이다. 알림을 안 지우면 users 삭제에서 FK 위반이 난다.
+-- (trade_id 는 일부러 FK 가 아니라 값이다 — 알림은 거래의 수명주기에 묶이지 않는다.)
+DELETE FROM notifications WHERE tenant_id = 1;
 DELETE FROM trades WHERE tenant_id = 1;
 DELETE FROM items WHERE tenant_id = 1;
 DELETE FROM users WHERE tenant_id = 1;

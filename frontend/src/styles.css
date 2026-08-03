@@ -163,6 +163,14 @@ button.primary {
   color: var(--good);
 }
 
+/* 읽지 않은 알림 (ADR-0030). 기존 .badge 변형을 재사용한다 —
+   .hit / .warn 과 같은 자리라 새 컴포넌트를 만들 이유가 없다. */
+.badge.unread {
+  border-color: var(--accent, var(--text-primary));
+  color: var(--accent, var(--text-primary));
+  font-weight: 600;
+}
+
 .badge.warn {
   border-color: var(--warning);
 }

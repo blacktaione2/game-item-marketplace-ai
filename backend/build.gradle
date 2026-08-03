@@ -32,6 +32,12 @@ dependencies {
 	implementation 'org.springframework.boot:spring-boot-starter-security'
 	implementation 'org.springframework.boot:spring-boot-starter-oauth2-resource-server'
 	implementation 'org.redisson:redisson:3.50.0'
+	// 비동기 후처리(ADR-0030). 거래 처리 자체는 그대로 동기이고, 체결 후
+	// 알림 생성만 큐로 넘긴다 — 오버셀 0 검증(ADR-0001/0020)을 지키기 위해서다.
+	//
+	// **Boot 4 호환을 의존성 추가 직후 확인한다.** 이 자리에서
+	// redisson-spring-boot-starter 가 컨텍스트 기동을 깨뜨린 전례가 있다.
+	implementation 'org.springframework.boot:spring-boot-starter-amqp'
 	compileOnly 'org.projectlombok:lombok'
 	runtimeOnly 'org.postgresql:postgresql'
 	annotationProcessor 'org.projectlombok:lombok'
