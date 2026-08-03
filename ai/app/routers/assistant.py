@@ -2,7 +2,7 @@ from typing import Any
 
 from elasticsearch import AsyncElasticsearch
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.core.auth import Actor
 from app.core.rate_limit import limit_assistant
@@ -20,7 +20,17 @@ router = APIRouter(prefix="/api/assistant", tags=["assistant"])
 class AssistantRequest(BaseModel):
     # tenant_code는 토큰 클레임에서 온다 (ADR-0023). 캐시 키가 테넌트별로
     # 갈리므로, 본문으로 받으면 남의 테넌트 캐시를 조회하게 만들 수도 있었다.
-    query: str
+    #
+    # **길이 상한이 비용 방어의 일부다** (ADR-0035). 한도 3계층(토큰·20회/분·
+    # 50회/일)은 전부 **요청 수**를 센다 — 요청 하나의 길이가 300배가 되면 하루
+    # 예산도 300배가 된다. 실측: 19,800자 질의가 200으로 통과하고 16.4초 걸렸다
+    # (정상 질의는 ~50자 / 4.5초).
+    #
+    # 상한을 500자로 둔 근거는 둘이다.
+    #   1. 파이프라인이 그 너머를 **보지도 않는다** — 임베딩은 128토큰,
+    #      리랭커는 256토큰에서 자른다. 그 뒤 텍스트는 LLM 요금만 늘린다
+    #   2. 데이터셋 질의 547건의 **최댓값이 33자**다(중앙 18, p99 31). 15배 여유다
+    query: str = Field(min_length=1, max_length=500)
     # 캐시 효과를 측정하거나 디버깅할 때 끌 수 있게 열어둔다.
     use_cache: bool = True
 

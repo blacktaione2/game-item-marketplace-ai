@@ -206,6 +206,20 @@ export function setAccessToken(token: string | null): void {
   accessToken = token;
 }
 
+/**
+ * 토큰이 만료됐을 때 부를 콜백 (ADR-0035).
+ *
+ * ADR-0023 설계안에는 "만료 시 재발급 후 1회 재시도"가 있었는데, 로그인이 진짜
+ * 비밀번호가 되면서(ADR-0031) **조용한 재발급이 불가능해졌다** — 비밀번호가 없으니
+ * 다시 받을 수가 없다. 그런데 그 자리를 대체할 처리가 들어가지 않아, TTL 1시간이
+ * 지나면 **모든 동작이 에러를 내고 사용자가 직접 로그아웃을 눌러야** 했다.
+ */
+let onSessionExpired: (() => void) | null = null;
+
+export function setSessionExpiredHandler(handler: (() => void) | null): void {
+  onSessionExpired = handler;
+}
+
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers);
   headers.set("Content-Type", "application/json; charset=utf-8");
@@ -216,6 +230,13 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 
   const response = await fetch(path, { ...init, headers });
   if (!response.ok) {
+    // **토큰을 들고 갔는데 401이면 세션이 죽은 것이다.** 토큰이 없는 상태의 401은
+    // 로그인 실패이므로 건드리지 않는다 — 둘을 안 가르면 비밀번호를 틀릴 때마다
+    // "세션 만료"가 뜬다. `accessToken` 유무가 그 구분이다.
+    if (response.status === 401 && accessToken) {
+      setAccessToken(null);
+      onSessionExpired?.();
+    }
     // 백엔드는 {message}, AI 서버는 {detail} 로 에러를 준다. 둘 다 흡수한다.
     let message = `요청 실패 (HTTP ${response.status})`;
     try {

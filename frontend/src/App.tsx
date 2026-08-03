@@ -1,8 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { NavLink, Route, Routes } from "react-router-dom";
 
-import { api, setAccessToken, type LoginResult } from "./api";
+import { api, setAccessToken, setSessionExpiredHandler, type LoginResult } from "./api";
 import { TENANT } from "./demo";
 import AnomalyQueue from "./pages/AnomalyQueue";
 import Assistant from "./pages/Assistant";
@@ -27,6 +27,15 @@ export default function App() {
     setAccessToken(null);
     setSession(null);
   }
+
+  // **토큰 TTL 이 1시간이라 데모 탭을 열어두면 반드시 만나는 상태다** (ADR-0035).
+  // 예전에는 만료 후 모든 동작이 에러를 내고 사용자가 직접 로그아웃을 눌러야 했다.
+  // 자동 재발급은 불가능하다 — 비밀번호를 들고 있지 않기 때문이다(ADR-0031).
+  // 할 수 있는 건 세션을 접고 로그인 화면으로 되돌리는 것뿐이고, 그게 맞다.
+  useEffect(() => {
+    setSessionExpiredHandler(() => setSession(null));
+    return () => setSessionExpiredHandler(null);
+  }, []);
 
   if (!session) {
     return <Login onSuccess={handleLogin} />;
