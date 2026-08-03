@@ -88,15 +88,23 @@ export const options = {
 // 사본이 생긴다 — 검증기가 두 벌인 것만으로도 충분히 갈라질 위험이 있다.
 const BACKEND = __ENV.BACKEND_URL || "http://localhost:8080";
 
-function issueToken(userId) {
+// ADR-0031 로 `demo-token {userId}` 가 사라지고 비밀번호 로그인이 됐다.
+function issueToken(username) {
+  const password = __ENV.DEMO_PASSWORD;
+  if (!password) {
+    throw new Error(
+      "DEMO_PASSWORD 가 필요합니다 (ADR-0031). DEMO_PASSWORD=... k6 run ... 으로 넘기세요.",
+    );
+  }
   const issued = http.post(
-    `${BACKEND}/api/auth/demo-token`,
-    JSON.stringify({ userId }),
+    `${BACKEND}/api/auth/login`,
+    JSON.stringify({ username, password }),
     { headers: { "Content-Type": "application/json" } },
   );
   if (issued.status !== 200) {
     throw new Error(
-      `토큰 발급 실패 (status=${issued.status}). 백엔드(8080)가 떠 있는지 확인하세요.`,
+      `로그인 실패 (status=${issued.status}). 백엔드(8080)가 떠 있고 ` +
+        `DEMO_PASSWORD 가 주입됐는지 확인하세요.`,
     );
   }
   return issued.json("token");
@@ -121,7 +129,7 @@ function ask(query, useCache, token) {
 export function setup() {
   // 토큰을 먼저 받는다. 발급 왕복이 측정 구간에 섞이면 안 되므로 여기서 한 번만
   // 한다(TTL 1시간 > 부하 구간 수 분).
-  const token = issueToken(3);
+  const token = issueToken("buyer_lee");   // 예전 userId 3
 
   // **워밍업.** 임베딩·리랭커·KoELECTRA가 전부 지연 로딩이라 첫 요청이 수십 초
   // 걸린다(ADR-0019 실측 35.3초). 이걸 본 측정에 섞으면 p95가 통째로 오염된다.

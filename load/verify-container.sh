@@ -30,11 +30,29 @@ io.open(sys.argv[1],'w',encoding='utf-8').write(
     json.dumps({'query': sys.argv[2], 'use_cache': False}, ensure_ascii=False))
 " "$1" "$2"; }
 
-echo "== 토큰 발급 =="
-TOKEN="$(curl -s -X POST "$WEB/api/backend/auth/demo-token" \
-  -H 'Content-Type: application/json' -d '{"userId":1}' \
+echo "== 로그인 =="
+# ADR-0031 이 `demo-token` 을 제거했는데 **이 스크립트를 안 고쳤다.** 그래서 이
+# 검사는 첫 줄에서 죽어 있었고, 배포 절차 4단계가 실행을 지시하는데도 6단계 동안
+# 아무도 눈치채지 못했다 — 계약이 바뀌면 그 계약을 쓰는 검사를 다시 돌려야 한다.
+GM_PW="${ADMIN_PASSWORD:?ADMIN_PASSWORD 가 필요합니다 (gm_admin 으로 로그인한다)}"
+LOGIN_BODY="$(curl -s -w '\n%{http_code}' -X POST "$WEB/api/backend/auth/login" \
+  -H 'Content-Type: application/json' -d "{\"username\":\"gm_admin\",\"password\":\"$GM_PW\"}")"
+LOGIN_CODE="$(printf '%s' "$LOGIN_BODY" | tail -1)"
+TOKEN="$(printf '%s' "$LOGIN_BODY" | sed '$d' \
   | python -c "import sys,json;print(json.load(sys.stdin).get('token',''))" 2>/dev/null)"
-if [ -n "$TOKEN" ]; then ok "demo-token 발급 (프록시 경유)"; else bad "demo-token 발급 실패"; exit 1; fi
+if [ -n "$TOKEN" ]; then
+  ok "로그인 성공 (프록시 경유)"
+else
+  # **코드를 같이 낸다.** 처음엔 "비밀번호가 주입됐는지 확인"만 찍었는데, 실제
+  # 원인은 앞서 돌린 verify-auth.sh 가 로그인 한도(30회/분)를 소진한 429 였다.
+  # 원인을 잘못 지목하는 검사는 없느니만 못하다 — 사람이 엉뚱한 곳을 파게 만든다.
+  case "$LOGIN_CODE" in
+    429) bad "로그인 429 — 한도 소진. verify-auth.sh 직후라면 1분 기다렸다 다시 돌린다" ;;
+    401) bad "로그인 401 — ADMIN_PASSWORD 가 기동 시 주입된 값과 다르다" ;;
+    *)   bad "로그인 실패 (HTTP $LOGIN_CODE)" ;;
+  esac
+  exit 1
+fi
 
 echo
 echo "== 판정 1: /api/assistant 4분기 =="

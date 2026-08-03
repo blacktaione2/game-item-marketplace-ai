@@ -26,6 +26,14 @@ esac
 VUS="${3:-20}"
 DURATION="${4:-30s}"
 
+# 두 시나리오 모두 setup()에서 로그인한다 (ADR-0031). **여기서 먼저 막는다** —
+# 없이 돌리면 k6 의 setup 예외로 나타나서 원인이 부하 스크립트처럼 보인다.
+#
+# k6 는 시스템 환경변수를 __ENV 에 넣어주지만 그 기본값에 기대지 않고 -e 로
+# 명시해 넘긴다. 이 저장소는 "환경변수가 자동 상속될 것"이라는 가정으로 이미
+# 세 번 틀렸다(RABBITMQ_HOST · DEMO_PASSWORD · DB_PASSWORD, 전부 compose).
+: "${DEMO_PASSWORD:?DEMO_PASSWORD 가 필요합니다 — 두 시나리오 모두 로그인합니다 (ADR-0031)}"
+
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 OUT="${OUT_DIR:-$ROOT/load/out}"
 PY="$ROOT/ai/.venv/Scripts/python.exe"
@@ -49,14 +57,16 @@ snapshot before before.txt
 
 if [ "$SUITE" = "purchase" ]; then
   if [ "$MODE" = "step" ]; then
-    k6 run -e PROFILE=contended -e STAGES=step \
+    k6 run -e PROFILE=contended -e STAGES=step -e "DEMO_PASSWORD=$DEMO_PASSWORD" \
       "$ROOT/load/k6/purchase-contention.js" 2>&1 | tee "$OUT/$TAG.k6.txt"
   else
     k6 run -e "PROFILE=$MODE" -e "VUS=$VUS" -e "DURATION=$DURATION" \
+      -e "DEMO_PASSWORD=$DEMO_PASSWORD" \
       "$ROOT/load/k6/purchase-contention.js" 2>&1 | tee "$OUT/$TAG.k6.txt"
   fi
 else
   k6 run -e "MODE=$MODE" -e "VUS=$VUS" -e "DURATION=$DURATION" \
+    -e "DEMO_PASSWORD=$DEMO_PASSWORD" \
     "$ROOT/load/k6/ai-search.js" 2>&1 | tee "$OUT/$TAG.k6.txt"
 fi
 

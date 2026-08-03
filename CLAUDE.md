@@ -205,9 +205,10 @@ first version was wrong (it probed a 404 path and passed even with CORS enabled)
 
 Two consequences: **the 650MB of models live in a named volume, not the image**
 (466MB of it is the XLM-R embedding matrix — 250k vocab × 384 dims — not waste), and
-**behind the proxy the `demo-token` IP rate limit collapses to one key** for the whole
-deployment. That second one is registered, not fixed: reading `X-Forwarded-For` needs
-"trust only the proxy's IP" logic, and nginx deliberately does not set the header today.
+**behind the proxy the login IP rate limit used to collapse to one key** for the whole
+deployment. That is fixed as of ADR-0033 — nginx now sets `X-Forwarded-For` and the
+backend trusts it only from `rate-limit.trusted-proxies` (see the auth section below;
+shipping only the trusting half is what made the limit *bypassable*).
 
 **A public deploy uses `docker-compose.deploy.yml` on top** (ADR-0031): it publishes
 **only nginx's 80**, sets `SPRING_PROFILES_ACTIVE=prod` (which arms `SecretGuard`,
@@ -444,11 +445,29 @@ explain ("midnight KST") rather than at each user's first call. It accepts the
 fixed-window 2× boundary at day scale — the real ceiling is the OpenAI monthly cap,
 and this layer targets ordinary abuse, not adversarial precision. **A request
 rejected by the per-minute limit must not consume the daily budget** (increment only
-after the first check passes). `X-Forwarded-For` is now read too — but **only from
+after the first check passes). `X-Forwarded-For` is read too — but **only from
 addresses in `rate-limit.trusted-proxies`, which defaults to empty**, so an
 unconfigured deployment behaves exactly as before instead of trusting a spoofable
-header. `load/verify-auth.sh` proves this by forging 40 different XFF values against
-the backend port directly; through nginx the scenario cannot be reproduced at all.
+header.
+
+**Trusting a header and writing it are two separate jobs, and this repo shipped only
+the first** (ADR-0033). `nginx.conf` had no `X-Forwarded-For` line at all, and nginx
+does not strip headers it doesn't set — so a client's forged XFF reached the backend
+untouched, and following the runbook's "put nginx's IP in `TRUSTED_PROXIES`" step
+**removed the login limit entirely** (measured: 40 forged values all passed; control
+with no header hit 429 on the 31st). Fixed by
+`proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;` — whose appended last
+element is exactly what `clientIp()` already read. Two lasting rules:
+
+- **`verify-auth.sh`'s XFF check now goes through the proxy**, because that is the
+  path that ships. Its previous version hit the backend port directly and justified
+  that with "nginx overwrites the header anyway" — **an unverified claim about the
+  very config that was wrong**. A check aimed at a path you do not deploy tells you
+  nothing about the one you do.
+- **`/api/llm/test` had no auth dependency and was reachable at `/api/ai/llm/test`** —
+  an open, unmetered OpenAI relay that bypassed all three cost layers. The router is
+  deleted, and `ai/tests/test_route_auth_coverage.py` now pins that **no route lacks
+  an auth dependency**, since per-route `Depends` fails silently when forgotten.
 
 - **Load tests trip these limits**, so both servers need the relaxed config:
   `SPRING_PROFILES_ACTIVE=loadtest` and `RATE_LIMIT_ASSISTANT_PER_MIN=…`. The

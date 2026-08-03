@@ -2,7 +2,11 @@ from fastapi import FastAPI, Response
 
 from app.core.config import get_settings
 from app.core.metrics import render
-from app.routers import anomaly, assistant, forecast, health, llm, search
+# `llm` 라우터는 제거됐다 (ADR-0033). `POST /api/llm/test` 는 Phase 2 의 왕복
+# 확인용이었는데 **인증 의존성이 없었다** — 다른 다섯 라우터가 전부
+# `Depends(require_actor)` 를 달 때 여기만 빠졌고, nginx 가 `/api/ai/*` 를 그대로
+# 넘기므로 공개 배포에서 **무인증·무한도 OpenAI 프록시**가 된다.
+from app.routers import anomaly, assistant, forecast, health, search
 
 settings = get_settings()
 
@@ -19,7 +23,6 @@ def metrics() -> Response:
     return Response(content=render(), media_type="text/plain; version=0.0.4")
 
 app.include_router(health.router)
-app.include_router(llm.router)
 app.include_router(search.router)
 app.include_router(forecast.router)
 app.include_router(anomaly.router)

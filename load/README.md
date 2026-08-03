@@ -27,9 +27,21 @@ cd ai && RATE_LIMIT_ASSISTANT_PER_MIN=100000 python -m uvicorn app.main:app --po
 > 단언**할 수 있다. 아예 끄면 그 확인이 불가능하다.
 
 > **인증이 들어온 뒤로 백엔드는 두 시나리오 모두에 필요하다**(ADR-0023).
-> 시나리오 B(AI)도 `setup()`에서 `POST /api/auth/demo-token`으로 토큰을 받으므로
+> 시나리오 B(AI)도 `setup()`에서 `POST /api/auth/login`으로 토큰을 받으므로
 > 8080이 떠 있어야 한다 — 토큰 발급자가 백엔드뿐이기 때문이다. k6가 비밀키로
 > 직접 서명하면 이 의존은 사라지지만 발급 로직의 세 번째 사본이 생긴다.
+>
+> **`DEMO_PASSWORD`가 필요하다**(ADR-0031). `run.sh`가 없으면 먼저 막는다 —
+> 없이 돌리면 k6의 `setup()` 예외로 나타나 원인이 부하 스크립트처럼 보인다.
+>
+> ```bash
+> DEMO_PASSWORD=... ./load/run.sh purchase contended
+> ```
+>
+> 이 두 스크립트는 ADR-0031이 `demo-token`을 없앤 뒤로 **줄곧 깨져 있었다.**
+> 새로 쓴 검사(`verify-auth.sh`·`verify-deploy.sh`)만 `login`을 쓰고 기존 것은
+> 재실행되지 않았기 때문이다 — 계약이 바뀌면 **그 계약을 쓰는 검사를 전부 다시
+> 돌려야 한다**(ADR-0033).
 >
 > 토큰은 `setup()`에서 **한 번만** 받는다. 발급 왕복이 측정 구간에 섞이면
 > 인증 비용이 아니라 발급 비용을 재게 된다. TTL 1시간이라 부하 구간(수 분)
