@@ -122,6 +122,21 @@ export interface Forecast {
   }[];
 }
 
+export type NotificationType =
+  | "PURCHASE_COMPLETED"
+  | "ITEM_SOLD"
+  | "BID_PLACED"
+  | "OUTBID";
+
+export interface Notification {
+  id: number;
+  tradeId: number;
+  type: NotificationType;
+  message: string;
+  read: boolean;
+  createdAt: string;
+}
+
 export interface Contribution {
   feature: string;
   share: number;
@@ -256,6 +271,13 @@ export const api = {
 
   alerts: (limit = 10) =>
     request<AlertQueue>(`/api/ai/anomaly/alerts?limit=${limit}`),
+
+  // 알림은 체결 후 **비동기로** 만들어진다(ADR-0030). 구매 직후 조회하면
+  // 아직 0건일 수 있다 — 그게 정상이고, 큐가 비면 채워진다.
+  notifications: () => request<Notification[]>("/api/backend/notifications"),
+
+  unreadCount: () =>
+    request<{ count: number }>("/api/backend/notifications/unread-count"),
 };
 
 export function formatWon(value: number): string {

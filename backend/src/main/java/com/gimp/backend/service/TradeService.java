@@ -7,6 +7,7 @@ import com.gimp.backend.domain.trade.TradeStatus;
 import com.gimp.backend.domain.trade.TradeType;
 import com.gimp.backend.domain.user.User;
 import com.gimp.backend.dto.trade.TradeResponse;
+import com.gimp.backend.event.TradeCompletedEvent;
 import com.gimp.backend.exception.InvalidTradeRequestException;
 import com.gimp.backend.exception.LockAcquisitionException;
 import com.gimp.backend.exception.ResourceNotFoundException;
@@ -19,13 +20,18 @@ import java.math.BigDecimal;
 import java.util.concurrent.TimeUnit;
 import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
- * 구매/입찰은 AI/큐 처리 없이 "Redis 분산 락(동시성 제어) + DB 트랜잭션(원자성)"만으로 처리한다
- * (로드맵 Phase 1 범위 — RabbitMQ 비동기 처리는 이후 단계에서 붙인다).
+ * 구매/입찰 <b>체결 자체는</b> "Redis 분산 락(동시성 제어) + DB 트랜잭션(원자성)"만으로 처리한다.
+ *
+ * <p><b>큐로 넘긴 것은 체결이 아니라 그 뒤다</b>(ADR-0030). 계획서는 거래 처리 자체를
+ * RabbitMQ 로 보내는 그림이었지만, 그러면 API 가 202 를 반환하게 되고 ADR-0020 이
+ * 실동시성 26,600 건에서 검증한 {@code 재고 감소분 == 성공 응답 수} 단언이 응답 시점에
+ * 성립하지 않는다. 그 보장을 지키는 쪽을 택했고, 큐는 계획서 4단계(체결 후 알림)를 맡는다.
  *
  * <p>락은 {@code @Transactional} 프록시 바깥에서 걸어야 하므로, 이 클래스 자신을 self-invocation
  * 하는 대신 {@link TransactionTemplate}으로 트랜잭션 경계를 명시적으로 감싼다. (같은 클래스의
@@ -45,6 +51,7 @@ public class TradeService {
     private final TradeRepository tradeRepository;
     private final TransactionTemplate transactionTemplate;
     private final MeterRegistry meterRegistry;
+    private final ApplicationEventPublisher eventPublisher;
 
     public TradeService(
             RedissonClient redissonClient,
@@ -52,13 +59,15 @@ public class TradeService {
             UserRepository userRepository,
             TradeRepository tradeRepository,
             PlatformTransactionManager transactionManager,
-            MeterRegistry meterRegistry) {
+            MeterRegistry meterRegistry,
+            ApplicationEventPublisher eventPublisher) {
         this.redissonClient = redissonClient;
         this.itemRepository = itemRepository;
         this.userRepository = userRepository;
         this.tradeRepository = tradeRepository;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
         this.meterRegistry = meterRegistry;
+        this.eventPublisher = eventPublisher;
     }
 
     public TradeResponse purchase(Long tenantId, Long itemId, Long buyerId, int quantity) {
@@ -153,7 +162,9 @@ public class TradeService {
                 .status(TradeStatus.COMPLETED)
                 .build();
 
-        return TradeResponse.from(tradeRepository.save(trade));
+        Trade saved = tradeRepository.save(trade);
+        publishCompleted(saved, item, null);
+        return TradeResponse.from(saved);
     }
 
     private TradeResponse doBid(Long tenantId, Long itemId, Long bidderId, BigDecimal bidPrice) {
@@ -174,7 +185,13 @@ public class TradeService {
             throw new InvalidTradeRequestException("현재 최고 입찰가보다 높은 금액을 입력해주세요.");
         }
 
-        tradeRepository.findByItemIdAndStatus(itemId, TradeStatus.ACTIVE).ifPresent(Trade::markOutbid);
+        // 밀려나는 입찰자를 이벤트에 실어야 하므로 갱신 전에 붙잡아 둔다.
+        Trade previous = tradeRepository.findByItemIdAndStatus(itemId, TradeStatus.ACTIVE)
+                .orElse(null);
+        Long previousBidderId = previous != null ? previous.getBuyer().getId() : null;
+        if (previous != null) {
+            previous.markOutbid();
+        }
         item.placeBid(bidPrice, bidder);
 
         Trade trade = Trade.builder()
@@ -188,7 +205,33 @@ public class TradeService {
                 .status(TradeStatus.ACTIVE)
                 .build();
 
-        return TradeResponse.from(tradeRepository.save(trade));
+        Trade saved = tradeRepository.save(trade);
+        publishCompleted(saved, item, previousBidderId);
+        return TradeResponse.from(saved);
+    }
+
+    /**
+     * 체결 이벤트를 등록한다 (ADR-0030).
+     *
+     * <p><b>여기서 브로커로 바로 보내지 않는다.</b> 이 메서드는 트랜잭션 안에서 불리므로,
+     * 지금 발행하면 <b>롤백된 거래의 알림</b>이 나갈 수 있다. 스프링 이벤트로 등록만 하고
+     * 실제 발행은 {@code TradeEventPublisher} 가 {@code AFTER_COMMIT} 에서 한다.
+     *
+     * <p>{@code saved.getId()} 를 읽으려면 식별자가 필요한데, {@code IDENTITY} 전략이라
+     * {@code save()} 시점에 insert 가 나가면서 이미 채워져 있다.
+     */
+    private void publishCompleted(Trade trade, Item item, Long previousBidderId) {
+        eventPublisher.publishEvent(new TradeCompletedEvent(
+                trade.getId(),
+                item.getTenant().getId(),
+                item.getId(),
+                item.getName(),
+                trade.getBuyer().getId(),
+                item.getSeller().getId(),
+                previousBidderId,
+                trade.getTradeType(),
+                trade.getPrice(),
+                trade.getQuantity()));
     }
 
     private Item getItem(Long tenantId, Long itemId) {

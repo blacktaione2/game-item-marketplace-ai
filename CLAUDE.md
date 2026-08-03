@@ -210,6 +210,30 @@ and credentials). Elasticsearch is **built from `docker/elasticsearch/Dockerfile
 not pulled directly — it bakes in the `analysis-nori` Korean plugin, which
 would otherwise be lost whenever the container is recreated.
 
+**Trade processing is synchronous on purpose; the queue carries what comes after**
+(ADR-0030). The plan's flow was `lock → publish → consumer does the DB work`, which
+would turn purchase into `202 Accepted` and break the shape of ADR-0020's
+`stock delta == success responses` assertion. So RabbitMQ carries step 4 only —
+post-trade notifications. Four things are load-bearing:
+
+- **Publishing happens in `@TransactionalEventListener(AFTER_COMMIT)`.** Inside the
+  transaction it would emit notifications for rolled-back trades. A test pins this,
+  and the *first* version of that test was vacuous — `quantity=99` is rejected at the
+  stock check, i.e. **before** the publish point, so it passed even with in-transaction
+  publishing. The real test registers an event in a rolled-back `TransactionTemplate`.
+- **Publish failure never fails the trade** (fail-open, same family as the AI rate
+  limiter). But fail-open has a *latency* axis too: publishing runs on the request
+  thread after commit, and the AMQP client's default connect timeout is 60s — left
+  alone, a dead broker means "purchase succeeds but takes a minute". Hence
+  `connection-timeout: 2s` and template retry off.
+- **Idempotency is `(recipient_id, trade_id)` unique — and the catch must be
+  `DuplicateKeyException`, not `DataIntegrityViolationException`.** The parent type
+  also swallows FK violations, so a message naming a nonexistent user would vanish as
+  "already handled" instead of reaching the DLQ.
+- **Counting notifications right after load is a false-failure trap.** Consumption is
+  async; wait until `messages_ready` **and** `messages_unacknowledged` are both 0
+  (`load/verify-mq.sh`), and treat the timeout as a failure, not a pass.
+
 ### backend/ (Spring Boot 4.x, Java 21, Gradle)
 Package layout: `domain` (entities per aggregate: `tenant`, `user`, `item`,
 `trade`, plus `domain.common.BaseTimeEntity`), `repository`, `service`,

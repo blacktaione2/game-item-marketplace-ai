@@ -1,3 +1,4 @@
+import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { NavLink, Route, Routes } from "react-router-dom";
 
@@ -65,6 +66,7 @@ export default function App() {
           {currentUser.role === "ADMIN" && (
             <NavLink to="/anomalies">이상거래 큐</NavLink>
           )}
+          <NotificationBadge />
         </nav>
       </header>
 
@@ -84,5 +86,30 @@ export default function App() {
         </main>
       )}
     </div>
+  );
+}
+
+/**
+ * 읽지 않은 알림 개수.
+ *
+ * 알림은 체결 후 **큐를 거쳐** 만들어지므로(ADR-0030) 구매 직후에는 아직 0일 수 있다.
+ * 그래서 짧은 주기로 다시 물어본다 — 실패해도 화면을 깨뜨리지 않는다(부가 기능이다).
+ *
+ * 이 뱃지가 없으면 알림이 DB에만 쌓이고 **사람이 동작을 확인할 수 없다.** 자동 검증은
+ * 백엔드 테스트와 load/verify-mq.sh 가 하고, 여기는 데모용 최소 노출이다.
+ */
+function NotificationBadge() {
+  const { data } = useQuery({
+    queryKey: ["notifications", "unread"],
+    queryFn: api.unreadCount,
+    refetchInterval: 5000,
+    retry: false,
+  });
+  const count = data?.count ?? 0;
+  if (count === 0) return null;
+  return (
+    <span className="badge unread" title="읽지 않은 알림">
+      알림 {count}
+    </span>
   );
 }
