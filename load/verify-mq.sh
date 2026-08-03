@@ -64,9 +64,14 @@ drain() {
   return 1
 }
 
-token() {
-  curl -s -X POST "$BACKEND/api/auth/demo-token" -H 'Content-Type: application/json' \
-    -d "{\"userId\":$1}" | python -c "import sys,json;print(json.load(sys.stdin).get('token',''))"
+# ADR-0031 이 `demo-token` 을 없애면서 이 함수가 죽었다 — 인자가 userId 였는데
+# 이제는 username + 비밀번호다. 스크립트가 재실행되지 않아 계약 변경이 드러나지
+# 않았고, 실행하면 404 본문을 JSON 으로 파싱하다 traceback 이 났다.
+DEMO_PW="${DEMO_PASSWORD:?DEMO_PASSWORD 가 필요합니다}"
+token() {  # username -> JWT
+  curl -s -X POST "$BACKEND/api/auth/login" -H 'Content-Type: application/json' \
+    -d "{\"username\":\"$1\",\"password\":\"$DEMO_PW\"}" \
+    | python -c "import sys,json;print(json.load(sys.stdin).get('token',''))" 2>/dev/null
 }
 # **/api/notifications 의 길이를 세면 안 된다.** 그 엔드포인트는 최근 20건 상한이라
 # 20건이 쌓인 뒤로는 몇 건을 더 만들어도 길이가 20 -> 20 이다. 실제로 그걸 세다가
@@ -86,8 +91,20 @@ if [ -z "$(q "$QUEUE")" ]; then
   exit 1
 fi
 ok "큐 $QUEUE 존재"
-TOK="$(token 3)"
-[ -n "$TOK" ] && ok "토큰 발급" || { bad "토큰 발급 실패"; exit 1; }
+TOK="$(token buyer_lee)"   # 예전 userId 3
+if [ -n "$TOK" ]; then
+  ok "로그인"
+else
+  # 코드를 같이 낸다 — 429(한도 소진)와 401(비밀번호 불일치)은 처방이 정반대다.
+  LC="$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BACKEND/api/auth/login" \
+    -H 'Content-Type: application/json' -d "{\"username\":\"buyer_lee\",\"password\":\"$DEMO_PW\"}")"
+  case "$LC" in
+    429) bad "로그인 429 — 한도 소진. 다른 검사 직후라면 1분 기다렸다 다시 돌린다" ;;
+    401) bad "로그인 401 — DEMO_PASSWORD 가 기동 시 주입된 값과 다르다" ;;
+    *)   bad "로그인 실패 (HTTP $LC)" ;;
+  esac
+  exit 1
+fi
 
 echo
 echo "== 판정 2: 구매 수 == 알림 수 (큐 배수 후) =="

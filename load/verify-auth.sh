@@ -6,18 +6,22 @@
 #   3. 비밀번호 분리가 **양방향**으로 성립한다
 #   4. 로그인 없이 /api/assistant -> 401
 #   5. 일일 한도 초과 -> 429
-#   6. 신뢰하지 않는 출처의 X-Forwarded-For 는 무시된다
+#   6. 위조 X-Forwarded-For 로 로그인 한도를 우회할 수 없다 (**프록시 경유**)
+#   7. 인증 없이 닿는 AI 경로가 없다
 #
-# **판정 6 은 백엔드 포트에 직접 쏜다.** nginx 를 거치면 nginx 가 헤더를 자기 값으로
-# 덮으므로 스푸핑 시나리오 자체가 재현되지 않는다. 즉 이 검사는 **포트가 열린 로컬
-# 구성**에서만 의미가 있다 — 배포에서는 포트를 닫으므로(판정 9, verify-deploy.sh)
-# 애초에 닿지 않는다. 둘은 다른 계층이고 서로를 대체하지 않는다.
+# **판정 6 은 프록시를 경유한다 — 그게 배포되는 경로이기 때문이다.**
+# 예전 판정 6 은 백엔드 포트에 직접 쏘면서 "nginx 가 헤더를 덮으므로 프록시로는
+# 재현이 안 된다"고 적어뒀는데, **그 주장이 사실이 아니었다.** nginx.conf 에
+# X-Forwarded-For 를 설정하는 줄이 아예 없어서 클라이언트가 보낸 값이 그대로
+# 통과했고, 런북대로 TRUSTED_PROXIES 를 채운 배포에서는 위조 40회가 전부
+# 통과했다(대조군: 헤더 없이는 31번째 429). 검사는 **배포되지 않는 경로를**
+# 검증하면서, 검증하지 않는 경로에 대한 미확인 주장을 근거로 달고 있었다.
+# ADR-0033 에서 nginx 에 그 줄을 넣고 검사를 프록시 경유로 옮겼다.
 #
 # 사용: DEMO_PASSWORD=... ADMIN_PASSWORD=... ./load/verify-auth.sh
 set -uo pipefail
 
 WEB="${WEB:-http://localhost}"
-BACKEND_DIRECT="${BACKEND_DIRECT:-http://localhost:8080}"
 AI_DIRECT="${AI_DIRECT:-http://localhost:8000}"
 DEMO_PW="${DEMO_PASSWORD:?DEMO_PASSWORD 가 필요합니다}"
 ADMIN_PW="${ADMIN_PASSWORD:?ADMIN_PASSWORD 가 필요합니다}"
@@ -74,25 +78,46 @@ CODE="$(curl -s -o /dev/null -w '%{http_code}' -X POST "$WEB/api/ai/assistant" \
 [ "$CODE" = "401" ] && ok "토큰 없이 /api/assistant -> 401" || bad "토큰 없이 $CODE"
 
 echo
-echo "== 판정 6: 신뢰하지 않는 출처의 XFF 는 무시된다 =="
-# **백엔드 포트에 직접** 쏜다. nginx 를 거치면 nginx 가 헤더를 덮어써서
-# 스푸핑 자체가 재현되지 않는다.
-if ! curl -s -o /dev/null --max-time 3 "$BACKEND_DIRECT/api/health"; then
-  bad "백엔드 직결 포트가 닫혀 있다 — 이 검사는 포트가 열린 구성에서만 성립한다"
-else
-  # 위조 IP 를 매번 바꿔가며 로그인 한도를 우회할 수 있는지 본다.
-  # XFF 를 신뢰하면 매 요청이 새 버킷이라 한도가 사실상 사라진다.
-  LIMIT_HIT=0
-  for i in $(seq 40); do
-    C="$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BACKEND_DIRECT/api/auth/login" \
-      -H "X-Forwarded-For: 10.0.0.$i" -H 'Content-Type: application/json' \
-      -d '{"username":"buyer_lee","password":"틀린값"}')"
-    [ "$C" = "429" ] && { LIMIT_HIT=1; break; }
-  done
-  [ "$LIMIT_HIT" = "1" ] \
-    && ok "위조 XFF 로 한도를 우회하지 못한다 (429 도달)" \
-    || bad "위조 XFF 40개로 한도를 넘겼다 — XFF 를 신뢰하고 있다"
-fi
+echo "== 판정 6: 위조 XFF 로 로그인 한도를 우회할 수 없다 (프록시 경유) =="
+# 위조 IP 를 매번 바꿔가며 한도를 우회할 수 있는지 본다. 헤더를 신뢰해 버리면
+# 매 요청이 새 버킷이라 한도가 사실상 사라진다.
+#
+# **프록시를 거쳐 쏜다.** 배포에서 실제로 열려 있는 경로가 여기뿐이고, 앞선
+# 버전은 백엔드 직결로 재는 바람에 프록시 경유의 구멍을 6단계 동안 못 봤다.
+#
+# 앞 판정들이 이미 로그인을 몇 번 썼지만 이 검사는 영향받지 않는다 — 소진은
+# 언제나 429 도달을 **쉽게** 만들 뿐이고, 헤더가 신뢰되면 위조값마다 버킷이
+# 새로 생기므로 소진과 무관하게 40회가 통과한다.
+XFF_LIMIT_HIT=0
+for i in $(seq 40); do
+  C="$(curl -s -o /dev/null -w '%{http_code}' -X POST "$WEB/api/backend/auth/login" \
+    -H "X-Forwarded-For: 10.9.9.$i" -H 'Content-Type: application/json' \
+    -d '{"username":"buyer_lee","password":"wrong"}')"
+  [ "$C" = "429" ] && { XFF_LIMIT_HIT=1; break; }
+done
+[ "$XFF_LIMIT_HIT" = "1" ] \
+  && ok "위조 XFF 40개로도 한도를 못 넘는다 (429 도달)" \
+  || bad "위조 XFF 40개가 전부 통과했다 — nginx 가 XFF 를 덮어쓰지 않는다"
+
+echo
+echo "== 판정 7: 인증 없이 닿는 AI 경로가 없다 =="
+# `/api/llm/test` 가 인증 없이 열려 있었다. 다른 라우터가 전부 require_actor 를
+# 달 때 여기만 빠졌고, 토큰 없이 임의 프롬프트를 OpenAI 로 보낼 수 있었다 —
+# 비용 방어 3계층을 통째로 우회한다(ADR-0033).
+#
+# **제거된 경로 하나만 확인하지 않는다.** 원인은 그 파일이 아니라 "경로마다
+# 개별로 붙이면 빠뜨려도 조용하다"는 방식이라, 다음 누락도 같은 모양이다.
+AI_OPEN=""
+for p in "llm/test:POST" "assistant:POST" "search:POST" "forecast:POST" "anomaly/detect:POST" "anomaly/alerts:GET"; do
+  path="${p%%:*}"; method="${p##*:}"
+  C="$(curl -s -o /dev/null -w '%{http_code}' -X "$method" "$WEB/api/ai/$path" \
+    -H 'Content-Type: application/json' -d '{}' --max-time 30)"
+  # 401 이면 막힌 것, 404 면 경로 자체가 없는 것 — 둘 다 통과다.
+  case "$C" in 401|404) ;; *) AI_OPEN="$AI_OPEN $path($C)";; esac
+done
+[ -z "$AI_OPEN" ] \
+  && ok "AI 경로 6종 전부 토큰 없이는 401/404" \
+  || bad "토큰 없이 응답한 AI 경로가 있다:$AI_OPEN"
 
 echo
 echo "== 판정 5: 일일 한도 =="

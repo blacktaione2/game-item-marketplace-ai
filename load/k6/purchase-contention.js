@@ -40,7 +40,12 @@ const CONTENDED_ITEM = 9001;
 const SPREAD_ITEMS = Array.from({ length: 20 }, (_, i) => 9002 + i);
 
 // 구매자는 3~5번. 2번은 판매자라 "본인 아이템" 규칙에 걸린다.
+//
+// ADR-0031 로 발급이 `demo-token {userId}` 에서 `login {username, password}` 로
+// 바뀌었다. **id 를 계속 쓰는 곳이 있어서**(구매 응답 대조, seed 파일) 이름을
+// 나란히 둔다 — 한쪽만 남기면 다른 쪽을 찾을 때 seed SQL 을 열어야 한다.
 const BUYERS = [3, 4, 5];
+const USERNAME_BY_ID = { 3: "buyer_lee", 4: "trader_park", 5: "newbie_choi" };
 
 const rejected = new Counter("rejected_409");
 const created = new Counter("created_201");
@@ -83,17 +88,25 @@ export function setup() {
   // 자칭할 수 없게 됐다 — VU마다 구매자가 다르므로 토큰도 사용자 수만큼 필요하다.
   // 발급을 setup에서 한 번만 하는 이유는 **측정 구간에 발급 왕복을 섞지 않기**
   // 위해서다. 토큰 TTL이 1시간이라 부하 구간(최대 수 분) 안에서는 만료되지 않는다.
+  const password = __ENV.DEMO_PASSWORD;
+  if (!password) {
+    throw new Error(
+      "DEMO_PASSWORD 가 필요합니다. ADR-0031 로 로그인이 비밀번호 기반이 됐습니다 — " +
+        "DEMO_PASSWORD=... k6 run ... 형태로 넘기세요.",
+    );
+  }
   const tokens = {};
   for (const userId of BUYERS) {
+    const username = USERNAME_BY_ID[userId];
     const issued = http.post(
-      `${BASE}/api/auth/demo-token`,
-      JSON.stringify({ userId }),
+      `${BASE}/api/auth/login`,
+      JSON.stringify({ username, password }),
       { headers: { "Content-Type": "application/json" } },
     );
     if (issued.status !== 200) {
       throw new Error(
-        `토큰 발급 실패 (user=${userId}, status=${issued.status}). ` +
-          `백엔드가 떠 있고 seed-demo.sql이 적용됐는지 확인하세요.`,
+        `로그인 실패 (user=${username}, status=${issued.status}). ` +
+          `백엔드가 떠 있고 seed-demo.sql 적용 + DEMO_PASSWORD 주입이 됐는지 확인하세요.`,
       );
     }
     tokens[userId] = issued.json("token");
