@@ -14,6 +14,14 @@ set -uo pipefail
 
 WEB="${1:-http://localhost}"
 BACKEND_DIRECT="${BACKEND_DIRECT:-http://localhost:8080}"
+# `python` 은 리눅스에 없고, Windows 의 `python3` 은 실행되지 않는 스토어 스텁이다.
+# 그래서 이름이 아니라 **실제로 도는지**로 고른다 — 자세한 경위는 verify-auth.sh 주석.
+if [ -z "${PY:-}" ]; then
+  for _c in python3 python; do
+    command -v "$_c" >/dev/null 2>&1 && "$_c" -c '' >/dev/null 2>&1 && { PY="$_c"; break; }
+  done
+fi
+[ -n "${PY:-}" ] || { echo "동작하는 python3/python 이 필요합니다" >&2; exit 1; }
 PASS=0
 FAIL=0
 
@@ -24,7 +32,7 @@ bad()  { printf '  [FAIL] %s\n' "$1"; FAIL=$((FAIL+1)); }
 # UTF-8 파일로 써서 --data-binary 로 보낸다 — docs/05-Troubleshooting 참고.
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
-write_query() { python -c "
+write_query() { "$PY" -c "
 import io,json,sys
 io.open(sys.argv[1],'w',encoding='utf-8').write(
     json.dumps({'query': sys.argv[2], 'use_cache': False}, ensure_ascii=False))
@@ -40,7 +48,7 @@ LOGIN_BODY="$(curl -s -w '\n%{http_code}' -X POST "$WEB/api/backend/auth/login" 
   -d "{\"tenantCode\":\"${TENANT_CODE:-nexon}\",\"username\":\"gm_admin\",\"password\":\"$GM_PW\"}")"
 LOGIN_CODE="$(printf '%s' "$LOGIN_BODY" | tail -1)"
 TOKEN="$(printf '%s' "$LOGIN_BODY" | sed '$d' \
-  | python -c "import sys,json;print(json.load(sys.stdin).get('token',''))" 2>/dev/null)"
+  | "$PY" -c "import sys,json;print(json.load(sys.stdin).get('token',''))" 2>/dev/null)"
 if [ -n "$TOKEN" ]; then
   ok "로그인 성공 (프록시 경유)"
 else
@@ -62,7 +70,7 @@ branch() {  # 이름, 질의, 기대 intent
   RES="$(curl -s -X POST "$WEB/api/ai/assistant" \
     -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
     --data-binary "@$TMP/q.json")"
-  GOT="$(printf '%s' "$RES" | python -c "
+  GOT="$(printf '%s' "$RES" | "$PY" -c "
 import sys,json
 try:
     d=json.load(sys.stdin); print(d.get('intent','<없음>'), len(d.get('answer','')))

@@ -16,6 +16,15 @@ RABBIT_USER="${RABBITMQ_USER:-gimp}"
 RABBIT_PASS="${RABBITMQ_PASSWORD:-gimp_local_pw}"
 QUEUE="gimp.trade.completed"
 DLQ="gimp.trade.completed.dlq"
+
+# `python` 은 리눅스에 없고, Windows 의 `python3` 은 실행되지 않는 스토어 스텁이다.
+# 그래서 이름이 아니라 **실제로 도는지**로 고른다 — 자세한 경위는 verify-auth.sh 주석.
+if [ -z "${PY:-}" ]; then
+  for _c in python3 python; do
+    command -v "$_c" >/dev/null 2>&1 && "$_c" -c '' >/dev/null 2>&1 && { PY="$_c"; break; }
+  done
+fi
+[ -n "${PY:-}" ] || { echo "동작하는 python3/python 이 필요합니다" >&2; exit 1; }
 # application.yml 의 spring.rabbitmq.connection-timeout 에서 나온 값이다.
 # 여기 숫자만 바꾸면 근거가 사라진다 — 설정과 같이 움직여야 한다.
 CONNECT_TIMEOUT_MS=2000
@@ -40,7 +49,7 @@ bad() { printf '  [FAIL] %s\n' "$1"; FAIL=$((FAIL+1)); }
 
 q() {  # 큐 이름 -> "ready unacked"  (없으면 빈 문자열)
   curl -su "$RABBIT_USER:$RABBIT_PASS" "$RABBIT_API/queues/%2F/$1" 2>/dev/null \
-    | python -c "
+    | "$PY" -c "
 import sys,json
 try:
     d=json.load(sys.stdin)
@@ -73,7 +82,7 @@ TENANT_CODE="${TENANT_CODE:-nexon}"
 token() {  # username -> JWT
   curl -s -X POST "$BACKEND/api/auth/login" -H 'Content-Type: application/json' \
     -d "{\"tenantCode\":\"$TENANT_CODE\",\"username\":\"$1\",\"password\":\"$DEMO_PW\"}" \
-    | python -c "import sys,json;print(json.load(sys.stdin).get('token',''))" 2>/dev/null
+    | "$PY" -c "import sys,json;print(json.load(sys.stdin).get('token',''))" 2>/dev/null
 }
 # **/api/notifications 의 길이를 세면 안 된다.** 그 엔드포인트는 최근 20건 상한이라
 # 20건이 쌓인 뒤로는 몇 건을 더 만들어도 길이가 20 -> 20 이다. 실제로 그걸 세다가
@@ -84,7 +93,7 @@ token() {  # username -> JWT
 # 않으므로 총계와 같다.
 notif_count() {  # 토큰 -> 알림 수 (상한 없음)
   curl -s "$BACKEND/api/notifications/unread-count" -H "Authorization: Bearer $1" \
-    | python -c "import sys,json;print(json.load(sys.stdin)['count'])" 2>/dev/null || echo -1
+    | "$PY" -c "import sys,json;print(json.load(sys.stdin)['count'])" 2>/dev/null || echo -1
 }
 
 echo "== 사전 확인 =="
@@ -142,14 +151,14 @@ echo "== 판정 5: 브로커 정지 시 fail-open =="
 echo "  정상 상태 응답 시간 측정..."
 NORMAL_MS="$(curl -s -o /dev/null -w '%{time_total}' -X POST "$BACKEND/api/items/9001/purchase" \
   -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' -d '{"quantity":1}' \
-  | python -c "import sys;print(int(float(sys.stdin.read())*1000))")"
+  | "$PY" -c "import sys;print(int(float(sys.stdin.read())*1000))")"
 echo "  브로커 정지..."
 docker stop gimp-rabbitmq >/dev/null 2>&1
 sleep 2
 RESULT="$(curl -s -o /dev/null -w '%{http_code} %{time_total}' -X POST "$BACKEND/api/items/9001/purchase" \
   -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' -d '{"quantity":1}')"
 DOWN_CODE="${RESULT%% *}"
-DOWN_MS="$(printf '%s' "${RESULT##* }" | python -c "import sys;print(int(float(sys.stdin.read())*1000))")"
+DOWN_MS="$(printf '%s' "${RESULT##* }" | "$PY" -c "import sys;print(int(float(sys.stdin.read())*1000))")"
 echo "  브로커 재기동..."
 docker start gimp-rabbitmq >/dev/null 2>&1
 

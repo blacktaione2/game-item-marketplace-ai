@@ -23,6 +23,21 @@ set -uo pipefail
 
 WEB="${WEB:-http://localhost}"
 AI_DIRECT="${AI_DIRECT:-http://localhost:8000}"
+# **`python` 은 리눅스에 없다.** Windows(python.org)에만 그 이름이 있고 우분투는
+# `python3` 뿐이라, 이 스크립트들은 **배포 대상에서 처음부터 못 돌았다.**
+# 증상이 고약했다 — 로그인은 200 인데 토큰 추출만 실패해서 "비밀번호를 확인하라"고
+# 나왔다. 실제로 실배포에서 그렇게 헤맸다.
+#
+# **이름으로 고르면 안 된다.** Windows 에는 Microsoft Store 스텁 `python3` 이 있어서
+# `command -v` 는 찾지만 실행하면 "Python" 만 찍고 죽는다(exit 49). 그래서 후보마다
+# **빈 프로그램을 실제로 돌려보고** 고른다 — 이 저장소가 반복해서 배운 것과 같다
+# ("포트가 응답한다" ≠ "내가 띄운 프로세스다", `docker --version` ≠ 데몬 접근 가능).
+if [ -z "${PY:-}" ]; then
+  for _c in python3 python; do
+    command -v "$_c" >/dev/null 2>&1 && "$_c" -c '' >/dev/null 2>&1 && { PY="$_c"; break; }
+  done
+fi
+[ -n "${PY:-}" ] || { echo "동작하는 python3/python 이 필요합니다" >&2; exit 1; }
 DEMO_PW="${DEMO_PASSWORD:?DEMO_PASSWORD 가 필요합니다}"
 ADMIN_PW="${ADMIN_PASSWORD:?ADMIN_PASSWORD 가 필요합니다}"
 DEMO_USERS="seller_kim buyer_lee trader_park newbie_choi"
@@ -41,7 +56,7 @@ login_code() {  # 사용자, 비밀번호, [테넌트] -> HTTP 코드
 login_token() {
   curl -s -X POST "$WEB/api/backend/auth/login" -H 'Content-Type: application/json' \
     -d "{\"tenantCode\":\"$TENANT_CODE\",\"username\":\"$1\",\"password\":\"$2\"}" \
-    | python -c "import sys,json;print(json.load(sys.stdin).get('token',''))" 2>/dev/null
+    | "$PY" -c "import sys,json;print(json.load(sys.stdin).get('token',''))" 2>/dev/null
 }
 
 echo "== 판정 1: demo-token 이 사라졌다 =="

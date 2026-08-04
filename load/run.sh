@@ -36,8 +36,20 @@ DURATION="${4:-30s}"
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 OUT="${OUT_DIR:-$ROOT/load/out}"
-PY="$ROOT/ai/.venv/Scripts/python.exe"
-[ -x "$PY" ] || PY="python"
+# venv 레이아웃이 OS 마다 다르고(`Scripts` vs `bin`), **리눅스에는 `python` 이라는
+# 이름이 없다**(우분투는 `python3` 뿐). 예전 판본은 Windows 경로 + `python` 폴백뿐이라
+# 배포 대상에서 스냅샷 수집이 조용히 실패할 상태였다.
+PY="$ROOT/ai/.venv/Scripts/python.exe"          # Windows venv
+[ -x "$PY" ] || PY="$ROOT/ai/.venv/bin/python"  # Linux venv
+if [ ! -x "$PY" ]; then
+  # **이름이 아니라 실행 여부로 고른다.** Windows 에는 실행되지 않는 스토어 스텁
+  # `python3` 이 있어서 `command -v` 만으로 고르면 그걸 잡는다.
+  PY=""
+  for _c in python3 python; do
+    command -v "$_c" >/dev/null 2>&1 && "$_c" -c '' >/dev/null 2>&1 && { PY="$_c"; break; }
+  done
+fi
+[ -n "$PY" ] || { echo "동작하는 python3/python 이 필요합니다" >&2; exit 1; }
 mkdir -p "$OUT"
 
 TAG="${SUITE}-${MODE}-$(date +%H%M%S)"
