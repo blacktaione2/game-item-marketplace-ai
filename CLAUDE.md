@@ -439,7 +439,15 @@ remount. With it in the URL, `useQuery` keyed on `["assistant", q]` serves the
 cached answer instantly and searches become shareable. **Watch `isPending` vs
 `isFetching`**: in TanStack Query v5 a query with `enabled: false` sits at status
 `pending` forever, so `isPending` locks the button into "처리 중…" before anything
-is typed.
+is typed. **Do not give that query a `staleTime`** — a 5-minute one was tried and
+made the badge row lie: re-asking a query replayed the first response, whose
+`cache: {hit:false}` then showed forever. The badges are instrumentation about the
+server (cache hit, `llm_calls`, routing verdict); caching them client-side turns
+instrumentation into an afterimage. The general rule: **a response that carries
+observations is not cacheable on the client**, because *when it was taken* is part
+of what it means. Cost is not the argument against it — a server cache hit is 0
+LLM calls at p95 25.9ms — and `staleTime: 0` still paints cached data instantly
+while refetching, so back-navigation keeps its results either way.
 
 **`logout()` calls `queryClient.clear()`, and that is the load-bearing line.**
 No query key carries the user (`["notifications","unread"]`, `["trades"]`,
