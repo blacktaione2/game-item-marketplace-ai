@@ -97,6 +97,13 @@ export interface AssistantResponse {
   conditions?: string[];
   applied_filters?: Record<string, string | number>;
   forecast?: Forecast;
+  /**
+   * 시세 분기가 질의에서 특정해낸 아이템.
+   *
+   * 검색과 달리 시세 답변에는 결과 카드가 없어서, 이게 없으면 **어느 아이템
+   * 얘기인지 확인하러 갈 방법이 없다.** 화면이 링크를 만드는 데 쓴다.
+   */
+  resolved_item?: { item_id: number; name: string };
   detection?: AnomalyAlert;
   tool_calls?: ToolCall[];
   tool_failures?: number;
