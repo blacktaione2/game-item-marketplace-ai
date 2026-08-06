@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 
 import { api, formatWon, type AssistantResponse } from "../api";
+import ItemBrowser from "../components/ItemBrowser";
 
 const EXAMPLES = [
   "3만원 이하 불속성 검 찾아줘",
@@ -107,6 +108,12 @@ export default function Assistant() {
       )}
 
       {ask.data && <Result data={ask.data} onOpenItem={(id) => navigate(`/items/${id}`)} />}
+
+      {/* **질의가 없을 때의 화면이 빈 여백이면 안 된다.** 거래소인데 매물을 볼 수가
+          없었고, 처음 온 사람은 무엇을 물어야 하는지도 몰랐다. 검색의 "빈 상태"를
+          목록으로 채운다 — 별도 라우트를 만들지 않은 이유는 이 둘이 같은 질문의
+          두 형태이기 때문이다. */}
+      {!submitted && <ItemBrowser />}
     </div>
   );
 }

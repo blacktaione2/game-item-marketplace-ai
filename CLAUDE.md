@@ -410,9 +410,26 @@ train + eval items).
 `npm install` then `npm run dev` (port 5173). **A Vite dev proxy makes the
 browser see one origin** — `/api/backend/*` → 8080, `/api/ai/*` → 8000 — which
 is why neither server has CORS configured; don't add it. Screens: `/`
-(assistant + search), `/items/:id` (detail + price chart + purchase/bid),
+(assistant + search; **with no `?q=` it shows the item browser** — sortable,
+server-paged, ADR-0037), `/items/:id` (detail + price chart + purchase/bid),
 `/trades` (my trade history), `/notifications`, `/anomalies` (GM queue). State is
 TanStack Query only; there is no global store.
+
+**The browse table has six columns because Postgres `items` only has six worth
+showing.** `subcategory`/`element`/`enhancement_level`/`required_level` live in
+the ES mapping only, and `export_demo_sql.py` states the split as a decision
+("화면을 위해 백엔드 스키마를 늘리지 않는다"). Don't overturn it for a screen —
+and note `seed-demo.sql` opens with `DELETE FROM trades`/`notifications`, so
+re-seeding to add columns **destroys real trade history**. The live consequence
+is a known inconsistency: a search card shows `검 · +9 · 60렙` and the detail page
+it links to does not. Fixing that needs either a schema change or the detail page
+reading ES too — both are their own decision.
+
+**No TanStack Table, no Tailwind/shadcn — deliberately.** Sorting and paging are
+server-side (`Pageable`), which is exactly what that library does *not* help with;
+the whole browse screen cost **2.9KB** of bundle. Tailwind would mean rewriting
+all five screens' styles for zero functional gain. Reach for them when
+client-side interaction (filtering, virtualization) actually exists.
 
 **The search query lives in the URL (`/?q=…`), not in `useState`** (ADR-0037).
 Going into an item and back used to remount `Assistant` and lose the results —

@@ -30,6 +30,16 @@ export interface Item {
   updatedAt: string;
 }
 
+/** Spring `Page` 의 직렬화 형태 중 **화면이 실제로 쓰는 필드만** 적는다. */
+export interface Page<T> {
+  content: T[];
+  totalElements: number;
+  totalPages: number;
+  /** 0-based */
+  number: number;
+  size: number;
+}
+
 export interface Trade {
   id: number;
   itemId: number;
@@ -328,6 +338,21 @@ export const api = {
     }),
 
   getItem: (itemId: number) => request<Item>(`/api/backend/items/${itemId}`),
+
+  /**
+   * 매물 목록. **정렬·페이징을 서버에 맡긴다** (Spring `Pageable`).
+   *
+   * 클라이언트에서 전부 받아 정렬하는 쪽이 코드는 짧지만, 그건 "지금 42건"에만
+   * 맞는 설계다. 엔드포인트가 이미 페이징을 하고 있으므로 그대로 쓴다.
+   */
+  items: (params: { page?: number; size?: number; sort?: string } = {}) => {
+    const query = new URLSearchParams({
+      page: String(params.page ?? 0),
+      size: String(params.size ?? 20),
+    });
+    if (params.sort) query.set("sort", params.sort);
+    return request<Page<Item>>(`/api/backend/items?${query}`);
+  },
 
   // 구매자·입찰자는 토큰에서 온다 — 더 이상 프론트가 지목하지 않는다.
   purchase: (itemId: number, quantity: number) =>

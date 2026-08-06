@@ -3,6 +3,10 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- SVG 하나만 둔다. 없으면 브라우저가 /favicon.ico 를 찾고, 그 요청은
+         nginx 의 SPA 폴백에 걸려 index.html 이 200 으로 돌아온다 — 실제로 그
+         상태였다(Network 탭에 favicon.ico 가 text/html 로 찍혔다). -->
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <title>게임 아이템 통합 거래소</title>
   </head>
   <body>

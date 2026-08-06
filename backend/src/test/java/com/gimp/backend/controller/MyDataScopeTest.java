@@ -75,8 +75,9 @@ class MyDataScopeTest {
         other = newUser("scope_other");
         User third = newUser("scope_third");
 
-        Item mine = newItem(me, "내가 파는 검");
-        Item theirs = newItem(other, "남이 파는 검");
+        // 가격을 다르게 둔다 — 목록 정렬 검사가 이걸 근거로 삼는다.
+        Item mine = newItem(me, "내가 파는 검", "90000");
+        Item theirs = newItem(other, "남이 파는 검", "10000");
 
         // 내가 산 것 / 내가 판 것 / 나와 무관한 것 — 셋을 다 둔다.
         newTrade(theirs, me, other, TradeType.PURCHASE, "10000");
@@ -134,6 +135,42 @@ class MyDataScopeTest {
                         .value("scope_other"));
     }
 
+    // --- 매물 목록 ----------------------------------------------------------
+
+    @Test
+    void 매물_목록은_content_와_totalElements_를_낸다() throws Exception {
+        // **프론트가 이 이름들에 직접 의존한다**(`Page<T>` 타입). Spring 의
+        // `PageImpl` 직렬화 형태는 프레임워크가 정하는 것이라 Boot 판올림에서
+        // 바뀔 수 있고, 바뀌면 화면이 조용히 빈 표가 된다 — 여기서 고정한다.
+        mockMvc.perform(get("/api/items?page=0&size=20&sort=price,desc")
+                        .header("Authorization", "Bearer " + tokenFor(me)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content").isArray())
+                .andExpect(jsonPath("$.totalElements").isNumber())
+                .andExpect(jsonPath("$.totalPages").isNumber())
+                .andExpect(jsonPath("$.number").value(0))
+                .andExpect(jsonPath("$.size").value(20));
+    }
+
+    @Test
+    void 매물_목록은_정렬을_실제로_적용한다() throws Exception {
+        // 정렬 파라미터가 무시돼도 200 이 나오므로, 형태만 보는 검사는 이걸 놓친다.
+        //
+        // **이름이 아니라 가격으로 정렬한다.** 첫 판본은 `sort=name,asc` 로 썼다가
+        // 틀렸는데, 이유가 둘이다 — 한글에서 `남`(ㅏ) 이 `내`(ㅐ) 보다 앞이라는 걸
+        // 잘못 알았고, 애초에 **한글 정렬 순서는 DB 로케일이 정한다.** 판정 근거를
+        // 환경에 맡기면 여기서 통과하고 배포에서 갈릴 수 있다. 숫자는 안 갈린다.
+        mockMvc.perform(get("/api/items?page=0&size=20&sort=price,desc")
+                        .header("Authorization", "Bearer " + tokenFor(me)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[0].price").value(90000))
+                .andExpect(jsonPath("$.content[1].price").value(10000));
+
+        mockMvc.perform(get("/api/items?page=0&size=20&sort=price,asc")
+                        .header("Authorization", "Bearer " + tokenFor(me)))
+                .andExpect(jsonPath("$.content[0].price").value(10000));
+    }
+
     // --- 알림 읽음 처리 ------------------------------------------------------
 
     @Test
@@ -171,14 +208,14 @@ class MyDataScopeTest {
                 .build());
     }
 
-    private Item newItem(User seller, String name) {
+    private Item newItem(User seller, String name, String price) {
         return itemRepository.save(Item.builder()
                 .tenant(tenant)
                 .seller(seller)
                 .name(name)
                 .description("스코프 테스트용")
                 .saleType(SaleType.FIXED_PRICE)
-                .price(new BigDecimal("10000"))
+                .price(new BigDecimal(price))
                 .stock(5)
                 .build());
     }

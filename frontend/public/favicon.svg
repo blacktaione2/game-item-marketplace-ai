@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <!-- 16px 에서 읽히는 것만 남긴다 — 검/방패 실루엣은 그 크기에서 뭉갠다.
+       상승 시세선은 이 서비스의 시세 예측 분기와도 맞고 형태가 단순하다. -->
+  <rect width="32" height="32" rx="7" fill="#111418"/>
+  <path d="M6 22 L13 15 L18 19 L25 10" fill="none" stroke="#4a9eff" stroke-width="3.2"
+        stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="25" cy="10" r="3.4" fill="#4a9eff"/>
+</svg>
