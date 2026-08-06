@@ -20,6 +20,7 @@
 
 from __future__ import annotations
 
+import logging
 import re
 import time
 from typing import Any
@@ -40,6 +41,8 @@ from app.services.router.intents import Intent
 from app.services.router.router import route
 from app.services.search.embedding import get_embedding_service
 from app.services.search.pipeline import search as run_search
+
+logger = logging.getLogger(__name__)
 
 # 지시대명사·평가어만 있고 대상이 없는 질의를 걸러내기 위한 불용어.
 # 형태소 분석까지 갈 필요는 없다 — 목적은 "대상을 지칭했는가" 한 가지다.
@@ -153,7 +156,13 @@ async def ask(
             hit = await cache.lookup(tenant_code, query, embed)
             timings["cache_lookup_ms"] = _ms(lookup_started)
         except Exception:
-            hit = None  # 캐시 장애가 요청 실패로 번지면 안 된다
+            # 캐시 장애가 요청 실패로 번지면 안 된다. **다만 조용히 넘기지는
+            # 않는다** — 이 자리의 `pass` 하나 때문에 배포에서 Redis 인증이
+            # 깨진 걸 아무도 몰랐다. 증상은 "적중률 0"뿐이고 그건 캐시가
+            # 원래 못 맞히는 것과 구분되지 않는다. 리미터가 같은 상황에서
+            # 경고를 남기는 것과 같은 이유다(core/rate_limit.py).
+            logger.warning("캐시 조회 실패 — 미적중으로 진행한다", exc_info=True)
+            hit = None
         timings["cache_ms"] = _ms(started)
         if hit:
             cached = {
@@ -223,7 +232,10 @@ async def ask(
                 ttl=ttl_seconds(intent),
             )
         except Exception:
-            pass  # 저장 실패는 조용히 넘긴다 — 응답은 이미 만들어졌다
+            # 응답은 이미 만들어졌으므로 실패해도 그대로 내보낸다.
+            # 저장이 계속 실패하면 조회는 영원히 미적중이므로, 조회 쪽과
+            # 같은 이유로 남긴다.
+            logger.warning("캐시 저장 실패 — 응답은 그대로 내보낸다", exc_info=True)
 
     response["cache"] = {"hit": False}
     response["timings"] = timings

@@ -107,6 +107,10 @@ services:
     environment:
       ELASTICSEARCH_URL: http://elasticsearch:9200
       REDIS_URL: redis://redis:6379/0
+      # URL 과 비밀번호는 **한 쌍이다.** URL 만 넘기면 코드 기본값
+      # (`gimp_local_pw`) 으로 붙는데, 그건 `.env.example` 의 값과 같아서
+      # 로컬에서만 우연히 맞는다 — 자세한 경위는 ai 서비스 쪽 주석.
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-gimp_local_pw}
     volumes:
       - ai_models:/app/models
     depends_on:
@@ -221,6 +225,15 @@ services:
     environment:
       ELASTICSEARCH_URL: http://elasticsearch:9200
       REDIS_URL: redis://redis:6379/0
+      # **URL 만 넘기고 비밀번호를 빠뜨렸었다.** 코드 기본값이 `gimp_local_pw`
+      # 인데 `.env.example` 도 같은 값이라 **로컬에서는 우연히 맞고**, 배포처럼
+      # 비밀번호를 새로 만든 환경에서만 인증이 깨졌다. 그 결과가 조용했던 게
+      # 문제의 절반이다 — 시맨틱 캐시는 전부 미적중이 되고(적중률 0),
+      # AI 요청 한도는 fail-open 이라 **통째로 열렸다**. 둘 다 예외를 삼킨다.
+      #
+      # 백엔드는 149행에서 이미 받고 있었다. 한쪽만 받는 상태가 존재할 수
+      # 있다는 게 신호다 — RABBITMQ_HOST 와 같은 계열이다(ADR-0030).
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-gimp_local_pw}
       JWT_SECRET: ${JWT_SECRET:-gimp_local_dev_secret_change_me_32b}
     ports:
       # backend 와 같은 이유 — 부하 하네스가 8000 을 직접 때린다.
