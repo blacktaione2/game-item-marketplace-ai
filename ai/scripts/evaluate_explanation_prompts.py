@@ -1,0 +1,418 @@
+"""설명 프롬프트 A/B/C — 내부 필드명 노출과 미완성 문장을 고칠 수 있는가.
+
+실행: python -m scripts.evaluate_explanation_prompts
+
+## 고치려는 것
+
+배포된 화면에서 눈으로 잡힌 두 건이다.
+
+| 분기 | 나온 문장 |
+|---|---|
+| 시세 | `... 이 예측은 최근 120일간의 거래 이력을 바탕으로 하였으며, **Cold Start 상태가 아닙니다**.` |
+| 이상거래 | `... 사용자의 실제 거래 내역과는 **번호 체계가 별개라는 점.**` |
+
+첫째는 내부 필드명(`cold_start`)이 사용자 문장에 그대로 나온 것이고, 둘째는
+**잘린 게 아니라** 프롬프트의 템플릿 문장 자체가 `…라는 점.` 이라는 명사형
+조각이어서 모델이 그대로 옮겨 붙인 것이다.
+
+## 왜 눈으로 고치지 않는가
+
+이 저장소는 프롬프트 한 줄 추가가 정답률을 **97.5% → 22%** 로 떨어뜨린 적이
+있다. 그때 원인은 "혼동하지 말라"며 **혼동 대상을 이름으로 불렀기** 때문이었다.
+
+그래서 **"필드명을 쓰지 마세요"라고 명시하는 안(B) 자체가 같은 함정일 수
+있다.** 필드명을 아예 언급하지 않는 안(C)을 같이 재는 이유다.
+
+## 측정 설계
+
+**한 실행 안에서 A/B/C.** 이전 실행의 집계와 비교하면 LLM 변동이 델타를
+오염시킨다(`evaluate_hard_filters`가 같은 이유로 그렇게 한다).
+
+**도구 결과는 케이스당 한 번만 계산하고 세 안이 공유한다.** 안마다 다시
+계산하면 예측·판정 자체의 변동이 프롬프트 차이로 잡힌다.
+
+**질의당 반복한다.** `temperature=0`이어도 1/10은 흔들린다(ADR-0017).
+
+**LLM 판정을 쓰지 않는다.** 아래 넷은 전부 문자열·숫자 규칙이라 판정이
+실행마다 달라지지 않는다.
+
+| 지표 | 판정 |
+|---|---|
+| **누출** | 답변에 내부 식별자(`cold_start`, `baseline_price`, `contributions` …)가 등장 |
+| **미완결** | 답변이 종결어미(`다.` `요.` 등)나 `?`/`!`로 끝나지 않음 |
+| **면책 누락** | 이상거래 답변에 합성 데이터 고지가 없음 / 콜드스타트인데 추정치임을 안 밝힘 |
+| **모순** | 판정이 이상인데 "정상"이라 말함(또는 그 반대) |
+
+**앞의 셋은 낮을수록 좋고, 면책은 "고치다 사라지면 회귀"라 같이 본다.**
+이 넷이 모두 나빠지지 않으면서 누출·미완결이 0에 가까워야 채택한다.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import io
+import json
+import re
+import sys
+from collections import defaultdict
+from pathlib import Path
+from typing import Any
+
+from elasticsearch import AsyncElasticsearch
+
+from app.core.config import get_settings
+from app.core.ids import IdSpace
+from app.services.anomaly.pipeline import detect_trade
+from app.services.forecast.pipeline import forecast_price
+from app.services.llm.openai_client import OpenAIClient
+
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
+TENANT = "nexon"
+REPEATS = 3
+
+# **수집과 채점을 분리한다.** 첫 판본은 부르면서 바로 채점하고 답변을 버렸다.
+# 그런데 모순 지표가 틀린 게 드러났을 때 고쳐서 다시 보려면 **99회를 다시
+# 태워야 했다.** 지표는 앞으로도 틀릴 수 있으므로 답변을 남긴다 —
+# 같은 데이터 위에서 채점을 고치는 데는 추가 비용이 없다.
+ANSWERS = Path(__file__).resolve().parents[1] / "data" / "explanation_prompt_answers.json"
+
+# 시세: 콜드스타트인 것과 아닌 것이 섞여야 한다 — 두 경로의 지시가 다르다.
+FORECAST_ITEMS = [1, 3, 5, 7, 24]
+# 이상거래: **양쪽이 섞여야 모순 지표가 의미를 갖는다.**
+#
+# 이상 판정만 모으면 "이상이라고 말했는가"만 재게 되고, 정상만 모으면 그 반대다.
+# 앞의 셋은 `list_alerts` 상위(전부 이상 판정), 뒤의 셋은 정상 구간에서 골랐다.
+# 처음엔 이상 1건 + 정상 4건이었는데 그러면 "이상인데 정상이라 말함" 방향의
+# 표본이 3회짜리 하나뿐이라 그 지표가 사실상 안 돈다.
+ANOMALY_TRADES = [23659, 23673, 23663, 1, 500, 20000]
+
+# --- 지표 ------------------------------------------------------------------
+#
+# 답변에 나오면 안 되는 내부 식별자. **응답 JSON의 키 이름들이다** — 사용자는
+# 그 구조를 모르므로 문장에 나오면 그건 새어나온 것이다.
+LEAK_TOKENS = [
+    "cold_start", "baseline_price", "baseline_source", "anchor_price",
+    "expected_change_pct", "horizon_days", "history_days", "inherited_from",
+    "contributions", "is_anomaly", "anomaly_score", "price_ratio",
+    "market_median", "id_space", "trade_id", "item_id", "injected_label",
+]
+# 종결어미. 한국어 평서문이 여기서 끝나지 않으면 문장이 안 닫힌 것이다.
+_COMPLETE = re.compile(r"(다|요|죠|까)[.!?]$|[?!]$")
+
+
+def leaked(answer: str) -> list[str]:
+    low = answer.lower()
+    return [token for token in LEAK_TOKENS if token in low]
+
+
+def incomplete(answer: str) -> bool:
+    return not _COMPLETE.search(answer.strip())
+
+
+def missing_disclaimer(answer: str, kind: str, result: dict[str, Any]) -> bool:
+    if kind == "anomaly":
+        # 합성 데모 데이터라는 고지. 표현은 자유롭게 두되 두 요소를 요구한다.
+        return not (re.search(r"합성|데모", answer) and re.search(r"데이터|거래", answer))
+    if result.get("cold_start"):
+        # 콜드스타트면 "직접 이력이 아니라 빌려온 추정"이라는 사실이 있어야 한다.
+        return not re.search(r"유사|비슷한|이력이 (부족|없)|추정", answer)
+    return False
+
+
+# **부정을 읽어야 한다.** 첫 판본은 `이상\s*거래` 만 봤는데, 정상 거래 답변이
+# "이상 거래로 판별되지 **않았습니다**" 라고 쓰므로 전부 오탐이 났다 — 세 안이
+# 나란히 9를 낸 것이 그 증거였다. **서로 다른 프롬프트가 같은 값을 내면 그건
+# 프롬프트가 아니라 검출기를 재고 있다는 뜻이다.**
+_ANOMALY_WORD = r"(?:이상\s*거래|이상\s*징후|비정상)"
+_NEGATOR = r"(?:아니|않|없|해당하지)"
+# 이상 언급 뒤 30자 안에 부정어가 오면 "이상이 아니다"로 읽는다.
+_NEGATED = re.compile(_ANOMALY_WORD + r"[^.。]{0,30}?" + _NEGATOR)
+_ASSERTED = re.compile(_ANOMALY_WORD)
+_NORMAL = re.compile(r"정상(?:적인)?\s*(?:거래|범위)|문제\s*(?:가)?\s*없")
+
+
+# **이 지표는 나중에 붙었다.** 처음 넷으로 A/B/C 를 재니 B 와 C 가 0-0-0-0 으로
+# 동점이었는데, 표본을 읽어보니 C 가 "거래를 진행하는 것이 좋습니다" 같은 **투자
+# 권유**를 하고 있었다. `상담원` 페르소나가 모델을 그쪽으로 민 것이다.
+#
+# 시세 설명의 일은 예측을 전달하는 것이지 사라 말라를 권하는 게 아니다. 지표는
+# **내가 생각한 것만 잰다** — 동점이 나오면 그건 "차이가 없다"가 아니라 "내
+# 지표가 차이를 못 본다"일 수 있다.
+_ADVICE = re.compile(
+    r"(구매|거래|매수|매도|판매)를? ?(진행|고려|추천|하는 것이|하시는 것이)"
+    r"|좋(습니다|을 것)|권(장|해)|유리(합니다|할)"
+)
+
+
+def advises(answer: str) -> bool:
+    return bool(_ADVICE.search(answer))
+
+
+def contradicts(answer: str, kind: str, result: dict[str, Any]) -> bool:
+    if kind != "anomaly":
+        return False
+    negated = bool(_NEGATED.search(answer))
+    says_anomaly = bool(_ASSERTED.search(answer)) and not negated
+    says_normal = bool(_NORMAL.search(answer)) or negated
+    if result["is_anomaly"]:
+        return says_normal and not says_anomaly
+    return says_anomaly and not says_normal
+
+
+# --- 프롬프트 세 안 --------------------------------------------------------
+#
+# A = 현재. B = 필드명을 쓰지 말라고 **명시**. C = 필드명을 **언급하지 않음**.
+#
+# B 와 C 를 나눈 이유가 이 라운드의 요점이다. "혼동하지 말라"며 혼동 대상을
+# 이름으로 부르는 것이 역효과였던 전례(97.5% → 22%)가 있어서, B 가 오히려
+# 누출을 늘릴 가능성을 배제할 수 없다.
+
+_FORECAST_A = """다음은 아이템 시세 예측 결과입니다. 2~3문장으로 설명하세요.
+
+- baseline_price는 {baseline_source}를 기준으로 한 값입니다. 등록가와 혼동하지 마세요.
+- cold_start가 true면 실제 거래 이력이 부족해 유사 아이템 추세를 물려받은
+  추정치라는 점을 반드시 밝히세요.
+
+질의: {query}
+결과: {result}"""
+
+_FORECAST_B = """다음은 아이템 시세 예측 결과입니다. 사용자에게 2~3문장으로 설명하세요.
+
+- 아래 결과는 내부 데이터입니다. **필드 이름(cold_start, baseline_price 등)을
+  답변에 쓰지 마세요.** 사용자는 그 구조를 모릅니다.
+- 기준가는 {baseline_source}입니다. 판매자가 정한 등록가와 혼동하지 마세요.
+- {conditional}
+- 완결된 문장으로 끝내세요.
+
+질의: {query}
+결과: {result}"""
+
+_FORECAST_C = """당신은 게임 아이템 거래소의 상담원입니다. 아래 시세 분석을 보고
+손님에게 2~3문장으로 설명하세요.
+
+- 기준가는 {baseline_source}입니다. 판매자가 정한 등록가와 혼동하지 마세요.
+- {conditional}
+- 손님은 분석 도구를 본 적이 없습니다. 도구가 쓰는 표현이 아니라 사람이 쓰는
+  말로 설명하세요.
+- 완결된 문장으로 끝내세요.
+
+질의: {query}
+분석: {result}"""
+
+_ANOMALY_A = """다음은 거래 이상 여부 판정 결과입니다. 2~3문장으로 설명하세요.
+contributions는 이상 점수에 대한 피처별 기여도입니다. 가장 큰 기여 요인을
+근거로 들어 설명하세요.
+
+**반드시 한 문장으로 덧붙이세요**: 이 판정은 합성 데모 거래 데이터를 대상으로
+하며, 사용자의 실제 거래 내역과는 번호 체계가 별개라는 점.
+
+질의: {query}
+결과: {result}"""
+
+_ANOMALY_B = """다음은 거래 이상 여부 판정 결과입니다. 2~3문장으로 설명하세요.
+가장 큰 기여 요인을 근거로 들어 설명하세요.
+
+- 아래 결과는 내부 데이터입니다. **필드 이름(contributions, is_anomaly 등)을
+  답변에 쓰지 마세요.**
+- **마지막에 다음 내용을 완결된 한 문장으로 덧붙이세요**: 이 판정은 합성 데모
+  거래 데이터를 대상으로 한 것이며, 사용자의 실제 거래 번호와는 체계가 다릅니다.
+
+질의: {query}
+결과: {result}"""
+
+_ANOMALY_C = """당신은 게임 아이템 거래소의 이상거래 담당자입니다. 아래 분석을
+보고 2~3문장으로 설명하세요.
+
+- 이상 점수에 가장 크게 기여한 요인을 근거로 드세요.
+- **마지막에 다음 내용을 완결된 한 문장으로 덧붙이세요**: 이 판정은 합성 데모
+  거래 데이터를 대상으로 한 것이며, 사용자의 실제 거래 번호와는 체계가 다릅니다.
+- 상대는 분석 도구를 본 적이 없습니다. 도구가 쓰는 표현이 아니라 사람이 쓰는
+  말로 설명하세요.
+
+질의: {query}
+분석: {result}"""
+
+VARIANTS = ("A(현재)", "B(명시)", "C(미언급)")
+
+
+def build_prompt(kind: str, variant: str, query: str, result: dict[str, Any]) -> str:
+    if kind == "forecast":
+        cold = result["cold_start"]
+        baseline = "최근 체결가" if not cold else "거래 이력 부족 상태의 추정 기준가"
+        # **조건 분기를 프롬프트가 아니라 코드가 한다.** A 는 모델에게
+        # "cold_start 가 true 면" 을 읽히는데, 그러려면 모델이 그 필드를 봐야 하고
+        # 그게 문장에 새어나온 경로다. 코드가 미리 갈라주면 모델은 필드를 볼
+        # 이유가 없다.
+        conditional = (
+            "이 아이템은 거래 이력이 부족해 비슷한 아이템들의 추세를 빌려 추정한 "
+            "값입니다. 그 점을 반드시 밝히세요."
+            if cold
+            else "이 아이템은 거래 이력이 충분합니다. 추정이라는 언급은 하지 마세요."
+        )
+        template = {"A(현재)": _FORECAST_A, "B(명시)": _FORECAST_B, "C(미언급)": _FORECAST_C}[variant]
+        if variant == "A(현재)":
+            return template.format(query=query, result=result, baseline_source=baseline)
+        return template.format(
+            query=query, result=result, baseline_source=baseline, conditional=conditional
+        )
+
+    template = {"A(현재)": _ANOMALY_A, "B(명시)": _ANOMALY_B, "C(미언급)": _ANOMALY_C}[variant]
+    return template.format(query=query, result=result)
+
+
+# --- 실행 ------------------------------------------------------------------
+#
+# **수집(collect)과 채점(score)이 분리돼 있다.** 인자 없이 돌리면 둘 다 하고,
+# `--score-only` 는 저장된 답변을 다시 채점만 한다. 지표를 고칠 때 API 를 다시
+# 태우지 않기 위해서다 — 실제로 모순 지표가 틀린 걸 발견하고 그 대가를 치렀다.
+
+
+async def collect() -> list[dict[str, Any]]:
+    settings = get_settings()
+    if not settings.openai_api_key:
+        raise SystemExit("OPENAI_API_KEY 가 필요합니다 (ai/.env)")
+
+    es = AsyncElasticsearch(settings.elasticsearch_url)
+    # 앱과 **같은 설정**으로 만든다. temperature 를 여기서 따로 정하면 측정이
+    # 운영과 다른 조건에서 이뤄진다 (ADR-0017 이 그 함정을 기록했다).
+    llm = OpenAIClient(
+        api_key=settings.openai_api_key,
+        model=settings.openai_model,
+        temperature=settings.openai_temperature,
+    )
+
+    cases: list[tuple[str, str, dict[str, Any]]] = []
+    print("[준비] 도구 결과를 케이스당 한 번만 계산한다 — 세 안이 같은 입력을 본다")
+    for item_id in FORECAST_ITEMS:
+        try:
+            result = await forecast_price(es=es, tenant_code=TENANT, item_id=item_id)
+        except Exception as error:
+            print(f"  시세 item={item_id} 건너뜀: {type(error).__name__}")
+            continue
+        cases.append(("forecast", f"아이템 {item_id}번 시세 알려줘", result))
+        print(f"  시세 item={item_id}  cold_start={result['cold_start']}")
+
+    for trade_id in ANOMALY_TRADES:
+        try:
+            result = detect_trade(TENANT, trade_id, IdSpace.SYNTHETIC)
+        except Exception as error:
+            print(f"  이상 trade={trade_id} 건너뜀: {type(error).__name__}")
+            continue
+        cases.append(("anomaly", f"거래 {trade_id}번 이상거래야?", result))
+        print(f"  이상 trade={trade_id}  is_anomaly={result['is_anomaly']}")
+
+    if not cases:
+        await es.close()
+        raise SystemExit("케이스가 없습니다 — 모델과 ES 색인을 먼저 준비하세요")
+
+    total = len(cases) * len(VARIANTS) * REPEATS
+    print(f"\n[수집] 케이스 {len(cases)} × 안 {len(VARIANTS)} × 반복 {REPEATS} = LLM {total}회")
+
+    rows: list[dict[str, Any]] = []
+    for kind, query, result in cases:
+        for variant in VARIANTS:
+            prompt = build_prompt(kind, variant, query, result)
+            for _ in range(REPEATS):
+                answer = (await llm.complete(prompt)).strip()
+                rows.append(
+                    {
+                        "variant": variant,
+                        "kind": kind,
+                        "query": query,
+                        # 채점에 필요한 사실만 남긴다. 결과 전체를 넣으면 파일이
+                        # 커지고, 정작 채점은 이 둘만 본다.
+                        "is_anomaly": bool(result.get("is_anomaly", False)),
+                        "cold_start": bool(result.get("cold_start", False)),
+                        "answer": answer,
+                    }
+                )
+            print(f"  {kind:<9}{variant:<10}{query}")
+
+    await es.close()
+    ANSWERS.parent.mkdir(parents=True, exist_ok=True)
+    io.open(ANSWERS, "w", encoding="utf-8").write(
+        json.dumps(rows, ensure_ascii=False, indent=1)
+    )
+    print(f"\n  답변 {len(rows)}건 저장 → {ANSWERS.relative_to(ANSWERS.parents[2])}")
+    return rows
+
+
+def score(rows: list[dict[str, Any]]) -> None:
+    tally: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
+    flagged: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    samples: dict[str, str] = {}
+
+    for row in rows:
+        variant, kind, answer = row["variant"], row["kind"], row["answer"]
+        result = {"is_anomaly": row["is_anomaly"], "cold_start": row["cold_start"]}
+        tally[variant]["n"] += 1
+        for label, hit in (
+            ("누출", bool(leaked(answer))),
+            ("미완결", incomplete(answer)),
+            ("면책누락", missing_disclaimer(answer, kind, result)),
+            ("모순", contradicts(answer, kind, result)),
+            ("권유", advises(answer)),
+        ):
+            if hit:
+                tally[variant][label] += 1
+                flagged[label].append(row)
+        samples.setdefault(f"{variant}|{kind}", answer)
+
+    print("\n" + "=" * 78)
+    print("결과 — 낮을수록 좋다 (n = 답변 수)")
+    print("=" * 78)
+    print(f"  {'안':<12}{'n':>5}{'누출':>8}{'미완결':>9}{'면책누락':>10}{'모순':>8}{'권유':>8}")
+    for variant in VARIANTS:
+        row = tally[variant]
+        print(
+            f"  {variant:<12}{row['n']:>5}{row['누출']:>8}{row['미완결']:>9}"
+            f"{row['면책누락']:>10}{row['모순']:>8}{row['권유']:>8}"
+        )
+
+    # **걸린 것을 반드시 보여준다.** 지표가 스스로 틀릴 수 있다 — 실제로 첫
+    # 판본의 모순 지표는 부정문을 못 읽어 세 안 모두 9를 냈고, 사람이 답변을
+    # 봤기 때문에 드러났다. 숫자만 내는 검사는 자기 오류를 숨긴다.
+    print("\n" + "=" * 78)
+    print("걸린 답변 — 지표가 맞게 잡았는지 눈으로 확인할 것")
+    print("=" * 78)
+    for label in ("누출", "미완결", "면책누락", "모순", "권유"):
+        hits = flagged[label]
+        print(f"\n  [{label}] {len(hits)}건")
+        for row in hits[:3]:
+            mark = f"is_anomaly={row['is_anomaly']}" if row["kind"] == "anomaly" else f"cold_start={row['cold_start']}"
+            print(f"    · {row['variant']} / {row['kind']} / {mark}")
+            print(f"      {row['answer'][:150]}")
+        if len(hits) > 3:
+            print(f"    … 외 {len(hits) - 3}건")
+
+    print("\n" + "=" * 78)
+    print("표본 (안 × 분기마다 첫 답변)")
+    print("=" * 78)
+    for key in sorted(samples):
+        print(f"\n  [{key}]\n  {samples[key]}")
+
+    print("\n" + "=" * 78)
+    print("판정 기준")
+    print("=" * 78)
+    print("  · 누출·미완결이 0에 가까우면서 **면책누락·모순이 A보다 나빠지지")
+    print("    않아야** 채택한다. 하나를 고치며 다른 하나를 잃으면 안 된다.")
+    print("  · B가 C보다 나쁘면 '쓰지 말라고 이름을 부르면 오히려 쓴다'는")
+    print("    전례(97.5% → 22%)가 재현된 것이다.")
+    print("  · **세 안이 같은 값을 낸 열은 프롬프트가 아니라 지표를 재고 있다.**")
+
+
+async def main() -> None:
+    if "--score-only" in sys.argv:
+        if not ANSWERS.exists():
+            raise SystemExit(f"저장된 답변이 없습니다: {ANSWERS}")
+        rows = json.loads(io.open(ANSWERS, encoding="utf-8").read())
+        print(f"[채점만] 저장된 답변 {len(rows)}건 — API 호출 없음")
+        score(rows)
+        return
+    score(await collect())
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
