@@ -390,7 +390,7 @@ flow are still curl-verified only; see the roadmap's 기술 부채 section.
   versioning for reproducibility). `models/` is gitignored — regenerate with
   the build/finetune scripts.
 
-- `tests/` — `python -m pytest` from `ai/` (141 tests, no `pytest-asyncio` — the
+- `tests/` — `python -m pytest` from `ai/` (144 tests, no `pytest-asyncio` — the
   few async cases use `asyncio.run`). Deliberately limited to
   deterministic units: RRF fusion, router rules, cache keys/tenant isolation,
   per-intent TTL + the no-result storage veto, id-space guards, filter→DSL
@@ -810,6 +810,16 @@ Postgres and ES drift apart and search results stop resolving to real rows.
   similarity matching only for `faq_smalltalk`**, gated on the stored entry's
   intent. Don't widen that gate without re-running
   `scripts/evaluate_semantic_cache.py`.
+  - **"Exact" means after `normalize_query()`** (ADR-0037): trailing sentence
+    punctuation and repeated whitespace are stripped before hashing, because
+    `"…알려줘!"` missing `"…알려줘"` is a miss nobody wants. **This is not the
+    similarity gate being widened** — it is still exact matching, with "same
+    text" widened by marks that cannot flip an answer. Keep it that narrow: once
+    you start on particles and spacing, `"100렙 이상"`/`"100렙이상"` works but
+    there is no principled stop. The guard is
+    `test_trap_pairs_still_get_different_keys`, and it is not vacuous — a greedy
+    normalizer (strip digits/spaces) collides **4 of the 16** trap pairs while
+    the current one collides 0.
 - **The intent classifier's confidence is not calibrated.** Trained to loss
   0.013 it gave wrong answers a median confidence of 0.978 vs 0.991 for right
   ones — no threshold separates them, and boundary-query escalation collapsed

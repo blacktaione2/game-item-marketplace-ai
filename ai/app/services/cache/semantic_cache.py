@@ -27,6 +27,7 @@ import base64
 import hashlib
 import json
 import logging
+import re
 from collections.abc import Awaitable, Callable
 from typing import Any
 
@@ -58,7 +59,7 @@ class SemanticCache:
         return f"{self._namespace(tenant_code)}:ids"
 
     def entry_key(self, tenant_code: str, query: str) -> str:
-        digest = hashlib.sha1(query.strip().encode("utf-8")).hexdigest()[:16]
+        digest = hashlib.sha1(normalize_query(query).encode("utf-8")).hexdigest()[:16]
         return f"{self._namespace(tenant_code)}:e:{digest}"
 
     # --- 조회 ------------------------------------------------------------
@@ -219,6 +220,31 @@ def _hit(
         "match_type": match_type,
         "key": key,
     }
+
+
+# 문장 끝 종결 기호와 중복 공백. **의미를 바꾸지 않는 것만** 넣는다.
+_TRAILING = "!?.~…。，,、 \t"
+_WHITESPACE = re.compile(r"\s+")
+
+
+def normalize_query(query: str) -> str:
+    """캐시 키용 질의 정규화.
+
+    **이건 유사도 매칭이 아니다.** 여전히 정확 일치이고, 다만 "같은 글자"의 범위를
+    문장부호와 공백만큼 넓힌다. 유사도를 여는 것과 위험이 전혀 다르다 — ADR-0012 가
+    막은 건 `+8`/`+9`, `이상`/`이하` 처럼 **한 글자가 답을 뒤집는** 경우인데, 종결
+    기호는 그 축에 없다. `"불꽃의 대검 시세 알려줘!"` 와 `"... 알려줘"` 는 같은 질문이다.
+
+    범위를 좁게 잡은 이유가 여기 있다. 조사·어미·띄어쓰기까지 건드리기 시작하면
+    `"100렙 이상"` / `"100렙이상"` 은 되지만 그 다음이 어디서 멈출지 근거가 없어진다.
+    지금은 **반례를 만들 수 없는 것만** 넣었다.
+
+    정규화 결과가 비면(질의가 부호뿐이면) 원본을 쓴다. 안 그러면 `"???"` 와 `"!!!"`
+    가 같은 키가 된다 — 둘 다 무의미하지만 같은 답을 줄 이유는 없다.
+    """
+    collapsed = _WHITESPACE.sub(" ", query.strip())
+    stripped = collapsed.rstrip(_TRAILING)
+    return stripped or collapsed
 
 
 def _normalize(vector: np.ndarray) -> np.ndarray:

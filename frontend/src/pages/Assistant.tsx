@@ -47,8 +47,14 @@ export default function Assistant() {
   function submit(value: string) {
     const trimmed = value.trim();
     if (!trimmed) return;
-    // 같은 질의를 다시 눌러도 URL 이 안 바뀌면 아무 일도 안 일어난다 —
-    // 캐시된 결과가 이미 떠 있으므로 그게 맞는 동작이다.
+    if (trimmed === submitted) {
+      // **같은 질의면 URL 이 안 바뀌고, 그러면 아무 일도 안 일어난다.**
+      // 처음엔 "캐시된 결과가 이미 떠 있으니 맞는 동작"이라고 뒀는데 틀렸다 —
+      // 버튼을 눌렀는데 반응이 없으면 사용자에게는 고장이다. 다시 물은 것은
+      // 다시 묻겠다는 뜻이므로 다시 부른다(서버 캐시가 대개 0회로 받아준다).
+      void ask.refetch();
+      return;
+    }
     setSearchParams({ q: trimmed });
   }
 
