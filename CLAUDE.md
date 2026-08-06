@@ -594,7 +594,13 @@ default"; a short key is broken in every profile.
   should stay that way — a display exists for humans and its rules will change
   again. This is the third of four times a check here was itself wrong; the
   pattern and its checklist are in
-  `docs/05-Troubleshooting/검사-자체가-틀린-사례들.md`. Corollary: **run any new
+  `docs/05-Troubleshooting/검사-자체가-틀린-사례들.md` — **18 cases now**, and
+  four of them came from a single day of building new measurement tools. Two
+  share one cause worth naming: **Korean draws its distinctions in the verb
+  ending, but regexes are easiest to write against nouns**, so `이상 거래` also
+  matched `이상 거래로 판별되지 않았습니다` and `거래를 고려` also matched
+  `거래를 고려하실 때 참고하시기 바랍니다`. Both were caught by reading the
+  flagged samples, never by the numbers. Corollary: **run any new
   check against a deliberately failing case too** — a check only ever seen
   passing is indistinguishable from one that always passes.
 - **Measure the instrument's idle floor before you set a threshold on it, and
