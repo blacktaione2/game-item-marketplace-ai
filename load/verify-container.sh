@@ -99,7 +99,13 @@ echo "== 판정 1-b: 캐시가 실제로 적중하는가 =="
 #
 # 같은 Redis 클라이언트를 AI 요청 한도가 쓰고 그쪽은 fail-open 이므로, 이 검사가
 # 실패한다는 건 **한도가 통째로 열려 있다**는 뜻이기도 하다. 비용 방어가 걸린다.
-write_query "$TMP/c.json" "수수료 얼마인가요" true
+#
+# **질의로 FAQ 를 쓰면 안 된다.** 첫 판본이 "수수료 얼마인가요" 를 썼는데, FAQ
+# 분기는 애초에 LLM 을 안 부른다(pipeline.py 의 `llm_calls: 0`). 그래서 `llm_calls
+# == 0` 단언이 캐시 상태와 무관하게 **항상 참**이었다 — 실제로 미적중인 배포에서
+# 0 이 찍혔고, 그 값은 "적중"으로 오독되기 딱 좋다. 검색을 쓰면 미적중 2회 /
+# 적중 0회라 두 단언이 **둘 다 일한다.**
+write_query "$TMP/c.json" "5만원 이하 검 찾아줘" true
 cache_probe() {  # 한 번 물어보고 (적중여부, llm 호출수)를 낸다
   curl -s -X POST "$WEB/api/ai/assistant" \
     -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
@@ -111,13 +117,17 @@ try:
     print(str(d.get('cache',{}).get('hit')), d.get('llm_calls','?'))
 except Exception: print('<파싱실패>', '?')"
 }
-cache_probe >/dev/null   # 1회차: 저장시킨다 (이미 있으면 그대로 적중)
+FIRST="$(cache_probe)"    # 1회차: 저장시킨다 (이미 있으면 그대로 적중)
 SECOND="$(cache_probe)"
 C_HIT="${SECOND%% *}"; C_LLM="${SECOND##* }"
 if [ "$C_HIT" = "True" ] && [ "$C_LLM" = "0" ]; then
-  ok "같은 질의 2회차 = 캐시 적중, LLM 0회"
+  ok "같은 질의 2회차 = 캐시 적중, LLM 0회 (1회차: $FIRST)"
 else
-  bad "캐시 미적중 (hit=$C_HIT, llm_calls=$C_LLM) — Redis 연결을 의심하라:
+  # 1회차 값을 같이 낸다. 0건이면 **설계상 저장하지 않으므로**(policy.is_cacheable)
+  # 캐시가 멀쩡해도 여기서 미적중이 난다 — 그건 Redis 문제가 아니다.
+  bad "캐시 미적중 (1회차 $FIRST → 2회차 hit=$C_HIT, llm_calls=$C_LLM)
+         1회차 llm_calls 가 1 이면 검색 0건이라 저장을 안 한 것이다 (정상 동작).
+         그 외라면 Redis 연결을 의심하라:
          docker exec gimp-ai python -c \"import asyncio;from app.services.cache.dependencies import get_redis_client;asyncio.run(get_redis_client().ping())\"
          docker logs gimp-ai 2>&1 | grep '캐시 조회 실패'"
 fi

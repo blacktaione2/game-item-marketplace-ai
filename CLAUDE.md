@@ -86,7 +86,13 @@ wrong:
 - **`llm_calls` is 1 on this path, not 0.** `understand_query` inside
   `run_search` already ran and **cannot be skipped** — the verdict is defined by
   which filters got extracted. Only the explanation call disappears (2 → 1).
-  `llm_calls == 0` means a cache hit and nothing else.
+  **`llm_calls == 0` does NOT identify a cache hit** — that earlier claim here was
+  wrong. `FAQ_SMALLTALK` answers deterministically and reports 0 on a *miss* too
+  (`pipeline.py`'s `{"answer": _faq_answer(query), "llm_calls": 0}`), measured on
+  the live deploy as `hit=False, llm_calls=0`. Read `cache.hit` for that question;
+  `llm_calls` only says what the branch cost. A verification check that asserted
+  `llm_calls == 0` to prove caching worked was **vacuous for exactly this reason**
+  — if you probe the cache, probe with an intent whose uncached cost is nonzero.
 - **A no-result response is never stored in the cache** — `is_cacheable()` takes
   the response and vetoes on `no_results`. The verdict rests on non-deterministic
   filter extraction, so caching it by query string would freeze one arbitrary
