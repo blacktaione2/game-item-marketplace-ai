@@ -2,7 +2,12 @@ import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 
-import { api, formatWon, type AssistantResponse } from "../api";
+import {
+  api,
+  formatWon,
+  type AssistantResponse,
+  type SearchResultItem,
+} from "../api";
 import ItemBrowser from "../components/ItemBrowser";
 
 /**
@@ -217,20 +222,19 @@ function Result({
         </div>
       )}
 
-      {/* **시세 답변에는 결과 카드가 없다.** 검색은 항목이 그리드로 나와서
-          클릭해 들어갈 수 있는데, 시세는 문장뿐이라 "어느 아이템 얘기인지"
-          확인하러 갈 방법이 없었다. `resolved_item` 은 응답에 이미 있었고
-          화면이 안 쓰고 있었다. */}
+      {/* **시세·복합 답변에는 결과 그리드가 없다.** 검색은 항목이 카드로 나와서
+          클릭해 들어갈 수 있는데, 저 둘은 문장뿐이라 "어느 아이템 얘기인지"
+          확인하러 갈 방법이 없었다.
+
+          **검색 결과와 같은 `ItemCard` 를 쓴다.** 처음엔 이름만 담은 칩으로
+          만들었는데, 같은 아이템이 화면마다 다른 모양으로 보였다. 서버가
+          `resolved_item` 을 검색 항목과 같은 형태로 주게 맞춘 이유가 이것이다. */}
       {data.resolved_item && (
-        <div className="row">
-          <span className="muted">이 답변이 가리키는 아이템</span>
-          <button
-            type="button"
-            className="chip"
-            onClick={() => onOpenItem(data.resolved_item!.item_id)}
-          >
-            {data.resolved_item.name} →
-          </button>
+        <div className="stack">
+          <div className="muted">이 답변이 가리키는 아이템</div>
+          <div className="item-grid">
+            <ItemCard item={data.resolved_item} onOpen={onOpenItem} />
+          </div>
         </div>
       )}
 
@@ -312,26 +316,40 @@ function Result({
       {data.results && data.results.length > 0 && (
         <div className="item-grid">
           {data.results.map((item) => (
-            <div
-              key={item.item_id}
-              className="item-card"
-              onClick={() => onOpenItem(item.item_id)}
-            >
-              <h4>{item.name}</h4>
-              <div className="price">{formatWon(item.price)}</div>
-              <div className="muted">
-                {item.subcategory ?? item.category}
-                {/* 무속성은 안 띄운다 — 42건 중 35건이라 전부 띄우면 노이즈다.
-                    +0 강화나 0렙을 안 띄우는 것과 같은 규칙. */}
-                {item.element && item.element !== "무속성" && ` · ${item.element}`}
-                {item.enhancement_level > 0 && ` · +${item.enhancement_level}`}
-                {item.required_level > 0 && ` · ${item.required_level}렙`}
-                {item.sale_type === "AUCTION" && " · 경매"}
-              </div>
-            </div>
+            <ItemCard key={item.item_id} item={item} onOpen={onOpenItem} />
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * 아이템 카드 — 검색 결과와 `resolved_item` 이 **같은 것을 쓴다.**
+ *
+ * 따로 두면 한쪽만 고쳐지고 같은 아이템이 화면마다 다르게 보인다. 실제로
+ * 그렇게 시작했다가 되돌렸다.
+ */
+function ItemCard({
+  item,
+  onOpen,
+}: {
+  item: SearchResultItem;
+  onOpen: (itemId: number) => void;
+}) {
+  return (
+    <div className="item-card" onClick={() => onOpen(item.item_id)}>
+      <h4>{item.name}</h4>
+      {item.price != null && <div className="price">{formatWon(item.price)}</div>}
+      <div className="muted">
+        {item.subcategory ?? item.category}
+        {/* 무속성은 안 띄운다 — 42건 중 35건이라 전부 띄우면 노이즈다.
+            +0 강화나 0렙을 안 띄우는 것과 같은 규칙. */}
+        {item.element && item.element !== "무속성" && ` · ${item.element}`}
+        {item.enhancement_level > 0 && ` · +${item.enhancement_level}`}
+        {item.required_level > 0 && ` · ${item.required_level}렙`}
+        {item.sale_type === "AUCTION" && " · 경매"}
+      </div>
     </div>
   );
 }

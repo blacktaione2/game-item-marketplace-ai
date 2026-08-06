@@ -98,12 +98,15 @@ export interface AssistantResponse {
   applied_filters?: Record<string, string | number>;
   forecast?: Forecast;
   /**
-   * 시세 분기가 질의에서 특정해낸 아이템.
+   * 시세·복합 분기가 질의에서 특정해낸 아이템.
    *
-   * 검색과 달리 시세 답변에는 결과 카드가 없어서, 이게 없으면 **어느 아이템
-   * 얘기인지 확인하러 갈 방법이 없다.** 화면이 링크를 만드는 데 쓴다.
+   * 두 분기에는 결과 그리드가 없어서, 이게 없으면 **어느 아이템 얘기인지
+   * 확인하러 갈 방법이 없다.**
+   *
+   * 타입이 `SearchResultItem` 인 것이 요점이다 — 화면이 검색 결과와 **같은
+   * 카드**로 그릴 수 있어야 같은 아이템이 화면마다 다르게 보이지 않는다.
    */
-  resolved_item?: { item_id: number; name: string };
+  resolved_item?: SearchResultItem;
   detection?: AnomalyAlert;
   tool_calls?: ToolCall[];
   tool_failures?: number;
