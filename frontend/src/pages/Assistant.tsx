@@ -207,6 +207,51 @@ function Result({
         </div>
       )}
 
+      {/* **오토인코더를 고른 이유가 여기서만 보인다.** ADR-0009 가 Isolation
+          Forest 대신 이걸 택한 근거는 재구성 오차의 피처별 분해뿐인데, 그 화면이
+          GM 전용 검토 큐에만 있었다. 판정 API 는 일반 사용자도 쓸 수 있고
+          (`require_actor`), 기여도는 이 응답에 **이미 실려 오고 있었다** — 화면이
+          안 그렸을 뿐이다. LLM 이 쓴 문장 옆에 근거를 같이 둔다. */}
+      {data.detection && (
+        <div className="card">
+          <div className="row" style={{ marginBottom: 10 }}>
+            <span className={`badge ${data.detection.is_anomaly ? "fail" : "hit"}`}>
+              {data.detection.is_anomaly ? "이상 판정" : "정상 범위"}
+            </span>
+            <span className="badge">
+              이상 점수 <strong>{data.detection.anomaly_score.toFixed(1)}</strong>
+              <span className="muted"> / 임계 {data.detection.threshold.toFixed(1)}</span>
+            </span>
+            <span className="badge">
+              시세 대비 <strong>{data.detection.price_ratio.toFixed(2)}배</strong>
+            </span>
+          </div>
+          <div className="muted" style={{ marginBottom: 6 }}>
+            이상 판정 기여도
+          </div>
+          {data.detection.contributions.map((contribution) => (
+            <div className="contrib" key={contribution.feature}>
+              <span>{contribution.feature}</span>
+              <div className="contrib-track">
+                <div
+                  className="contrib-fill"
+                  style={{ width: `${Math.max(contribution.share * 100, 1)}%` }}
+                />
+              </div>
+              <span style={{ textAlign: "right" }}>
+                {Math.round(contribution.share * 100)}%
+              </span>
+            </div>
+          ))}
+          {/* 합성 코퍼스 id 라는 사실은 여기서도 밝힌다 — 사용자가 이 번호를
+              자기 거래 조회에 넣지 않게 하는 게 목적이라 화면마다 필요하다. */}
+          <div className="muted" style={{ marginTop: 10, fontSize: 13 }}>
+            거래 <strong>합성#{data.detection.trade_id}</strong> · 이 번호는 AI 데모
+            데이터의 id 이며 실제 거래 번호와 다릅니다.
+          </div>
+        </div>
+      )}
+
       {data.tool_calls && data.tool_calls.length > 0 && (
         <div className="card">
           <div className="muted" style={{ marginBottom: 8 }}>
