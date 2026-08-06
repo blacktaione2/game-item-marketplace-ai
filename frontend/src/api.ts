@@ -136,6 +136,23 @@ export type NotificationType =
   | "BID_PLACED"
   | "OUTBID";
 
+/**
+ * 거래 내역 한 줄. `Trade`(체결 응답)와 다르다 — 이쪽은 **보는 사람 기준**이라
+ * `side`("내가 산 건가 판 건가")와 상대 이름이 들어 있고 id 대신 이름을 쓴다.
+ */
+export interface TradeHistoryEntry {
+  id: number;
+  itemId: number;
+  itemName: string;
+  tradeType: "PURCHASE" | "BID";
+  status: string;
+  price: number;
+  quantity: number;
+  side: "BUY" | "SELL";
+  counterpartyUsername: string;
+  createdAt: string;
+}
+
 export interface Notification {
   id: number;
   tradeId: number;
@@ -347,6 +364,14 @@ export const api = {
 
   unreadCount: () =>
     request<{ count: number }>("/api/backend/notifications/unread-count"),
+
+  markAllRead: () =>
+    request<{ count: number }>("/api/backend/notifications/read", {
+      method: "PATCH",
+    }),
+
+  // 조회자는 토큰에서 온다 — userId를 실어 보내지 않는다.
+  trades: () => request<TradeHistoryEntry[]>("/api/backend/trades"),
 };
 
 export function formatWon(value: number): string {

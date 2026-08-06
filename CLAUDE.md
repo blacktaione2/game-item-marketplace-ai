@@ -309,15 +309,18 @@ Package layout: `domain` (entities per aggregate: `tenant`, `user`, `item`,
 `trade`, plus `domain.common.BaseTimeEntity`), `repository`, `service`,
 `controller`, `dto`, `config`, `client`, `exception`. Every entity table
 carries `tenant_id` from the start. Implemented: Item CRUD, Redis-lock-backed
-purchase/bid (`ItemController`, `TradeController`), and `GET /api/health`
-which proxies a health check to the FastAPI server.
+purchase/bid (`ItemController`, `TradeController`), login (`AuthController`),
+notifications (`NotificationController`, incl. `PATCH /read`), my trade history
+(`TradeHistoryController`, ADR-0037), and `GET /api/health` which proxies a health
+check to the FastAPI server.
 
 Build/run from `backend/`: `./gradlew build`, `./gradlew bootRun` (port 8080).
-No lint task configured yet. **Note the test suite is only the Initializr
-default `contextLoads()`** — it needs the live Postgres/Redis from
-docker-compose to pass, but it asserts nothing about behaviour. CRUD, the Redis
-lock, and the trade flow were verified by hand with curl; see the roadmap's
-기술 부채 section.
+No lint task configured yet. The suite is **55 tests** across `DomainRuleTest`,
+`NotificationFlowTest`, `AuthenticationTest`, `LoginTest`, `MyDataScopeTest`, and
+the Initializr `contextLoads()`; it needs the live Postgres/Redis from
+docker-compose. **`./gradlew test` alone can report BUILD SUCCESSFUL having run
+nothing** (`:test UP-TO-DATE`) — use `--rerun-tasks`. The Redis lock and the trade
+flow are still curl-verified only; see the roadmap's 기술 부채 section.
 
 ### ai/ (FastAPI, Python 3.11)
 - `app/routers/` — health, llm, search, forecast, anomaly, **assistant**
@@ -408,7 +411,25 @@ train + eval items).
 browser see one origin** — `/api/backend/*` → 8080, `/api/ai/*` → 8000 — which
 is why neither server has CORS configured; don't add it. Screens: `/`
 (assistant + search), `/items/:id` (detail + price chart + purchase/bid),
-`/anomalies` (GM queue). State is TanStack Query only; there is no global store.
+`/trades` (my trade history), `/notifications`, `/anomalies` (GM queue). State is
+TanStack Query only; there is no global store.
+
+**The search query lives in the URL (`/?q=…`), not in `useState`** (ADR-0037).
+Going into an item and back used to remount `Assistant` and lose the results —
+local state dies with the unmount and a `useMutation` result is never cached.
+Changing the back link alone does not fix that; the query has to survive the
+remount. With it in the URL, `useQuery` keyed on `["assistant", q]` serves the
+cached answer instantly and searches become shareable. **Watch `isPending` vs
+`isFetching`**: in TanStack Query v5 a query with `enabled: false` sits at status
+`pending` forever, so `isPending` locks the button into "처리 중…" before anything
+is typed.
+
+**`logout()` calls `queryClient.clear()`, and that is the load-bearing line.**
+No query key carries the user (`["notifications","unread"]`, `["trades"]`,
+`["alerts"]`), so clearing only the token leaves the previous account's responses
+on screen until each refetch lands. Per-user keys would be more precise but are
+**forgettable on every new query**, and the symptom of forgetting is quiet. "A
+finished session invalidates all server state" has nowhere to forget.
 
 **Authentication is real since ADR-0031** — `POST /api/auth/login
 {tenantCode, username, password}` with BCrypt. **The credential is three parts, not

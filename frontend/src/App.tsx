@@ -1,6 +1,6 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
-import { NavLink, Route, Routes } from "react-router-dom";
+import { NavLink, Route, Routes, useNavigate } from "react-router-dom";
 
 import { api, setAccessToken, setSessionExpiredHandler, type LoginResult } from "./api";
 import { TENANT } from "./demo";
@@ -8,6 +8,8 @@ import AnomalyQueue from "./pages/AnomalyQueue";
 import Assistant from "./pages/Assistant";
 import ItemDetail from "./pages/ItemDetail";
 import Login from "./pages/Login";
+import Notifications from "./pages/Notifications";
+import Trades from "./pages/Trades";
 
 /**
  * 세션 보관 (ADR-0036).
@@ -48,6 +50,8 @@ export default function App() {
   // demo-token 이 나왔는데, 비밀번호를 확인하지 않아 공개 배포에서는 성립하지 않는
   // 전제였다. 이제 서버가 자격증명을 검증한 뒤에 토큰을 준다.
   const [session, setSession] = useState<LoginResult | null>(restoredSession);
+  const queryClient = useQueryClient();
+  const navigate = useNavigate();
 
   function handleLogin(result: LoginResult) {
     setAccessToken(result.token);
@@ -55,9 +59,25 @@ export default function App() {
     setSession(result);
   }
 
+  /**
+   * 로그아웃.
+   *
+   * **`queryClient.clear()` 가 이 함수의 핵심이다.** 토큰만 지우면 이전 계정의
+   * 응답이 캐시에 그대로 남아 다음 로그인 화면에 잠깐 보인다 — 쿼리 키에 사용자가
+   * 안 들어 있기 때문이다(`["notifications","unread"]`, `["trades"]`, `["alerts"]`).
+   * 재요청이 오기 전까지 **남의 데이터가 내 화면에** 있는 셈이고, 이건 편의 문제가
+   * 아니라 격리 문제다.
+   *
+   * 키마다 사용자 id 를 넣는 대안도 있지만, 그러면 새 쿼리를 추가할 때마다 잊을 수
+   * 있다. 세션이 끝나면 서버 상태는 전부 무효라는 게 더 단순하고 빠뜨릴 데가 없다.
+   *
+   * `navigate("/")` 는 재로그인 후 직전 화면(`/items/5` 등)에 떨어지지 않게 한다.
+   */
   function logout() {
     setAccessToken(null);
     sessionStorage.removeItem(SESSION_KEY);
+    queryClient.clear();
+    navigate("/");
     setSession(null);
   }
 
@@ -100,6 +120,7 @@ export default function App() {
           <NavLink to="/" end>
             검색
           </NavLink>
+          <NavLink to="/trades">거래 내역</NavLink>
           {currentUser.role === "ADMIN" && (
             <NavLink to="/anomalies">이상거래 큐</NavLink>
           )}
@@ -110,6 +131,8 @@ export default function App() {
       <Routes>
         <Route path="/" element={<Assistant />} />
         <Route path="/items/:itemId" element={<ItemDetail userId={currentUser.userId} />} />
+        <Route path="/trades" element={<Trades />} />
+        <Route path="/notifications" element={<Notifications />} />
         <Route path="/anomalies" element={<AnomalyQueue />} />
       </Routes>
     </div>
@@ -133,10 +156,22 @@ function NotificationBadge() {
     retry: false,
   });
   const count = data?.count ?? 0;
-  if (count === 0) return null;
+
+  // **개수가 0이어도 링크는 남긴다.** 예전엔 통째로 사라져서 지난 알림을 볼
+  // 방법이 없었다 — 배지가 숫자를 나르는 동시에 유일한 진입점이라, 숨기면
+  // 화면 하나가 같이 사라진다.
+  //
+  // 숫자를 **링크 안의 span** 으로 둔다. 링크 자체에 `badge` 를 걸면
+  // `.topbar nav a` 와 `.badge` 가 padding·radius 를 두고 특이도로 다투는데,
+  // 어느 쪽이 이기는지는 규칙을 세어봐야 안다. 중첩하면 셀 필요가 없다.
   return (
-    <span className="badge unread" title="읽지 않은 알림">
-      알림 {count}
-    </span>
+    <NavLink to="/notifications">
+      알림
+      {count > 0 && (
+        <span className="badge unread" style={{ marginLeft: 6 }}>
+          {count}
+        </span>
+      )}
+    </NavLink>
   );
 }
