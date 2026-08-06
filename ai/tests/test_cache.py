@@ -58,6 +58,39 @@ class TestEntryKey:
             "nexon", "+9 롱소드"
         )
 
+    def test_trailing_punctuation_does_not_make_a_new_key(self, cache):
+        """`"...알려줘!"` 와 `"...알려줘"` 는 같은 질문이다.
+
+        실사용에서 걸린 것 — 느낌표 하나로 미적중이 났다. **유사도를 연 게 아니다.**
+        여전히 정확 일치이고, "같은 글자"의 범위를 종결 기호만큼 넓혔을 뿐이다.
+        """
+        base = cache.entry_key("nexon", "불꽃의 대검 시세 알려줘")
+        for variant in ("불꽃의 대검 시세 알려줘!", "불꽃의 대검 시세 알려줘?",
+                        "불꽃의 대검 시세 알려줘.", "불꽃의 대검  시세   알려줘 "):
+            assert cache.entry_key("nexon", variant) == base, variant
+
+    def test_punctuation_only_queries_stay_distinct(self, cache):
+        """정규화가 질의를 통째로 비우면 안 된다.
+
+        `"???"` 와 `"!!!"` 는 둘 다 무의미하지만 **같은 답을 줄 이유는 없다.**
+        rstrip 결과가 비면 원본으로 되돌린다.
+        """
+        assert cache.entry_key("nexon", "???") != cache.entry_key("nexon", "!!!")
+
+    def test_trap_pairs_still_get_different_keys(self, cache):
+        """**이쪽이 진짜 단언이다.** 정규화가 함정 쌍을 삼키면 사고다.
+
+        ADR-0012 가 유사도 매칭을 FAQ 로 제한한 근거가 이 쌍들이다 — 한 글자가
+        답을 뒤집는데 임베딩은 0.9787 까지 붙는다. 문장부호 정규화는 그 축을
+        건드리지 않아야 하고, 그걸 여기서 코퍼스 전체로 확인한다.
+        """
+        from app.corpus.cache_pairs import TRAP_PAIRS_HOLDOUT, TRAP_PAIRS_TUNING
+
+        for left, right in TRAP_PAIRS_TUNING + TRAP_PAIRS_HOLDOUT:
+            assert cache.entry_key("nexon", left) != cache.entry_key(
+                "nexon", right
+            ), f"{left!r} 과 {right!r} 이 같은 키가 됐다"
+
 
 class TestPolicy:
     def test_anomaly_check_is_never_cached(self):
