@@ -87,7 +87,9 @@ export default function ItemDetail({ userId }: { userId: number }) {
         <div>
           <h2 style={{ margin: "0 0 4px" }}>{data.name}</h2>
           <div className="muted">
-            판매자 {data.sellerUsername} · {isAuction ? "경매" : "고정가"} ·{" "}
+            {/* 목록과 같은 말을 쓴다. 한쪽만 「고정가」로 두면 같은 아이템이
+                화면마다 다른 이름의 거래가 된다. */}
+            판매자 {data.sellerUsername} · {isAuction ? "경매" : "판매"} ·{" "}
             {data.status} · 재고 {data.stock}
           </div>
         </div>

@@ -5,8 +5,16 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { api, formatWon, type AssistantResponse } from "../api";
 import ItemBrowser from "../components/ItemBrowser";
 
+/**
+ * 네 분기를 한 번씩 밟는 예시. **버튼이 곧 질의**이므로 문구를 짧게 유지한다 —
+ * 길면 칩이 두 줄로 접힌다.
+ *
+ * 첫 항목은 원래 `"3만원 이하 불속성 검 찾아줘"` 였다. ADR-0016 의 0건 처리를
+ * 시연하는 질의인데(화염 속성 검 중 3만원 이하가 없다), **첫인상이 빈 결과**라
+ * 결과가 나오는 질의로 바꿨다. 0건 경로는 그 문장을 직접 입력하면 그대로 나온다.
+ */
 const EXAMPLES = [
-  "3만원 이하 불속성 검 찾아줘",
+  "5만원 이하 검 찾아줘",
   "불꽃의 대검 시세 알려줘",
   "불꽃의 대검 찾아서 시세도 알려줘",
   "거래 23659번 이상거래야?",
@@ -88,9 +96,14 @@ export default function Assistant() {
         </button>
       </form>
 
-      <div className="row">
+      <div className="row chip-row">
         {EXAMPLES.map((example) => (
-          <button key={example} type="button" onClick={() => submit(example)}>
+          <button
+            key={example}
+            type="button"
+            className="chip"
+            onClick={() => submit(example)}
+          >
             {example}
           </button>
         ))}
