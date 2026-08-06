@@ -86,6 +86,19 @@ wrong:
 - **`llm_calls` is 1 on this path, not 0.** `understand_query` inside
   `run_search` already ran and **cannot be skipped** — the verdict is defined by
   which filters got extracted. Only the explanation call disappears (2 → 1).
+  **Since ADR-0036 the search branch is 1 either way** — the explanation LLM is
+  gone, so `llm_calls` no longer separates "found" from "found nothing". Read
+  `no_results`. The trigger was a hallucination that the structured results
+  directly contradicted: given four swords at 22,000–45,000원 for `10만원 이하 검`,
+  the explanation said *"there are no swords under 100,000원 … all exceed it or
+  are not swords"*. The prompt told the model to drop items whose type didn't
+  match while `_brief()` passed `category` (`무기`) and **not** `subcategory`
+  (`검`) — it was asked to re-adjudicate what ADR-0014/0015's hard filters had
+  already decided, with less information than the filter had. That instruction
+  was a fossil from before those filters existed. General rule: **when a
+  deterministic stage already guarantees a property, do not ask the LLM to
+  re-check it — it will invent grounds.** The answer is now built by
+  `_search_answer()` from the same `_describe_filters()` the empty path uses.
   **`llm_calls == 0` does NOT identify a cache hit** — that earlier claim here was
   wrong. `FAQ_SMALLTALK` answers deterministically and reports 0 on a *miss* too
   (`pipeline.py`'s `{"answer": _faq_answer(query), "llm_calls": 0}`), measured on
@@ -374,11 +387,13 @@ lock, and the trade flow were verified by hand with curl; see the roadmap's
   versioning for reproducibility). `models/` is gitignored — regenerate with
   the build/finetune scripts.
 
-- `tests/` — `python -m pytest` from `ai/` (78 tests, no `pytest-asyncio` — the
+- `tests/` — `python -m pytest` from `ai/` (141 tests, no `pytest-asyncio` — the
   few async cases use `asyncio.run`). Deliberately limited to
   deterministic units: RRF fusion, router rules, cache keys/tenant isolation,
   per-intent TTL + the no-result storage veto, id-space guards, filter→DSL
-  conversion, no-result answer construction, temperature plumbing. Model quality is judged
+  conversion, **both** search answers (empty and found — the found one asserts it
+  never denies results that exist, ADR-0036), route auth coverage, temperature
+  plumbing. Model quality is judged
   by the training scripts' held-out
   reports, not by unit tests. Everything else is manually verified (see the
   roadmap's 기술 부채 section).
@@ -426,6 +441,14 @@ Three things about it are load-bearing:
   is healthy (Hibernate must create the tables first). nginx separately caches the
   backend's IP at startup. Both are fixed by `restart backend web` after `up`, and
   `load/verify-deploy.sh` fails with 401 or 502 if that step is skipped.
+
+**The session lives in `sessionStorage` since ADR-0036**, not in memory. ADR-0031
+kept it in memory so a refresh logged you out — right about `localStorage`, but it
+was never a binary choice. Under XSS the in-memory token is taken from the page
+anyway; what `sessionStorage` still avoids is surviving a closed tab and being
+shared across tabs. **Three places end a session** (logout, expiry, restore
+failure) and all three must clear the key — clearing React state alone leaves an
+expired token that gets restored on every reload.
 
 Three consequences worth carrying:
 

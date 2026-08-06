@@ -5,7 +5,11 @@
 맞아도 재현이 보장되지 않았다 — ADR-0016.
 """
 
-from app.services.assistant.pipeline import _describe_filters, _no_results
+from app.services.assistant.pipeline import (
+    _describe_filters,
+    _no_results,
+    _search_answer,
+)
 
 
 class TestNoResultPayload:
@@ -21,7 +25,9 @@ class TestNoResultPayload:
     def test_costs_one_llm_call_not_zero(self):
         """`understand_query`는 건너뛸 수 없다 — 필터를 알아야 0건 판정이 선다.
 
-        없어지는 건 설명 생성 호출 하나뿐이다(2 → 1). 0회는 캐시 적중 경로다.
+        **ADR-0036 이후 결과가 있는 경로도 1이다.** 처음엔 "0건만 2 → 1"이
+        요점이었는데 이제 검색 분기 전체가 1이라 그 대비가 없다. 그래서
+        `llm_calls`로 0건 여부를 알 수 없고, `no_results`를 봐야 한다.
         """
         assert _no_results({"subcategory": "검"})["llm_calls"] == 1
 
@@ -40,6 +46,45 @@ class TestNoResultPayload:
         payload = _no_results({})
         assert payload["conditions"] == []
         assert "다른 표현으로" in payload["answer"]
+
+
+class TestSearchAnswer:
+    """결과가 있는 경로도 확정 문장이다 (ADR-0036).
+
+    설명 LLM 을 없앤 계기가 **환각**이라서, 여기서 고정할 것은 문장의 아름다움이
+    아니라 **결과와 모순되지 않는가**다. 예전 판본은 22,000원짜리 검 4건을
+    받아놓고 "10만원 이하의 검은 없습니다"라고 답했다.
+    """
+
+    def test_names_the_conditions_and_the_count(self):
+        answer = _search_answer(
+            {"category": "무기", "subcategory": "검", "price_max": 100000.0}, 4
+        )
+        assert "검 · 100,000원 이하" in answer
+        assert "4건" in answer
+
+    def test_never_denies_results_that_exist(self):
+        """결과가 있는데 '없습니다'라고 말하는 일이 구조적으로 불가능해야 한다.
+
+        이게 이 라운드의 결함 그 자체다 — 프롬프트로는 보장할 수 없어서
+        문장 생성을 코드로 옮겼다.
+        """
+        answer = _search_answer({"subcategory": "검", "price_max": 100000.0}, 4)
+        assert "없습니다" not in answer
+
+    def test_falls_back_when_no_filter_was_extracted(self):
+        assert _search_answer({}, 3) == "검색 결과 3건입니다."
+
+    def test_speaks_of_conditions_the_same_way_the_empty_path_does(self):
+        """두 경로가 같은 `_describe_filters`를 쓴다.
+
+        조건을 다르게 부르면 사용자는 **같은 검색이 상황에 따라 다른 말을
+        한다**고 읽는다. 한쪽만 고치는 드리프트를 여기서 막는다.
+        """
+        filters = {"subcategory": "검", "element": "화염", "price_max": 30000.0}
+        conditions = " · ".join(_describe_filters(filters))
+        assert conditions in _search_answer(filters, 2)
+        assert conditions in _no_results(filters)["answer"]
 
 
 class TestDescribeFilters:

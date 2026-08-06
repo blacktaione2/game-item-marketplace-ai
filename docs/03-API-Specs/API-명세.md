@@ -147,11 +147,21 @@ updated: 2026-07-31
     "initial_intent": "item_search" // intent와 다르면 분기가 에스컬레이션한 것
   },
   "answer": "…",
-  "llm_calls": 2,
+  "llm_calls": 1,                   // 의도마다 다르다 — 아래 표
   "cache": { "hit": false },
   "timings": { "routing_ms": 0.1, "execution_ms": 2140.5 }
 }
 ```
+
+**미적중일 때 의도별 `llm_calls`**
+
+| 의도 | 호출 | 내역 |
+|---|---|---|
+| `faq_smalltalk` | **0** | 확정 응답. LLM 을 안 부른다 |
+| `item_search` | **1** | 질의 이해 1회. **설명 생성은 없다** (ADR-0036) |
+| `price_forecast` | 2 | 질의 이해 + 설명 |
+| `anomaly_check` | 1 | 설명 |
+| `compound` | 도구 수 + 1 | 에이전트 |
 
 캐시 적중 시 `cache`는 `{hit, match_type, similarity, cached_query}`가 되고
 **`llm_calls`는 항상 0**이다.

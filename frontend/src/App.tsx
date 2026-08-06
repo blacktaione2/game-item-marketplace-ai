@@ -9,22 +9,55 @@ import Assistant from "./pages/Assistant";
 import ItemDetail from "./pages/ItemDetail";
 import Login from "./pages/Login";
 
+/**
+ * 세션 보관 (ADR-0036).
+ *
+ * **`sessionStorage`다. `localStorage`가 아니다.** ADR-0031은 세션을 메모리에만
+ * 뒀는데, 그러면 새로고침 한 번에 로그아웃이라 데모로 못 쓴다 — 실제로 상세
+ * 화면에서 F5를 눌러 걸렸다.
+ *
+ * 메모리 → sessionStorage 로 옮기면서 잃는 게 크지 않다는 게 판단의 근거다.
+ * XSS가 나면 **메모리에 있는 토큰도 그 자리에서 빼간다** — 공격자가 이미 페이지
+ * 안에서 JS를 돌리고 있기 때문이다. 실질적 차이는 `localStorage`와의 사이에
+ * 있다: 탭을 닫아도 살아남는가, 탭 사이에 공유되는가. sessionStorage는 둘 다
+ * 아니다.
+ */
+const SESSION_KEY = "gimp.session";
+
+function loadSession(): LoginResult | null {
+  try {
+    const raw = sessionStorage.getItem(SESSION_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as LoginResult;
+    // 렌더보다 먼저 토큰을 꽂아야 첫 요청이 401을 맞지 않는다.
+    setAccessToken(parsed.token);
+    return parsed;
+  } catch {
+    // 손상된 값 하나 때문에 앱이 안 뜨면 안 된다. 지우고 로그인 화면으로 간다.
+    sessionStorage.removeItem(SESSION_KEY);
+    return null;
+  }
+}
+
+// 모듈 로드 시점에 한 번. `useState` 초기화 함수에 두면 StrictMode가 두 번
+// 부르고, 무엇보다 렌더 중에 부수효과를 내게 된다.
+const restoredSession = loadSession();
+
 export default function App() {
   // **드롭다운이 로그인 화면으로 바뀌었다** (ADR-0031). 예전에는 userId 를 고르면
   // demo-token 이 나왔는데, 비밀번호를 확인하지 않아 공개 배포에서는 성립하지 않는
   // 전제였다. 이제 서버가 자격증명을 검증한 뒤에 토큰을 준다.
-  //
-  // 세션은 여전히 메모리에만 둔다 — 새로고침하면 다시 로그인한다. localStorage 에
-  // 넣으면 XSS 한 번에 토큰이 새므로, 데모 편의를 위해 그 위험을 지지 않는다.
-  const [session, setSession] = useState<LoginResult | null>(null);
+  const [session, setSession] = useState<LoginResult | null>(restoredSession);
 
   function handleLogin(result: LoginResult) {
     setAccessToken(result.token);
+    sessionStorage.setItem(SESSION_KEY, JSON.stringify(result));
     setSession(result);
   }
 
   function logout() {
     setAccessToken(null);
+    sessionStorage.removeItem(SESSION_KEY);
     setSession(null);
   }
 
@@ -32,8 +65,16 @@ export default function App() {
   // 예전에는 만료 후 모든 동작이 에러를 내고 사용자가 직접 로그아웃을 눌러야 했다.
   // 자동 재발급은 불가능하다 — 비밀번호를 들고 있지 않기 때문이다(ADR-0031).
   // 할 수 있는 건 세션을 접고 로그인 화면으로 되돌리는 것뿐이고, 그게 맞다.
+  //
+  // **저장소도 같이 비워야 한다** (ADR-0036). 상태만 지우면 만료된 토큰이
+  // sessionStorage 에 남아, 새로고침할 때마다 복원 → 첫 요청 401 → 로그인 화면이
+  // 반복된다. 세션을 끝내는 자리는 세 곳(로그아웃·만료·복원 실패) 전부 같은 일을
+  // 해야 한다.
   useEffect(() => {
-    setSessionExpiredHandler(() => setSession(null));
+    setSessionExpiredHandler(() => {
+      sessionStorage.removeItem(SESSION_KEY);
+      setSession(null);
+    });
     return () => setSessionExpiredHandler(null);
   }, []);
 
