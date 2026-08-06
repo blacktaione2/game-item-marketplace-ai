@@ -750,6 +750,13 @@ Postgres and ES drift apart and search results stop resolving to real rows.
     alongside and see how late it wakes.
   - `cache_encode` / `cache_lookup` exist as stages; on a hit `cache_encode`
     must be **absent**, which is the regression signal.
+- **Bump `cache_version` when the response *shape* changes, not just when the
+  data goes stale.** A cached entry is frozen at the schema it was written with,
+  so adding or widening a field means hits keep replaying the old shape — the code
+  looks fixed and the screen does not. This bit once: `resolved_item` grew from
+  `{item_id, name}` to the full search item, and cache hits kept rendering a card
+  with a name and no price. The setting's comment used to say "reindex / retrain"
+  only, which is the *content* case.
 - **A script that deliberately corrupts a file to prove a guard fires must
   restore in `finally`, and you must then verify the restore.** Injecting a
   collision is the only way to show an import-time guard actually works, so this

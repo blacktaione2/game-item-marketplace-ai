@@ -91,8 +91,16 @@ class Settings(BaseSettings):
     # 높여야 한다. 그 대가로 적중률이 낮다 — 상세는 ADR-0012.
     semantic_cache_threshold: float = 0.98
     semantic_cache_max_entries: int = 2000
-    # 키에 박히는 버전. 재색인/모델 재학습 시 올리면 캐시가 통째로 무효화된다.
-    cache_version: str = "v1"
+    # 키에 박히는 버전. 올리면 캐시가 통째로 무효화된다.
+    #
+    # **응답의 모양이 바뀔 때도 올려야 한다.** 처음엔 "재색인/모델 재학습 시"만
+    # 적어뒀는데, 그건 *내용*이 낡는 경우다. 저장된 응답은 **그때의 스키마**로
+    # 굳어 있어서, 필드를 추가하거나 형태를 바꾸면 캐시 적중이 옛 모양을 그대로
+    # 돌려준다 — 코드는 고쳤는데 화면은 안 고쳐진 것처럼 보인다.
+    #
+    # v2: `resolved_item` 이 `{item_id, name}` 에서 검색 결과 항목 전체로
+    #     바뀌었다(ADR-0037). 적중 시 이름만 있는 카드가 그려졌다.
+    cache_version: str = "v2"
 
     # --- Phase 8: 인증 (ADR-0023) ---
     # **백엔드 application.yml의 jwt.secret과 같은 값이어야 한다.** 대칭키
