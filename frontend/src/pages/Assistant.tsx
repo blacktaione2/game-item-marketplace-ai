@@ -217,6 +217,23 @@ function Result({
         </div>
       )}
 
+      {/* **시세 답변에는 결과 카드가 없다.** 검색은 항목이 그리드로 나와서
+          클릭해 들어갈 수 있는데, 시세는 문장뿐이라 "어느 아이템 얘기인지"
+          확인하러 갈 방법이 없었다. `resolved_item` 은 응답에 이미 있었고
+          화면이 안 쓰고 있었다. */}
+      {data.resolved_item && (
+        <div className="row">
+          <span className="muted">이 답변이 가리키는 아이템</span>
+          <button
+            type="button"
+            className="chip"
+            onClick={() => onOpenItem(data.resolved_item!.item_id)}
+          >
+            {data.resolved_item.name} →
+          </button>
+        </div>
+      )}
+
       {/* **오토인코더를 고른 이유가 여기서만 보인다.** ADR-0009 가 Isolation
           Forest 대신 이걸 택한 근거는 재구성 오차의 피처별 분해뿐인데, 그 화면이
           GM 전용 검토 큐에만 있었다. 판정 API 는 일반 사용자도 쓸 수 있고

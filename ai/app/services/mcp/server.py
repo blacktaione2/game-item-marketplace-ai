@@ -92,7 +92,22 @@ def build_server() -> MCPServer:
             "baseline_price": result["anchor_price"],
             "baseline_source": _baseline_source(result),
             "expected_change_pct": result["expected_change_pct"],
-            "cold_start": result["cold_start"],
+            # **`cold_start` 불리언을 주지 않는다** (ADR-0038). 원시 플래그는
+            # 그 자체로 읽을 수 있는 말이 아니라서, 모델이 답변에 옮기면
+            # `Cold Start 상태가 아닙니다` 같은 문장이 된다 — 실제로 그렇게 나갔다.
+            # 같은 사실을 **문장으로 된 값**으로 준다. 값이 문장이면 그대로
+            # 옮겨져도 사용자가 읽을 수 있다.
+            #
+            # 키가 있을 때만 콜드스타트다. `baseline_source` 와 `inherited_from`
+            # 이 이미 같은 사실을 다른 각도로 말하고 있어서 셋이 어긋날 일은 없다.
+            **(
+                {
+                    "estimate_note": "이 예측은 거래 이력이 부족해 비슷한 "
+                    "아이템들의 추세를 빌려 추정한 값입니다."
+                }
+                if result["cold_start"]
+                else {}
+            ),
             "history_days": result["history_days"],
             # 일자별 전체가 아니라 시작/끝만 — 추세 판단에는 그걸로 충분하다.
             "forecast_first": result["forecast"][0],

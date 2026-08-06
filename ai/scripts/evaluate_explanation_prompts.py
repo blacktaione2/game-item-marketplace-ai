@@ -71,6 +71,7 @@ if hasattr(sys.stdout, "reconfigure"):
 
 TENANT = "nexon"
 REPEATS = 3
+NL = "\n"
 
 # **수집과 채점을 분리한다.** 첫 판본은 부르면서 바로 채점하고 답변을 버렸다.
 # 그런데 모순 지표가 틀린 게 드러났을 때 고쳐서 다시 보려면 **99회를 다시
@@ -112,6 +113,7 @@ def incomplete(answer: str) -> bool:
 
 
 def missing_disclaimer(answer: str, kind: str, result: dict[str, Any]) -> bool:
+    # agent 도 forecast 와 같은 규칙을 받는다 — 콜드스타트면 추정임을 밝혀야 한다.
     if kind == "anomaly":
         # 합성 데모 데이터라는 고지. 표현은 자유롭게 두되 두 요소를 요구한다.
         return not (re.search(r"합성|데모", answer) and re.search(r"데이터|거래", answer))
@@ -140,9 +142,19 @@ _NORMAL = re.compile(r"정상(?:적인)?\s*(?:거래|범위)|문제\s*(?:가)?\s
 # 시세 설명의 일은 예측을 전달하는 것이지 사라 말라를 권하는 게 아니다. 지표는
 # **내가 생각한 것만 잰다** — 동점이 나오면 그건 "차이가 없다"가 아니라 "내
 # 지표가 차이를 못 본다"일 수 있다.
+# **"권유"와 "유보"를 갈라야 한다.** 첫 판본은 `거래를? ?고려` 를 넣었다가
+# "거래를 **고려하실 때** 이 점을 **참고하시기 바랍니다**" 를 권유로 잡았다.
+# 그건 사라 말라가 아니라 판단을 사용자에게 넘기는 문장이다 — 오히려 바람직하다.
+#
+# 잡아야 하는 건 **행동을 추천하는 서술어**다. 앞의 명사가 아니라 뒤의 어미가
+# 권유를 만든다.
 _ADVICE = re.compile(
-    r"(구매|거래|매수|매도|판매)를? ?(진행|고려|추천|하는 것이|하시는 것이)"
-    r"|좋(습니다|을 것)|권(장|해)|유리(합니다|할)"
+    r"(?:하|사|팔|구매하|판매하|거래하)(?:는|시는) 것이 좋"
+    r"|추천(?:합니다|드립니다|해)"
+    r"|권(?:장합니다|해드립니다|장드립니다)"
+    r"|(?:구매|매수|매도|판매)(?:를|하기)? ?(?:추천|권장)"
+    r"|(?:지금이|이럴 때) ?(?:기회|적기)"
+    r"|유리(?:합니다|할 것)"
 )
 
 
@@ -233,6 +245,58 @@ _ANOMALY_C = """당신은 게임 아이템 거래소의 이상거래 담당자�
 
 질의: {query}
 분석: {result}"""
+
+
+# --- 에이전트(복합 분기) ----------------------------------------------------
+#
+# 복합 질의는 MCP 도구 결과 JSON 을 그대로 모델에게 보여준 뒤 최종 답변을 쓰게
+# 한다. 그래서 **누출 경로가 하나 더 있다 — 도구 출력의 필드 이름**이다.
+# 실제로 `cold_start: false` 가 `Cold Start 상태가 아닙니다` 로 나갔다.
+#
+# 여기서는 에이전트 전체를 돌리지 않는다(질의당 LLM 3회). 대신 **문제가 나는
+# 그 지점만** 재현한다 — 시스템 프롬프트 + 도구 결과 페이로드 → 최종 문장.
+# 도구 선택이나 루프는 이 결함과 무관하다.
+
+_AGENT_SYSTEM_A = """당신은 게임 아이템 거래소의 상담 도우미입니다.
+
+규칙:
+- **등록가(listing_price)와 예측 기준가(baseline_price)는 기준이 다릅니다.**
+  등락은 expected_change_pct를 쓰고, 기준가를 언급할 때는 baseline_source를
+  같이 밝히세요.
+- 시세 예측이 Cold Start(유사 아이템 추세 상속)로 나왔다면 그 점을 밝히세요.
+- 답변은 한국어로, 근거를 같이 적으세요."""
+
+_AGENT_SYSTEM_B = """당신은 게임 아이템 거래소의 상담 도우미입니다.
+
+규칙:
+- **등록가(listing_price)와 예측 기준가(baseline_price)는 기준이 다릅니다.**
+  등락은 expected_change_pct를 쓰고, 기준가를 언급할 때는 baseline_source를
+  같이 밝히세요.
+- **도구 결과의 필드 이름을 답변에 쓰지 마세요.** 사용자는 그 구조를 모릅니다.
+- 예측 결과에 estimate_note 가 있으면 그 내용을 반드시 답변에 반영하세요.
+- 답변은 한국어로, 근거를 같이 적으세요."""
+
+
+def agent_payload(result: dict[str, Any], variant: str) -> dict[str, Any]:
+    """MCP `forecast_item_price` 가 내는 모양. A 는 옛 판, B 는 새 판."""
+    base = {
+        "item_id": result["item_id"],
+        "name": result["name"],
+        "baseline_price": result["anchor_price"],
+        "expected_change_pct": result["expected_change_pct"],
+        "history_days": result["history_days"],
+    }
+    if variant == "A(현재)":
+        # 원시 불리언 — 이게 문장으로 새던 경로다.
+        return {**base, "cold_start": result["cold_start"]}
+    if result["cold_start"]:
+        base["estimate_note"] = (
+            "이 예측은 거래 이력이 부족해 비슷한 아이템들의 추세를 빌려 추정한 값입니다."
+        )
+    return base
+
+
+AGENT_VARIANTS = ("A(현재)", "B(명시)")
 
 VARIANTS = ("A(현재)", "B(명시)", "C(미언급)")
 
@@ -329,6 +393,37 @@ async def collect() -> list[dict[str, Any]]:
                     }
                 )
             print(f"  {kind:<9}{variant:<10}{query}")
+
+    # --- 에이전트 경로 -----------------------------------------------------
+    #
+    # 시세 케이스만 쓴다 — 이 결함(도구 필드명 누출)이 나는 곳이 거기다.
+    print()
+    print("[수집] 에이전트 경로 (시스템 프롬프트 + 도구 페이로드 → 최종 문장)")
+    for kind, query, result in cases:
+        if kind != "forecast":
+            continue
+        for variant in AGENT_VARIANTS:
+            system = _AGENT_SYSTEM_A if variant == "A(현재)" else _AGENT_SYSTEM_B
+            payload = agent_payload(result, variant)
+            prompt = (
+                f"{system}"
+                f"{NL}{NL}사용자 질의: {query}"
+                f"{NL}forecast_item_price 결과: {payload}"
+                f"{NL}{NL}최종 답변을 작성하세요."
+            )
+            for _ in range(REPEATS):
+                answer = (await llm.complete(prompt)).strip()
+                rows.append(
+                    {
+                        "variant": variant,
+                        "kind": "agent",
+                        "query": query,
+                        "is_anomaly": False,
+                        "cold_start": bool(result.get("cold_start", False)),
+                        "answer": answer,
+                    }
+                )
+        print(f"  agent    {query}")
 
     await es.close()
     ANSWERS.parent.mkdir(parents=True, exist_ok=True)
