@@ -114,20 +114,29 @@ cache_probe() {  # 한 번 물어보고 (적중여부, llm 호출수)를 낸다
 import sys,json
 try:
     d=json.load(sys.stdin)
-    print(str(d.get('cache',{}).get('hit')), d.get('llm_calls','?'))
-except Exception: print('<파싱실패>', '?')"
+    # no_results 를 같이 낸다. ADR-0036 이후 검색은 0건이든 아니든 llm_calls 가
+    # 1 이라 **호출 수로는 둘을 구분할 수 없다** — 0건은 설계상 저장하지 않으므로
+    # (policy.is_cacheable) 그 경우의 미적중은 정상이고, 그걸 가려낼 필드가 필요하다.
+    print(str(d.get('cache',{}).get('hit')), d.get('llm_calls','?'),
+          'no_results' if d.get('no_results') else 'has_results')
+except Exception: print('<파싱실패>', '?', '?')"
 }
 FIRST="$(cache_probe)"    # 1회차: 저장시킨다 (이미 있으면 그대로 적중)
 SECOND="$(cache_probe)"
-C_HIT="${SECOND%% *}"; C_LLM="${SECOND##* }"
+read -r C_HIT C_LLM C_RES <<EOF
+$SECOND
+EOF
 if [ "$C_HIT" = "True" ] && [ "$C_LLM" = "0" ]; then
   ok "같은 질의 2회차 = 캐시 적중, LLM 0회 (1회차: $FIRST)"
+elif [ "$C_RES" = "no_results" ]; then
+  # 0건은 **설계상 저장하지 않는다**(policy.is_cacheable). 캐시가 멀쩡해도
+  # 미적중이 나므로 Redis 를 의심하면 안 된다 — 검사가 성립하지 않는 상태다.
+  bad "검색이 0건이라 이 검사가 성립하지 않는다 (Redis 문제가 아니다).
+         ES 색인이 비었는지 확인하라 — ai-init 의 seed_items 가 돌았는가.
+         1회차 $FIRST"
 else
-  # 1회차 값을 같이 낸다. 0건이면 **설계상 저장하지 않으므로**(policy.is_cacheable)
-  # 캐시가 멀쩡해도 여기서 미적중이 난다 — 그건 Redis 문제가 아니다.
   bad "캐시 미적중 (1회차 $FIRST → 2회차 hit=$C_HIT, llm_calls=$C_LLM)
-         1회차 llm_calls 가 1 이면 검색 0건이라 저장을 안 한 것이다 (정상 동작).
-         그 외라면 Redis 연결을 의심하라:
+         Redis 연결을 의심하라:
          docker exec gimp-ai python -c \"import asyncio;from app.services.cache.dependencies import get_redis_client;asyncio.run(get_redis_client().ping())\"
          docker logs gimp-ai 2>&1 | grep '캐시 조회 실패'"
 fi

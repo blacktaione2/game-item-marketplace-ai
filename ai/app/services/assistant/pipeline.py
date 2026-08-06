@@ -89,12 +89,8 @@ _DEFAULT_FAQ = (
     "찾으시는 아이템이나 확인하고 싶은 거래를 알려주세요."
 )
 
-_SEARCH_PROMPT = """다음은 사용자 질의에 대한 아이템 검색 결과입니다.
-2~3문장으로 간결하게 설명하세요. 질의와 종류가 맞지 않는 항목이 섞여 있으면
-그 항목은 빼고 말하세요. 없는 사실을 지어내지 마세요.
-
-질의: {query}
-결과: {results}"""
+# 검색 설명 프롬프트는 **삭제됐다** (ADR-0036). 남겨두면 "되살리면 되지"로
+# 읽히는데, 되살릴 값어치가 없다는 게 그 결정의 내용이다. 경위는 ADR 참고.
 
 _FORECAST_PROMPT = """다음은 아이템 시세 예측 결과입니다. 2~3문장으로 설명하세요.
 
@@ -260,15 +256,14 @@ async def _execute(
         )
         if not result["results"]:
             return {**_no_results(result["filters"]), "timings": result["timings"]}, intent
-        answer, explain_ms = await _timed_complete(
-            llm_client, _SEARCH_PROMPT.format(query=query, results=_brief(result["results"]))
-        )
+        # 0건과 **같은 방식**으로 확정 응답을 만든다 (ADR-0036). 예전에는 여기서
+        # 설명 LLM 을 한 번 더 불렀는데, 그 호출이 실제로 만든 건 환각이었다.
         return (
             {
-                "answer": answer,
+                "answer": _search_answer(result["filters"], len(result["results"])),
                 "results": result["results"],
-                "llm_calls": 2,
-                "timings": {**result["timings"], "explain_ms": explain_ms},
+                "llm_calls": 1,
+                "timings": result["timings"],
             },
             intent,
         )
@@ -392,8 +387,11 @@ def _no_results(filters: dict[str, Any]) -> dict[str, Any]:
 
     `llm_calls`가 0이 아니라 **1**인 점에 주의. `run_search` 안의
     `understand_query`가 이미 한 번 호출됐고 그건 건너뛸 수 없다 — 어떤 필터가
-    걸렸는지 알아야 0건 판정이 성립하기 때문이다. 없어지는 건 설명 생성 호출
-    하나다(2 → 1).
+    걸렸는지 알아야 0건 판정이 성립하기 때문이다.
+
+    **ADR-0036 이후로는 결과가 있는 경로도 1이다.** 이 함수가 처음 생겼을 때는
+    "0건만 2 → 1"이 요점이었는데, 이제 검색 분기 전체가 1이라 그 대비가 없다.
+    즉 `llm_calls`로는 0건 여부를 알 수 없다 — `no_results` 플래그를 봐야 한다.
     """
     conditions = _describe_filters(filters)
     if conditions:
@@ -480,17 +478,22 @@ def _faq_answer(query: str) -> str:
     return _DEFAULT_FAQ
 
 
-def _brief(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    return [
-        {
-            "name": doc["name"],
-            "category": doc["category"],
-            "price": doc["price"],
-            "enhancement_level": doc["enhancement_level"],
-            "required_level": doc["required_level"],
-        }
-        for doc in results
-    ]
+def _search_answer(filters: dict[str, Any], count: int) -> str:
+    """검색 결과 있음 — 0건과 같은 방식으로 확정 문장을 만든다 (ADR-0036).
+
+    `_no_results`와 **같은 `_describe_filters`를 쓴다.** 두 경로가 조건을 다르게
+    부르면 사용자는 같은 검색이 상황에 따라 다른 말을 한다고 읽는다.
+
+    결과 목록을 문장으로 다시 옮기지 않는 이유: 항목 자체가 이름·가격·종류·속성을
+    달고 나오므로(ADR-0014·0015) 설명이 더할 정보가 없다. 그런데도 LLM에게
+    설명시키면 **더할 게 없는 자리에서 지어낸다** — 실제로 `10만원 이하 검`
+    질의에서 22,000원짜리 검 4건을 받아놓고 "10만원 이하의 검은 없습니다"라고
+    답했다.
+    """
+    conditions = _describe_filters(filters)
+    if conditions:
+        return f"{' · '.join(conditions)} 조건으로 {count}건 찾았습니다."
+    return f"검색 결과 {count}건입니다."
 
 
 def _ms(started: float) -> float:
