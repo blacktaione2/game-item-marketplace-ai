@@ -178,16 +178,22 @@ function ItemRow({ item, onOpen }: { item: Item; onOpen: () => void }) {
       <td>{item.name}</td>
       <td className="muted">{item.sellerUsername}</td>
       <td>
+        {/* 「고정가」가 아니라 「판매」다. 국내 아이템 거래소들이 쓰는 대비이기도
+            하고, 「고정가/경매」는 가격 방식을 말하는데 사용자가 고르는 건
+            거래 방식이다. */}
         <span className={`badge ${auction ? "warn" : ""}`}>
-          {auction ? "경매" : "고정가"}
+          {auction ? "경매" : "판매"}
         </span>
       </td>
       <td style={{ textAlign: "right" }} className="muted">
         {item.stock}
       </td>
       <td style={{ textAlign: "right" }}>
+        {/* **「입찰가」를 앞에 둔다.** 뒤에 붙이면 그 행만 끝 글자가 달라져서
+            우측 정렬을 해도 「원」이 세로로 안 맞는다. 숫자 열은 단위가 같은
+            자리에 있어야 훑어 읽힌다. */}
+        {auction && <span className="muted">입찰가 </span>}
         {formatWon(auction ? (item.currentBidPrice ?? item.price) : item.price)}
-        {auction && <span className="muted"> 입찰가</span>}
       </td>
       <td className="muted">{item.createdAt.slice(0, 10)}</td>
     </tr>

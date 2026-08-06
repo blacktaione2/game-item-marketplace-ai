@@ -11,6 +11,43 @@
 [![backend](https://github.com/blacktaione2/game-item-marketplace-ai/actions/workflows/backend.yml/badge.svg)](https://github.com/blacktaione2/game-item-marketplace-ai/actions/workflows/backend.yml)
 [![frontend](https://github.com/blacktaione2/game-item-marketplace-ai/actions/workflows/frontend.yml/badge.svg)](https://github.com/blacktaione2/game-item-marketplace-ai/actions/workflows/frontend.yml)
 
+## 🔗 살아 있는 데모
+
+### **https://item-exchange.duckdns.org**
+
+Oracle Cloud ARM(aarch64, 4 OCPU/24GB)에서 돕니다. nginx 단일 오리진 뒤에
+백엔드·AI·프론트가 컨테이너로 올라가 있습니다.
+
+| 계정 | 역할 | 이 계정에서만 보이는 것 |
+|---|---|---|
+| `buyer_lee` | USER | 구매·입찰 이력이 있는 계정 |
+| `seller_kim` | USER | 판매자 쪽 거래가 섞여 있다 |
+| `trader_park` / `newbie_choi` | USER | |
+| `gm_admin` | ADMIN | **이상거래 큐** — 오토인코더 판정과 피처별 기여도 |
+
+비밀번호는 **`<데모 비밀번호>`** 입니다. 테넌트는 화면이 상수로 넣으므로 입력하지
+않습니다. **`gm_admin` 비밀번호는 공개하지 않습니다**(아래 참고).
+
+<details>
+<summary><b>3분 안에 파이프라인 네 갈래를 다 보는 순서</b></summary>
+
+1. 로그인하면 **매물 42건**이 표로 보입니다. 가격 헤더를 눌러 정렬해 보세요
+   (정렬·페이징은 서버가 합니다).
+2. `5만원 이하 검 찾아줘` → **검색 분기**. 배지에 `LLM 호출 1회` — 설명 생성을
+   없앤 결과입니다([ADR-0036](docs/01-Decisions/0036-검색-설명-llm-제거와-세션-지속.md)).
+3. `불꽃의 대검 시세 알려줘` → **시세 분기**. LSTM 예측과 D+7 변화율.
+4. `불꽃의 대검 찾아서 시세도 알려줘` → **복합**. 아래 표에 에이전트가 부른
+   MCP 도구 호출이 단계별로 찍힙니다.
+5. `거래 23659번 이상거래야?` → **이상거래 분기**.
+6. `수수료 얼마인가요` → **FAQ**. `LLM 호출 0회` — 확정 응답입니다.
+7. **같은 질문을 한 번 더** → `캐시 적중`, `LLM 호출 0회`.
+8. `3만원 이하 불속성 검 찾아줘` → **0건 처리**. 없는 걸 지어내지 않고, 무슨
+   조건으로 찾았는지 그대로 말합니다([ADR-0016](docs/01-Decisions/0016-결과-없음-처리.md)).
+9. 아이템을 눌러 **구매** → 재고가 줄고, 몇 초 뒤 상단에 **알림** 배지가 뜹니다
+   (RabbitMQ를 거칩니다).
+
+</details>
+
 > ## ⚠️ 공개 데모 계정입니다
 >
 > **비밀번호 로그인이 실제로 동작합니다**([ADR-0031](docs/01-Decisions/0031-공개-준비-인증-비용-신뢰프록시.md)) —

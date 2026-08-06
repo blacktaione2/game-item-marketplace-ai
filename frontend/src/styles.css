@@ -119,6 +119,26 @@ button.primary {
   color: #fff;
 }
 
+/* 예시 질의 칩.
+   기본 버튼 크기로는 다섯 개가 두 줄로 접혀서 검색창 아래가 뭉툭했다.
+   **한 줄을 강제하지는 않는다** — 좁은 화면에서는 접히는 게 맞고, 억지로 한 줄에
+   넣으려면 가로 스크롤이나 말줄임이 필요한데 둘 다 이 자리에 어울리지 않는다. */
+button.chip {
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  border-radius: 999px;
+}
+
+button.chip:hover {
+  color: var(--text-primary);
+}
+
+.chip-row {
+  gap: 6px;
+}
+
 .card {
   background: var(--surface-1);
   border: 1px solid var(--border);
