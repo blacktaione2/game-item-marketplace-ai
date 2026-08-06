@@ -577,6 +577,33 @@ Postgres and ES drift apart and search results stop resolving to real rows.
 - **`OPENAI_API_KEY` belongs in `ai/.env`**, not the repo-root `.env`. The root
   one is for docker-compose; the FastAPI app reads `ai/.env`. Both are
   gitignored.
+- **A code default that coincidentally equals the `.env.example` value hides a
+  missing declaration until the secret is rotated.** The `ai` service got
+  `REDIS_URL` but not `REDIS_PASSWORD`, so it connected as `gimp_local_pw` — the
+  code default *and* the example value. Locally it worked; the public deploy
+  generates its own password, so auth broke there and only there. Two rules fall
+  out: **a URL/host and its credential are one pair — shipping one without the
+  other is the signal**, and **a setting that one service declares and its
+  neighbour doesn't is an omission, not a decision** (the backend had had
+  `REDIS_PASSWORD` all along). Same family as the `RABBITMQ_HOST` miss, but the
+  trigger is *rotating a secret*, not containerizing — so a containerization
+  round does not catch it.
+- **What made it survive was the silence, not the typo.** Both consumers of that
+  Redis client swallow: the semantic cache's `lookup`/`store` had bare
+  `except: pass`, and the AI rate limiter fails open. So the only symptom was a
+  0% hit rate — **indistinguishable from the cache simply not matching**, which
+  this repo had already documented as expected (threshold 0.98). *When a
+  component has a documented reason to look ineffective, a real failure of it
+  will hide behind that reason.* Both sites now log a warning; if you add a
+  fail-open path, log it — "open but recorded", the rule `core/rate_limit.py`
+  already stated. The costlier half was invisible too: with the limiter open,
+  `/api/assistant` had no per-minute or daily cap on a public URL.
+- **Put every value the verdict used into the failure message.** That is what
+  exposed the check added for the bug above as half-vacuous — it printed
+  `hit=False, llm_calls=0`, and those two cannot both be right. A pass/fail line
+  alone would have shipped it. Corollary: **probe a cache with an intent whose
+  uncached cost is nonzero** (`faq_smalltalk` answers without an LLM, so
+  `llm_calls == 0` proves nothing there).
 - **`settings.openai_temperature` is 0 and `chat()` always sends it explicitly.**
   Omitting the parameter is not "use a sane default" — OpenAI's default is **1.0**,
   and this project ran that way for six phases while treating the resulting
