@@ -157,51 +157,16 @@ function Result({
 
   return (
     <div className="stack">
-      {/* 이 배지들이 Phase 6 파이프라인을 눈에 보이게 만드는 지점이다.
-          특히 캐시 히트인데 llm_calls가 0이 아니면 회귀다. */}
-      <div className="row">
-        <span className="badge">
-          의도 <strong>{data.intent}</strong>
-        </span>
-        <span className="badge">
-          판정 <strong>{data.routing.decided_by}</strong>
-          {data.routing.confidence != null && ` · ${data.routing.confidence}`}
-        </span>
-        {escalated && (
-          <span className="badge warn">
-            에스컬레이션 <strong>{data.routing.initial_intent} → {data.intent}</strong>
-          </span>
-        )}
-        <span className={`badge ${data.cache.hit ? "hit" : ""}`}>
-          캐시{" "}
-          <strong>
-            {data.cache.hit ? `적중 (${data.cache.match_type})` : "미적중"}
-          </strong>
-        </span>
-        <span className={`badge ${data.cache.hit && data.llm_calls > 0 ? "fail" : ""}`}>
-          LLM 호출 <strong>{data.llm_calls}회</strong>
-        </span>
-        {/* 0건은 LLM을 안 거친 확정 응답이다. 설명 생성 호출이 빠져서 2회가
-            아니라 1회여야 한다 — 2회면 회귀다. */}
-        {data.no_results && (
-          <span className={`badge ${data.llm_calls > 1 ? "fail" : "hit"}`}>
-            결과 없음 <strong>LLM 설명 생략</strong>
-          </span>
-        )}
-        {data.tool_failures ? (
-          <span className="badge fail">
-            도구 실패 <strong>{data.tool_failures}건</strong>
-          </span>
-        ) : null}
-      </div>
+      {/* **답변이 먼저 온다.** 예전엔 의도·캐시·LLM 호출 배지가 답변 위에
+          있었는데, 그러면 내부 계측이 제품보다 먼저 읽힌다 — 실제 거래소라면
+          사용자에게 `intent` 를 보여주지 않는다.
 
-      {data.cache.hit && data.cache.cached_query !== data.query && (
-        <p className="muted">
-          유사 질의 “{data.cache.cached_query}”의 캐시를 재사용했습니다
-          (유사도 {data.cache.similarity}).
-        </p>
-      )}
+          그렇다고 지우지도 않는다. 이 프로젝트의 주장("LLM API 를 감싸기만 한
+          서비스가 되지 않는 것")을 화면에서 확인할 수 있는 **유일한 지점**이라
+          없애면 링크를 여는 사람에게는 챗봇 하나로 보인다.
 
+          그래서 아래로 내리고 라벨을 붙였다. 위치와 이름이 "실수로 새어나온
+          내부"와 "의도적인 관측 패널"을 가른다. */}
       <div className="card answer">{data.answer}</div>
 
       {/* 결과가 있으면 항목 자체가 종류·속성을 달고 나와서 검증이 되는데,
@@ -283,12 +248,82 @@ function Result({
         </div>
       )}
 
-      {data.tool_calls && data.tool_calls.length > 0 && (
-        <div className="card">
-          <div className="muted" style={{ marginBottom: 8 }}>
-            에이전트 도구 호출
-          </div>
-          <table>
+      {data.results && data.results.length > 0 && (
+        <div className="item-grid">
+          {data.results.map((item) => (
+            <ItemCard key={item.item_id} item={item} onOpen={onOpenItem} />
+          ))}
+        </div>
+      )}
+
+      {/* --- 여기부터는 제품이 아니라 관측이다 -------------------------------
+          `<details>` 를 쓴다. 열림/닫힘 상태를 리액트가 들 이유가 없고,
+          키보드·스크린리더 동작이 공짜로 따라온다. `open` 이라 처음엔 펼쳐져
+          있다 — 접힌 채로 두면 이 프로젝트의 차별점을 아무도 안 열어본다. */}
+      <details className="pipeline" open>
+        <summary>
+          파이프라인
+          <span className="muted">
+            {" "}
+            — 데모용 관측 패널입니다. 실제 서비스에서는 노출하지 않습니다.
+          </span>
+        </summary>
+
+        <div className="row" style={{ marginTop: 10 }}>
+          <span className="badge">
+            의도 <strong>{data.intent}</strong>
+          </span>
+          <span className="badge">
+            판정 <strong>{data.routing.decided_by}</strong>
+            {data.routing.confidence != null && ` · ${data.routing.confidence}`}
+          </span>
+          {escalated && (
+            <span className="badge warn">
+              에스컬레이션{" "}
+              <strong>
+                {data.routing.initial_intent} → {data.intent}
+              </strong>
+            </span>
+          )}
+          <span className={`badge ${data.cache.hit ? "hit" : ""}`}>
+            캐시{" "}
+            <strong>
+              {data.cache.hit ? `적중 (${data.cache.match_type})` : "미적중"}
+            </strong>
+          </span>
+          {/* 적중인데 호출이 0이 아니면 회귀다 — 그 판정을 색으로 낸다. */}
+          <span
+            className={`badge ${data.cache.hit && data.llm_calls > 0 ? "fail" : ""}`}
+          >
+            LLM 호출 <strong>{data.llm_calls}회</strong>
+          </span>
+          {/* 0건은 LLM을 안 거친 확정 응답이다. 설명 생성 호출이 빠져서 2회가
+              아니라 1회여야 한다 — 2회면 회귀다. */}
+          {data.no_results && (
+            <span className={`badge ${data.llm_calls > 1 ? "fail" : "hit"}`}>
+              결과 없음 <strong>LLM 설명 생략</strong>
+            </span>
+          )}
+          {data.tool_failures ? (
+            <span className="badge fail">
+              도구 실패 <strong>{data.tool_failures}건</strong>
+            </span>
+          ) : null}
+        </div>
+
+        {data.cache.hit && data.cache.cached_query !== data.query && (
+          <p className="muted">
+            유사 질의 “{data.cache.cached_query}”의 캐시를 재사용했습니다
+            (유사도 {data.cache.similarity}).
+          </p>
+        )}
+
+        {data.tool_calls && data.tool_calls.length > 0 && (
+          <>
+            <div className="muted" style={{ margin: "10px 0 6px" }}>
+              에이전트 도구 호출 — MCP 서버를 거칩니다
+            </div>
+            <table>
             <thead>
               <tr>
                 <th>단계</th>
@@ -309,17 +344,10 @@ function Result({
                 </tr>
               ))}
             </tbody>
-          </table>
-        </div>
-      )}
-
-      {data.results && data.results.length > 0 && (
-        <div className="item-grid">
-          {data.results.map((item) => (
-            <ItemCard key={item.item_id} item={item} onOpen={onOpenItem} />
-          ))}
-        </div>
-      )}
+            </table>
+          </>
+        )}
+      </details>
     </div>
   );
 }

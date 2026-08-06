@@ -139,6 +139,45 @@ button.chip:hover {
   gap: 6px;
 }
 
+/* 관측 패널.
+   **카드(.card)와 다르게 보여야 한다.** 답변·결과와 같은 표면을 쓰면 제품의
+   일부로 읽히는데, 이 영역은 데모용 계측이지 사용자에게 줄 정보가 아니다.
+   테두리를 점선으로 두고 표면을 낮춰서 "덧붙인 것"으로 보이게 한다. */
+details.pipeline {
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  padding: 10px 14px;
+  background: transparent;
+}
+
+details.pipeline > summary {
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  list-style: none;
+}
+
+details.pipeline > summary::-webkit-details-marker {
+  display: none;
+}
+
+/* 접힘/펼침을 기호로 낸다 — 기본 마커는 브라우저마다 모양이 달라서
+   나머지 UI 와 어긋난다. */
+details.pipeline > summary::before {
+  content: "▸ ";
+  color: var(--text-secondary);
+}
+
+details.pipeline[open] > summary::before {
+  content: "▾ ";
+}
+
+details.pipeline > summary > .muted {
+  font-weight: 400;
+  font-size: 12px;
+}
+
 .card {
   background: var(--surface-1);
   border: 1px solid var(--border);
