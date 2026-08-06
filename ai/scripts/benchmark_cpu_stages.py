@@ -56,6 +56,13 @@ from app.services.search.reranker import get_reranker
 
 # ADR-0028 이 쓴 것과 같은 작업 수. 표를 나란히 읽으려면 같아야 한다.
 JOBS = 8
+# 설정당 반복 횟수.
+#
+# **처음엔 2였는데 부족했다.** ARM 첫 실행에서 rerank 2워커가 1420ms 와 1009ms
+# 를 냈다 — 411ms 차이면 설정 간 차이(1워커 897ms vs 4워커 999ms)보다 크다.
+# 즉 2회로는 **설정을 비교할 수 없고**, 그 상태에서 나온 순위는 실행 순서를
+# 읽은 것이다. 스윕 전체가 10초 남짓이라 반복을 늘리는 비용이 사실상 없다.
+RUNS = 7
 # 격리 지연 표본 수. 워밍업 이후.
 SAMPLES = 20
 TICK_INTERVAL = 0.01
@@ -192,23 +199,30 @@ async def main() -> None:
     print("    빠르게 하지 않는다. 봐야 할 것은 티커 지연이다.")
     for label, job in (("encode_one (torch)", do_encode), ("rerank (ONNX RT)", do_rerank)):
         print(f"\n  {label}")
-        print(f"    {'워커':<6}{'실행':<6}{'총 소요':>10}{'티커 median':>14}{'티커 p99':>12}")
+        print(
+            f"    {'워커':<6}{'총 소요 median':>15}{'최소':>9}{'최대':>9}"
+            f"{'실행간 폭':>11}{'티커 p99':>11}"
+        )
         for workers in (1, 2, 4):
-            # **각 설정을 2회 돌린다.** 한 번만 보면 설정 간 차이와 실행 간
-            # 변동을 구분할 수 없다.
-            for run in (1, 2):
-                elapsed, lags = await sweep(workers, job)
-                print(
-                    f"    {workers:<6}{run:<6}{elapsed:>9.0f}ms"
-                    f"{statistics.median(lags):>13.2f}ms{pct(lags, 99):>11.2f}ms"
-                )
+            runs = [await sweep(workers, job) for _ in range(RUNS)]
+            elapsed = [e for e, _ in runs]
+            lags = [lag for _, lag_list in runs for lag in lag_list]
+            spread = max(elapsed) - min(elapsed)
+            # **실행간 폭을 같이 낸다.** 이게 설정 간 차이보다 크면 순위를
+            # 읽어선 안 된다 — 실제로 첫 ARM 실행이 그 상태였다.
+            print(
+                f"    {workers:<6}{statistics.median(elapsed):>13.0f}ms"
+                f"{min(elapsed):>8.0f}ms{max(elapsed):>8.0f}ms"
+                f"{spread:>10.0f}ms{pct(lags, 99):>10.2f}ms"
+            )
     print()
     print("=" * 78)
     print("읽는 법")
     print("=" * 78)
     print("  · 총 소요는 워커를 늘려도 줄지 않는 게 정상이다(오히려 늘 수 있다).")
     print("  · 티커 지연이 [1]의 잡음 바닥 근처면 루프가 안 막힌 것이다.")
-    print("  · 두 실행이 크게 다르면 그 수치로 판단하지 않는다 — 더 돌린다.")
+    print("  · **실행간 폭이 설정 간 차이보다 크면 순위를 읽지 않는다.** 그건")
+    print("    설정을 비교한 게 아니라 실행 순서를 읽은 것이다.")
     print("  · 티커 지연이 **음수**로 나오면 그 값은 버린다. Windows 에서 관측된")
     print("    타이머 분해능 artifact 이고, 리눅스에서는 나오지 않아야 한다.")
     print("  · 현재 설정값은 settings.cpu_pool_workers 이며 기본 2다.")
