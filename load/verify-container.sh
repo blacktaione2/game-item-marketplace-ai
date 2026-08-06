@@ -32,11 +32,14 @@ bad()  { printf '  [FAIL] %s\n' "$1"; FAIL=$((FAIL+1)); }
 # UTF-8 파일로 써서 --data-binary 로 보낸다 — docs/05-Troubleshooting 참고.
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
+# 3번째 인자가 use_cache 다. 기본은 끄기 — 4분기 검사는 분기가 실제로 도는지를
+# 보는 것이라 캐시를 타면 검사가 성립하지 않는다. 캐시 자체를 보는 판정 1-b 만 켠다.
 write_query() { "$PY" -c "
 import io,json,sys
 io.open(sys.argv[1],'w',encoding='utf-8').write(
-    json.dumps({'query': sys.argv[2], 'use_cache': False}, ensure_ascii=False))
-" "$1" "$2"; }
+    json.dumps({'query': sys.argv[2], 'use_cache': sys.argv[3] == 'true'},
+               ensure_ascii=False))
+" "$1" "$2" "${3:-false}"; }
 
 echo "== 로그인 =="
 # ADR-0031 이 `demo-token` 을 제거했는데 **이 스크립트를 안 고쳤다.** 그래서 이
@@ -86,6 +89,38 @@ branch "FAQ"        "수수료 얼마야?"              "faq_smalltalk"
 branch "검색"       "5만원 이하 검 찾아줘"        "item_search"
 branch "시세"       "미스릴 단검 시세 알려줘"     "price_forecast"
 branch "이상거래"   "거래 3번 이상한지 봐줘"      "anomaly_check"
+
+echo
+echo "== 판정 1-b: 캐시가 실제로 적중하는가 =="
+# **위 4분기는 `use_cache:false` 라서 캐시 경로를 아예 안 밟는다.** 그래서
+# 컨테이너 검사 10/10 과 배포 검사 17/17 을 전부 통과한 배포에서 시맨틱 캐시가
+# **한 번도 적중하지 않고 있었다** — ai 서비스에 REDIS_PASSWORD 를 안 넘겨서
+# Redis 인증이 깨졌는데, 조회·저장 양쪽이 예외를 삼켜 증상이 "적중률 0" 뿐이었다.
+#
+# 같은 Redis 클라이언트를 AI 요청 한도가 쓰고 그쪽은 fail-open 이므로, 이 검사가
+# 실패한다는 건 **한도가 통째로 열려 있다**는 뜻이기도 하다. 비용 방어가 걸린다.
+write_query "$TMP/c.json" "수수료 얼마인가요" true
+cache_probe() {  # 한 번 물어보고 (적중여부, llm 호출수)를 낸다
+  curl -s -X POST "$WEB/api/ai/assistant" \
+    -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+    --data-binary "@$TMP/c.json" \
+  | "$PY" -c "
+import sys,json
+try:
+    d=json.load(sys.stdin)
+    print(str(d.get('cache',{}).get('hit')), d.get('llm_calls','?'))
+except Exception: print('<파싱실패>', '?')"
+}
+cache_probe >/dev/null   # 1회차: 저장시킨다 (이미 있으면 그대로 적중)
+SECOND="$(cache_probe)"
+C_HIT="${SECOND%% *}"; C_LLM="${SECOND##* }"
+if [ "$C_HIT" = "True" ] && [ "$C_LLM" = "0" ]; then
+  ok "같은 질의 2회차 = 캐시 적중, LLM 0회"
+else
+  bad "캐시 미적중 (hit=$C_HIT, llm_calls=$C_LLM) — Redis 연결을 의심하라:
+         docker exec gimp-ai python -c \"import asyncio;from app.services.cache.dependencies import get_redis_client;asyncio.run(get_redis_client().ping())\"
+         docker logs gimp-ai 2>&1 | grep '캐시 조회 실패'"
+fi
 
 echo
 echo "== 판정 3: SPA 폴백 =="
