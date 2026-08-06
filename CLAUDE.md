@@ -379,7 +379,8 @@ flow are still curl-verified only; see the roadmap's 기술 부채 section.
   generate_eval_queries, finetune_embedding, evaluate_embedding,
   compare_eval_sets, train_forecast, train_anomaly, generate_intent_data,
   train_intent_router, evaluate_semantic_cache, evaluate_rerank_floor,
-  evaluate_hard_filters, evaluate_rewrite_determinism. **The last two answer different questions and must stay
+  evaluate_hard_filters, evaluate_rewrite_determinism, evaluate_explanation_prompts,
+  benchmark_cpu_stages. **The last two answer different questions and must stay
   separate**: `evaluate_rerank_floor` documents a *rejected* approach (it sweeps
   thresholds and would print a recommendation), while `evaluate_hard_filters`
   measures how many unfit results a threshold-free filter leaves. It A/Bs within
@@ -390,11 +391,11 @@ flow are still curl-verified only; see the roadmap's 기술 부채 section.
   versioning for reproducibility). `models/` is gitignored — regenerate with
   the build/finetune scripts.
 
-- `tests/` — `python -m pytest` from `ai/` (144 tests, no `pytest-asyncio` — the
+- `tests/` — `python -m pytest` from `ai/` (148 tests, no `pytest-asyncio` — the
   few async cases use `asyncio.run`). Deliberately limited to
   deterministic units: RRF fusion, router rules, cache keys/tenant isolation,
   per-intent TTL + the no-result storage veto, id-space guards, filter→DSL
-  conversion, **both** search answers (empty and found — the found one asserts it
+  conversion, explanation-prompt guards (ADR-0038), **both** search answers (empty and found — the found one asserts it
   never denies results that exist, ADR-0036), route auth coverage, temperature
   plumbing. Model quality is judged
   by the training scripts' held-out
@@ -685,8 +686,25 @@ Postgres and ES drift apart and search results stop resolving to real rows.
   telling the model not to confuse `불속성` with `무속성` dropped correct
   extraction from **97.5% to 22%** — naming the confusable value primed the model
   toward it. It was reverted. The line looked obviously correct and would have
-  passed review. There is a harness for exactly this:
-  `scripts/evaluate_rewrite_determinism.py`.
+  passed review. Two harnesses exist for this:
+  `scripts/evaluate_rewrite_determinism.py` (extraction) and
+  `scripts/evaluate_explanation_prompts.py` (the explanation prompts, ADR-0038).
+  - **The priming risk did not reproduce the second time** — explicitly telling
+    the model *not* to use field names removed leakage completely (12/33 → 0/33).
+    That is only knowable by measuring; the same edit could have gone either way.
+  - **A tie between variants can mean your metrics don't see the difference.**
+    Two candidates scored 0-0-0-0 on the four planned metrics, and only reading
+    the samples showed one of them was answering price questions with
+    *"거래를 진행하는 것이 좋습니다"* — unsolicited trading advice, 6/33. A fifth
+    metric was added and it was rejected. Metrics measure what you thought of.
+  - **Collect and score separately.** The first harness scored inline and threw
+    the answers away; when a metric turned out to be wrong, re-checking cost
+    another 99 LLM calls. With answers saved, adding that fifth metric and
+    re-scoring cost **zero** (`--score-only`).
+  - **When different inputs produce the identical number, you are measuring the
+    detector, not the inputs.** Three distinct prompts all scored exactly 9 on
+    "contradiction" — the regex matched `이상 거래로 판별되지 않았습니다` as
+    *asserting* an anomaly.
 - **A stage's wall-time under load is not its work.** This cost two wrong
   attributions in a row on the cache-hit path. ADR-0025 decomposed `cache_ms`
   into encode 27% / lookup 73% and declined to touch the embedding — but those

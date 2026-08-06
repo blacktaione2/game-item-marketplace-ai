@@ -92,21 +92,31 @@ _DEFAULT_FAQ = (
 # 검색 설명 프롬프트는 **삭제됐다** (ADR-0036). 남겨두면 "되살리면 되지"로
 # 읽히는데, 되살릴 값어치가 없다는 게 그 결정의 내용이다. 경위는 ADR 참고.
 
-_FORECAST_PROMPT = """다음은 아이템 시세 예측 결과입니다. 2~3문장으로 설명하세요.
+# ADR-0038 로 교체됐다. 이전 판본은 `cold_start가 true면…` 이라고 **필드 이름을
+# 읽혔고**, 그래서 모델이 `cold_start가 false이므로` 를 사용자 문장에 그대로 냈다.
+# 조건 분기는 이제 `_forecast_branch` 가 코드로 한다 — 모델이 그 필드를 볼 이유가
+# 없어진다. 측정: `scripts/evaluate_explanation_prompts.py`.
+_FORECAST_PROMPT = """다음은 아이템 시세 예측 결과입니다. 사용자에게 2~3문장으로 설명하세요.
 
-- baseline_price는 {baseline_source}를 기준으로 한 값입니다. 등록가와 혼동하지 마세요.
-- cold_start가 true면 실제 거래 이력이 부족해 유사 아이템 추세를 물려받은
-  추정치라는 점을 반드시 밝히세요.
+- 아래 결과는 내부 데이터입니다. **필드 이름(cold_start, baseline_price 등)을
+  답변에 쓰지 마세요.** 사용자는 그 구조를 모릅니다.
+- 기준가는 {baseline_source}입니다. 판매자가 정한 등록가와 혼동하지 마세요.
+- {conditional}
+- 완결된 문장으로 끝내세요.
 
 질의: {query}
 결과: {result}"""
 
+# ADR-0038 로 교체됐다. 이전 판본의 마지막 지시가 `…별개라는 점.` 이라는
+# **명사형 조각**이었고, 모델은 그걸 글자 하나까지 그대로 옮겨 붙였다 — 화면에서
+# 문장이 잘린 것처럼 보였지만 잘린 게 아니라 **지시문이 그 모양**이었다.
 _ANOMALY_PROMPT = """다음은 거래 이상 여부 판정 결과입니다. 2~3문장으로 설명하세요.
-contributions는 이상 점수에 대한 피처별 기여도입니다. 가장 큰 기여 요인을
-근거로 들어 설명하세요.
+가장 큰 기여 요인을 근거로 들어 설명하세요.
 
-**반드시 한 문장으로 덧붙이세요**: 이 판정은 합성 데모 거래 데이터를 대상으로
-하며, 사용자의 실제 거래 내역과는 번호 체계가 별개라는 점.
+- 아래 결과는 내부 데이터입니다. **필드 이름(contributions, is_anomaly 등)을
+  답변에 쓰지 마세요.**
+- **마지막에 다음 내용을 완결된 한 문장으로 덧붙이세요**: 이 판정은 합성 데모
+  거래 데이터를 대상으로 한 것이며, 사용자의 실제 거래 번호와는 체계가 다릅니다.
 
 질의: {query}
 결과: {result}"""
@@ -318,13 +328,23 @@ async def _forecast_branch(
     result = await forecast_price(
         es=es, tenant_code=tenant_code, item_id=item["item_id"]
     )
+    # **콜드스타트 분기를 코드가 한다** (ADR-0038). 프롬프트가 "cold_start가
+    # true면"이라고 조건을 걸면 모델이 그 필드를 읽어야 하고, 읽은 이름은
+    # 문장으로 새어나온다. 여기서 미리 갈라 완성된 지시문을 넘긴다.
+    cold_start = result["cold_start"]
     answer, explain_ms = await _timed_complete(
         llm_client,
         _FORECAST_PROMPT.format(
             query=query,
             result=result,
             baseline_source=(
-                "최근 체결가" if not result["cold_start"] else "거래 이력 부족 상태의 추정 기준가"
+                "거래 이력 부족 상태의 추정 기준가" if cold_start else "최근 체결가"
+            ),
+            conditional=(
+                "이 아이템은 거래 이력이 부족해 비슷한 아이템들의 추세를 빌려 "
+                "추정한 값입니다. 그 점을 반드시 밝히세요."
+                if cold_start
+                else "이 아이템은 거래 이력이 충분합니다. 추정이라는 언급은 하지 마세요."
             ),
         ),
     )
