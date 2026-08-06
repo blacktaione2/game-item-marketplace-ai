@@ -87,6 +87,15 @@ async def run_agent(
 
         stop_reason = "completed"
         answer = ""
+        # **답변이 어느 아이템을 말하는지 화면이 알아야 한다.**
+        # 복합 분기에는 결과 카드가 없어서, 이게 없으면 사용자가 그 아이템으로
+        # 갈 방법이 없다 — 시세 분기는 `resolved_item` 으로 이미 해결한 문제인데
+        # 여기만 빠져 있었다.
+        #
+        # `search_items` 결과를 모아두고 `forecast_item_price` 가 고른 id 로
+        # 되짚는다. 도구가 이미 실어 보낸 값이라 추가 조회가 없다.
+        seen_items: dict[int, dict[str, Any]] = {}
+        focus_id: int | None = None
         # 복합 질의의 병목 질문은 "LLM인가 도구인가"다. elapsed_ms 하나로는
         # 답할 수 없어서 둘을 따로 누적한다.
         llm_ms = 0.0
@@ -116,6 +125,10 @@ async def run_agent(
                         "failed": failed,
                     }
                 )
+                if not failed:
+                    _remember_item(call, text, seen_items)
+                    if call.name == "forecast_item_price":
+                        focus_id = _int_or_none(call.arguments.get("item_id"))
                 messages.append(
                     {"role": "tool", "tool_call_id": call.id, "content": text}
                 )
@@ -127,9 +140,15 @@ async def run_agent(
             answer = (await llm_client.chat(messages)).content
             llm_ms += (time.perf_counter() - call_started) * 1000
 
+    # 예측이 고른 아이템이 있으면 그것, 없으면 검색한 것 중 첫 번째.
+    resolved = seen_items.get(focus_id) if focus_id is not None else None
+    if resolved is None and seen_items:
+        resolved = next(iter(seen_items.values()))
+
     return {
         "answer": answer,
         "tool_calls": trace,
+        "resolved_item": resolved,
         "tool_failures": sum(1 for entry in trace if entry["failed"]),
         "stop_reason": stop_reason,
         "elapsed_ms": round((time.perf_counter() - started) * 1000, 1),
@@ -157,3 +176,31 @@ def _assistant_message(result: Any) -> dict[str, Any]:
             for call in result.tool_calls
         ],
     }
+
+
+def _int_or_none(value: Any) -> int | None:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _remember_item(call: Any, text: str, seen: dict[int, dict[str, Any]]) -> None:
+    """`search_items` 결과를 id 로 색인해둔다.
+
+    도구 출력은 문자열로 오므로 다시 파싱한다. **실패해도 조용히 넘긴다** —
+    이건 화면 편의를 위한 부가 정보이지 답변의 근거가 아니다. 여기서 예외가
+    나면 복합 질의 전체가 죽는데, 그건 얻는 것에 비해 너무 큰 대가다.
+    """
+    if call.name != "search_items":
+        return
+    try:
+        items = json.loads(text)
+    except (TypeError, ValueError):
+        return
+    if not isinstance(items, list):
+        return
+    for item in items:
+        item_id = _int_or_none(item.get("item_id")) if isinstance(item, dict) else None
+        if item_id is not None:
+            seen[item_id] = item

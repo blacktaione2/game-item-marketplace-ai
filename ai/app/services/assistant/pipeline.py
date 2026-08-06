@@ -352,7 +352,10 @@ async def _forecast_branch(
         {
             "answer": answer,
             "forecast": result,
-            "resolved_item": {"item_id": item["item_id"], "name": item["name"]},
+            # **검색 결과 항목을 통째로 넘긴다.** 예전엔 id·이름만 줬는데,
+            # 그러면 화면이 검색 결과 카드와 같은 모양을 만들 수 없어 별도
+            # 표시를 만들게 된다 — 같은 아이템이 화면마다 다르게 보인다.
+            "resolved_item": item,
             "llm_calls": 2,
             # 아이템 특정용 검색 + 예측 + 설명. 키가 겹치지 않아 병합이 안전하다.
             "timings": {
@@ -372,6 +375,10 @@ async def _agent_branch(
     return (
         {
             "answer": result["answer"],
+            # MCP 도구는 `listing_price` 로 주는데(모델이 기준가와 섞지 않게 한
+            # 이름이다) 화면은 검색 결과와 같은 `price` 를 기대한다. 여기서
+            # 한 번 맞춰준다 — 두 이름이 각자 있어야 할 이유가 서로 다르다.
+            "resolved_item": _as_result_item(result.get("resolved_item")),
             "tool_calls": result["tool_calls"],
             "tool_failures": result["tool_failures"],
             "stop_reason": result["stop_reason"],
@@ -518,3 +525,17 @@ def _search_answer(filters: dict[str, Any], count: int) -> str:
 
 def _ms(started: float) -> float:
     return round((time.perf_counter() - started) * 1000, 1)
+
+
+def _as_result_item(trimmed: dict[str, Any] | None) -> dict[str, Any] | None:
+    """MCP `_trim_item` 모양 → 검색 결과 항목 모양.
+
+    화면이 두 분기의 아이템을 **같은 카드로** 그리게 하려면 필드 이름이 같아야
+    한다. 다른 것은 `listing_price` 하나뿐이라 그것만 바꾼다 — MCP 쪽 이름을
+    `price` 로 되돌리면 모델이 다시 예측 기준가와 섞는다(실제로 겪었다).
+    """
+    if not trimmed:
+        return None
+    item = {key: value for key, value in trimmed.items() if key != "listing_price"}
+    item["price"] = trimmed.get("listing_price")
+    return item
