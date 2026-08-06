@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Suspense, lazy, useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 
 import { api, formatWon, type Trade } from "../api";
 
@@ -21,6 +21,7 @@ const PriceChart = lazy(() => import("../components/PriceChart"));
 export default function ItemDetail({ userId }: { userId: number }) {
   const { itemId } = useParams();
   const id = Number(itemId);
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null);
 
@@ -55,6 +56,10 @@ export default function ItemDetail({ userId }: { userId: number }) {
         text: `${data.tradeType === "PURCHASE" ? "구매" : "입찰"} 성공 — 거래 #${data.id}, ${formatWon(data.price)}`,
       });
       queryClient.invalidateQueries({ queryKey: ["item", id] });
+      // 거래 내역에 방금 것이 보여야 한다. 알림은 큐를 거치므로 아직 없을 수
+      // 있는데(ADR-0030), 무효화해두면 도착했을 때 다음 조회가 집어온다.
+      queryClient.invalidateQueries({ queryKey: ["trades"] });
+      queryClient.invalidateQueries({ queryKey: ["notifications"] });
     },
     onError: (error: Error) => setResult({ ok: false, text: error.message }),
   });
@@ -68,9 +73,15 @@ export default function ItemDetail({ userId }: { userId: number }) {
 
   return (
     <div className="stack">
-      <Link to="/" className="muted">
-        ← 검색으로
-      </Link>
+      {/* **`/` 로 가는 링크가 아니라 뒤로가기다.** 상세 화면에는 검색·거래 내역·
+          알림 어디서든 올 수 있는데, 전부 "검색으로" 보내면 왔던 곳을 잃는다.
+          검색은 상단 내비에 따로 있다.
+
+          결과가 살아 돌아오는 건 이것 때문이 아니라 질의가 URL 에 있기 때문이다
+          (Assistant.tsx) — 뒤로가기만 붙이면 빈 검색 화면으로 돌아갔다. */}
+      <button type="button" className="linklike muted" onClick={() => navigate(-1)}>
+        ← 뒤로
+      </button>
 
       <div className="card stack">
         <div>

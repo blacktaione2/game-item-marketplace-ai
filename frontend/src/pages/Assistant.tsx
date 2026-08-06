@@ -1,6 +1,6 @@
-import { useMutation } from "@tanstack/react-query";
-import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 
 import { api, formatWon, type AssistantResponse } from "../api";
 
@@ -12,19 +12,44 @@ const EXAMPLES = [
   "수수료 얼마인가요",
 ];
 
+/**
+ * 질의를 **URL 에 둔다** (`/?q=...`).
+ *
+ * 예전에는 `useState` + `useMutation` 이었다. 그러면 아이템 상세로 들어갔다
+ * 돌아올 때 이 컴포넌트가 재마운트되면서 **검색 결과가 통째로 사라진다** —
+ * 지역 상태는 언마운트와 함께 없어지고, mutation 결과는 캐시에 안 남는다.
+ * "← 검색으로" 를 뒤로가기로 바꿔도 그 자체로는 해결되지 않는 문제였다.
+ *
+ * URL 에 있으면 세 가지가 한꺼번에 따라온다: 뒤로가기가 질의를 되살리고,
+ * `useQuery` 가 그 질의를 키로 캐시된 응답을 즉시 내주고, 검색 링크를 공유할
+ * 수 있다.
+ */
 export default function Assistant() {
-  const [query, setQuery] = useState("");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const submitted = searchParams.get("q") ?? "";
+  const [draft, setDraft] = useState(submitted);
   const navigate = useNavigate();
 
-  const ask = useMutation({
-    mutationFn: (value: string) => api.ask(value),
+  // 뒤로/앞으로로 URL 이 바뀌면 입력창도 따라가야 한다. 안 그러면 결과는
+  // 이전 질의인데 입력창은 다른 글자가 남는다.
+  useEffect(() => setDraft(submitted), [submitted]);
+
+  const ask = useQuery({
+    queryKey: ["assistant", submitted],
+    queryFn: () => api.ask(submitted),
+    enabled: submitted.length > 0,
+    // AI 응답은 비싸다. 돌아왔을 때 다시 부르지 않고 캐시를 그대로 쓴다 —
+    // 서버 쪽 시맨틱 캐시와 별개로, 여기서 막으면 요청 자체가 안 나간다.
+    staleTime: 5 * 60 * 1000,
+    retry: false,
   });
 
   function submit(value: string) {
     const trimmed = value.trim();
     if (!trimmed) return;
-    setQuery(trimmed);
-    ask.mutate(trimmed);
+    // 같은 질의를 다시 눌러도 URL 이 안 바뀌면 아무 일도 안 일어난다 —
+    // 캐시된 결과가 이미 떠 있으므로 그게 맞는 동작이다.
+    setSearchParams({ q: trimmed });
   }
 
   return (
@@ -33,22 +58,26 @@ export default function Assistant() {
         className="row"
         onSubmit={(event) => {
           event.preventDefault();
-          submit(query);
+          submit(draft);
         }}
       >
         <input
           style={{ flex: 1, minWidth: 260 }}
           placeholder="무엇이든 물어보세요 — 검색·시세·이상거래를 알아서 나눠 처리합니다"
-          value={query}
+          value={draft}
           // 서버 상한과 같은 값이다 (ADR-0035). **서버가 막으니 됐다고 두지 않는다** —
           // 붙여넣기로 500자를 넘기면 422 가 오고, 사용자에게는 원인이 안 보이는
           // 오류로만 보인다. 여기서 막으면 애초에 그 상태가 안 생긴다.
           // 서버 검증은 그대로 남는다(프론트를 거치지 않는 호출이 있다).
           maxLength={500}
-          onChange={(event) => setQuery(event.target.value)}
+          onChange={(event) => setDraft(event.target.value)}
         />
-        <button className="primary" type="submit" disabled={ask.isPending}>
-          {ask.isPending ? "처리 중…" : "질문"}
+        {/* **`isFetching` 이지 `isPending` 이 아니다.** v5 에서 `enabled:false` 인
+            쿼리는 status 가 계속 `pending` 이라, `isPending` 을 쓰면 질의를 넣기
+            전부터 버튼이 "처리 중…" 으로 잠긴다. 실제로 도는 중인지는
+            `isFetching` 만 안다. */}
+        <button className="primary" type="submit" disabled={ask.isFetching}>
+          {ask.isFetching ? "처리 중…" : "질문"}
         </button>
       </form>
 
@@ -60,7 +89,7 @@ export default function Assistant() {
         ))}
       </div>
 
-      {ask.isPending && (
+      {ask.isFetching && (
         <p className="muted">
           의도를 분류하고 필요한 도구를 부르는 중입니다. 복합 질의는 도구를 여러 번
           호출해서 20초 이상 걸릴 수 있습니다.
