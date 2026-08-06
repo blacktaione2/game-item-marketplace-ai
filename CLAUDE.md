@@ -704,6 +704,19 @@ Postgres and ES drift apart and search results stop resolving to real rows.
     synchronous CPU calls in `run_cpu`, but **only above an isolated median of
     5ms** — below that the 0.211ms thread hop costs more than it saves, which
     is why the autoencoder (0.31ms) and the LSTM (0.45ms) stay inline.
+  - **Re-measured on the 4-OCPU ARM target (2026-08-07,
+    `scripts/benchmark_cpu_stages.py`) and the *mechanism* did not survive.**
+    `encode_one` gets **faster** with 4 workers there (277 → 241 → 205ms for
+    1/2/4, ranges non-overlapping), the exact opposite of the 12-core box where 4
+    was +85%. The oversubscription argument scales with core count, so it does not
+    transfer. `cpu_pool_workers` **stays 2 anyway**, for a different reason: the
+    gain is ~12ms per search against a 4.45s live-LLM p95 (**0.3%**), while 4
+    workers would fill all four cores on a box shared with another live project —
+    a cost the idle-box benchmark cannot see. Reranker on ARM is only **1.11×**
+    slower (108.95ms vs 97.99ms), which also strengthens ADR-0032's rejection of
+    arm64 requantization. **The idle ticker floor is 0.11ms on Linux vs 5.54ms on
+    Windows** — ADR-0028's "threshold inside the noise floor" failure was a
+    Windows timer artifact and does not exist on the target.
   - **Three things the pre-work overturned**: the reranker is the dominant
     blocker (103–189ms, 4–5× `encode_one`), not the embedding; the autoencoder
     was never a target; and `/api/anomaly/*` never blocked the loop at all
