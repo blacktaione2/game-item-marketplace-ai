@@ -144,6 +144,31 @@ class TestWiredIntoUnderstandQuery:
         assert result.rewritten_query == "무속성 검 찾아줘"
 
 
+class TestTheUserVisibleSignal:
+    """고쳐졌는지를 **화면에서 한눈에 구분할 수 있어야** 한다.
+
+    배포 직후 이 수정이 안 걸린 것처럼 보였는데, 원인은 코드가 아니라 캐시였다
+    (배포 전 응답이 재생됐다). 그때 화면의 답변 문구가 유일한 단서였다 —
+    `검 조건으로` 만 있고 `무속성` 이 없었다.
+
+    그러니 이 문구는 **진단 도구**다. 바뀌면 그 사실을 알아야 한다.
+    """
+
+    def test_the_answer_names_the_element(self):
+        from app.services.assistant.pipeline import _search_answer
+
+        answer = _search_answer({"subcategory": "검", "element": "무속성"}, 5)
+        assert "무속성" in answer
+        assert "검" in answer
+
+    def test_무속성_is_not_rendered_as_an_element_suffix(self):
+        """`"무속성 속성"` 이 아니라 `"무속성"` 이다 — 다른 속성과 표기가 다르다."""
+        from app.services.assistant.pipeline import _search_answer
+
+        assert "무속성 속성" not in _search_answer({"element": "무속성"}, 1)
+        assert "화염 속성" in _search_answer({"element": "화염"}, 1)
+
+
 class TestAgainstTheLabelledSet:
     """평가셋의 정답과 후처리 단독 동작을 맞춰본다.
 

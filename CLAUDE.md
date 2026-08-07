@@ -717,7 +717,7 @@ default"; a short key is broken in every profile.
   should stay that way — a display exists for humans and its rules will change
   again. This is the third of four times a check here was itself wrong; the
   pattern and its checklist are in
-  `docs/05-Troubleshooting/검사-자체가-틀린-사례들.md` — **23 cases now**, and
+  `docs/05-Troubleshooting/검사-자체가-틀린-사례들.md` — **24 cases now**, and
   seven of them came from a single day of building new measurement tools. Two
   share one cause worth naming: **Korean draws its distinctions in the verb
   ending, but regexes are easiest to write against nouns**, so `이상 거래` also
@@ -1016,9 +1016,17 @@ Postgres and ES drift apart and search results stop resolving to real rows.
   - `cache_encode` / `cache_lookup` exist as stages; on a hit `cache_encode`
     must be **absent**, which is the regression signal.
 - **Bump `cache_version` when the response *shape* changes, not just when the
-  data goes stale.** A cached entry is frozen at the schema it was written with,
+  data goes stale**, and — the half that bit next — **whenever the same query
+  starts returning a different answer at all.** A cached entry is frozen at the schema it was written with,
   so adding or widening a field means hits keep replaying the old shape — the code
-  looks fixed and the screen does not. This bit once: `resolved_item` grew from
+  looks fixed and the screen does not. **It has now bitten twice**, and the
+  second time the shape never changed: ADR-0040 added an element filter, so
+  `"무속성 검 찾아줘"` returned a *smaller set* — and cached hits kept
+  replaying the pre-fix results, which read exactly like "the deploy didn't
+  take". The ADR had explicitly reasoned "shape is unchanged, no bump
+  needed", reading only half of this rule. **Diagnostic**: the UI's pipeline
+  panel shows `cache hit` + `LLM calls 0` — check those badges before
+  suspecting the code or the deploy. This bit once before: `resolved_item` grew from
   `{item_id, name}` to the full search item, and cache hits kept rendering a card
   with a name and no price. The setting's comment used to say "reindex / retrain"
   only, which is the *content* case.
