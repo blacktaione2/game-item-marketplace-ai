@@ -165,12 +165,23 @@ echo "== 판정 1-c: 도메인 밖 질의를 거절하는가 (ADR-0039) =="
 #
 # **반대 방향을 같이 본다.** 거절만 확인하면 "전부 거절" 하는 게이트가 만점을
 # 받는다 — 그건 검색을 통째로 죽인 상태다.
-verdict() {  # 질의 -> out_of_domain 플래그
+# **HTTP 코드를 같이 낸다.** 첫 판본은 본문만 파싱해서, 429(한도 소진)가 오면
+# `out_of_domain=False, 결과 0건` 으로 보였고 검사는 그걸 **"게이트가 멀쩡한
+# 검색을 막았다"** 고 보고했다 — 원인을 정반대로 지목한 것이다. 위 로그인
+# 검사가 같은 교훈을 이미 달고 있었는데(429 를 따로 구분한다) 여기에 적용하지
+# 않았다.
+#
+# **이 스크립트는 /api/assistant 를 한 실행에 9회 부른다.** 일일 한도가 사용자당
+# 50회이므로 하루 5번쯤 돌리면 소진된다. 소진되면 여기가 먼저 티가 난다.
+verdict() {  # 질의 -> "HTTP코드 out_of_domain intent llm_calls 결과수"
   write_query "$TMP/d.json" "$1"
-  curl -s -X POST "$WEB/api/ai/assistant" \
+  local resp code
+  resp="$(curl -s -w '\n%{http_code}' -X POST "$WEB/api/ai/assistant" \
     -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
-    --data-binary "@$TMP/d.json" \
-  | "$PY" -c "
+    --data-binary "@$TMP/d.json")"
+  code="$(printf '%s' "$resp" | tail -1)"
+  printf '%s ' "$code"
+  printf '%s' "$resp" | sed '$d' | "$PY" -c "
 import sys,json
 try:
     d=json.load(sys.stdin)
@@ -178,21 +189,40 @@ try:
           d.get('llm_calls','?'), len(d.get('results') or []))
 except Exception: print('<파싱실패>','?','?','?')"
 }
+
+# 200 이 아니면 게이트 판정 자체가 성립하지 않는다. 그 사실을 그대로 말한다.
+transport_fault() {  # 코드 -> 사람이 읽을 사유 (200이면 빈 문자열)
+  case "$1" in
+    200) printf '' ;;
+    429) printf '한도 소진(429). 이 스크립트가 한 실행에 9회를 쓰고 일일 한도는 50회다. 1분 뒤 또는 KST 자정 이후 다시 돌린다' ;;
+    401) printf '인증 실패(401). 토큰 만료이거나 JWT_SECRET 이 두 곳에서 다르다' ;;
+    5*)  printf "서버 오류($1). docker logs gimp-ai 를 볼 것" ;;
+    *)   printf "예상 밖 응답($1)" ;;
+  esac
+}
+
 for Q in "금값 시세 알려줘" "나이키 운동화 270 있어?"; do
-  read -r V_FLAG V_INTENT V_LLM V_N <<EOF
+  read -r V_CODE V_FLAG V_INTENT V_LLM V_N <<EOF
 $(verdict "$Q")
 EOF
-  if [ "$V_FLAG" = "True" ] && [ "$V_N" = "0" ]; then
+  FAULT="$(transport_fault "$V_CODE")"
+  if [ -n "$FAULT" ]; then
+    bad "판정 불가: \"$Q\" — $FAULT"
+  elif [ "$V_FLAG" = "True" ] && [ "$V_N" = "0" ]; then
     ok "거절: \"$Q\" (intent=$V_INTENT, LLM ${V_LLM}회, 결과 0건)"
   else
     bad "거절 안 됨: \"$Q\" — out_of_domain=$V_FLAG intent=$V_INTENT llm=$V_LLM 결과 ${V_N}건"
   fi
 done
+
 # 대조군 — 이게 실패하면 게이트가 멀쩡한 검색을 막고 있다는 뜻이다.
-read -r V_FLAG V_INTENT V_LLM V_N <<EOF
+read -r V_CODE V_FLAG V_INTENT V_LLM V_N <<EOF
 $(verdict "5만원 이하 검 찾아줘")
 EOF
-if [ "$V_FLAG" = "False" ] && [ "${V_N:-0}" -gt 0 ]; then
+FAULT="$(transport_fault "$V_CODE")"
+if [ -n "$FAULT" ]; then
+  bad "대조군 판정 불가 — $FAULT"
+elif [ "$V_FLAG" = "False" ] && [ "${V_N:-0}" -gt 0 ]; then
   ok "대조군 통과: \"5만원 이하 검 찾아줘\" (결과 ${V_N}건)"
 else
   bad "대조군 실패 — 도메인 안 질의가 막혔다. out_of_domain=$V_FLAG 결과 ${V_N}건.

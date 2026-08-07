@@ -701,6 +701,16 @@ default"; a short key is broken in every profile.
   response carries two, and `grep … | head -1` read only `max-age=31536000` and
   missed `immutable`. Repeated headers are equivalent to one comma-joined value —
   **`head -1` silently invents a policy that has no basis.** Join them.
+- **Read the HTTP status before parsing the body.** An error body has none of the
+  fields you are looking for, and "field absent" usually looks identical to one
+  meaningful value: a 429 on `/api/assistant` yields no `out_of_domain` and no
+  `results`, which is exactly the signature of "the gate rejected this" — so the
+  new check reported *"the gate is blocking legitimate searches"* when the truth
+  was a spent quota. `verify-container.sh`'s login check had already learned this
+  and says so in a comment; the lesson was not carried to the check added beside
+  it. **When adding a check, read what the neighbouring checks already know.**
+  Related operational fact: that script spends **9 of the 50 daily `/api/assistant`
+  calls per run**, so roughly five runs exhaust a user's day.
 - **A one-sided metric makes the opposite extreme optimal.** Measure rejection
   only and "reject everything" scores perfectly; measure pass-through only and
   "pass everything" does. The domain-gate eval carries a hand-written
