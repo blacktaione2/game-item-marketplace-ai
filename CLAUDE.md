@@ -159,7 +159,10 @@ it but have no listings", and the model reads the second and answers anyway. Sam
 prescription as `estimate_note`. Note this path did **not** fire in the
 end-to-end check: the agent declined from its own system prompt without calling
 any tool (`llm_calls=1`), so the note had to be verified by calling the tool
-directly. A path that was never walked cannot be called working.
+directly. **A path that was never walked cannot be called working — and in an
+agent this is unusually hard to notice, because the model can skip your code and
+still answer correctly.** Check each defence layer for evidence that it ran;
+here `llm_calls` was that evidence, and the answer text carried none.
 
 The explanation prompts stopped receiving `query` in the same round. Measured on
 the same 42 cases, the previously-shipping prompt scored **주어채택 1/9 and
@@ -662,8 +665,8 @@ default"; a short key is broken in every profile.
   should stay that way — a display exists for humans and its rules will change
   again. This is the third of four times a check here was itself wrong; the
   pattern and its checklist are in
-  `docs/05-Troubleshooting/검사-자체가-틀린-사례들.md` — **19 cases now**, and
-  five of them came from a single day of building new measurement tools. Two
+  `docs/05-Troubleshooting/검사-자체가-틀린-사례들.md` — **20 cases now**, and
+  six of them came from a single day of building new measurement tools. Two
   share one cause worth naming: **Korean draws its distinctions in the verb
   ending, but regexes are easiest to write against nouns**, so `이상 거래` also
   matched `이상 거래로 판별되지 않았습니다` and `거래를 고려` also matched
@@ -777,9 +780,26 @@ Postgres and ES drift apart and search results stop resolving to real rows.
   telling the model not to confuse `불속성` with `무속성` dropped correct
   extraction from **97.5% to 22%** — naming the confusable value primed the model
   toward it. It was reverted. The line looked obviously correct and would have
-  passed review. Two harnesses exist for this:
-  `scripts/evaluate_rewrite_determinism.py` (extraction) and
-  `scripts/evaluate_explanation_prompts.py` (the explanation prompts, ADR-0038).
+  passed review. Three harnesses exist for this:
+  `scripts/evaluate_rewrite_determinism.py` (extraction),
+  `scripts/evaluate_explanation_prompts.py` (the explanation prompts, ADR-0038)
+  and `scripts/evaluate_domain_gate.py` (the domain gate, ADR-0039). The full
+  five-case catalogue with a diagnosis order and a checklist is in
+  `docs/05-Troubleshooting/LLM-동작을-측정-없이-단정하기.md`.
+  - **A before/after comparison needs a same-prompt control.** At
+    `temperature=0` one query in ten still gets rewritten differently, so a
+    new-vs-old agreement of 0.89 says nothing until you know what old-vs-old
+    scores. Running the old prompt twice is what turned "the wording is off" into
+    "the schema growing is the cost" — the loss did not move when the wording was
+    fixed (−0.234 → −0.248).
+  - **Change one thing per run.** Four wording changes went in together and made
+    the gate worse (4.13% → 5.30%); which two did it was inferred from reading the
+    flagged samples, not measured.
+  - **An enumeration meant to widen inclusion gets used as grounds for
+    exclusion**, and a prohibition fires on words rather than meaning — listing
+    the catalogue of item types cut `"고대 유물 조각 구합니다"`, and a "playing
+    the game is out of scope" rule cut `"장비 강화 할 때 쓰는 아이템"` because it
+    contains `강화`. Same failure the Korean regexes had, one layer up.
   - **The priming risk did not reproduce the second time** — explicitly telling
     the model *not* to use field names removed leakage completely (12/33 → 0/33).
     That is only knowable by measuring; the same edit could have gone either way.
