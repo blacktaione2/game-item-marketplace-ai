@@ -52,14 +52,50 @@ published() {
 # **아래 게시-포트 검사가 보는 컨테이너를 전부 포함해야 한다.** `published()` 는
 # 컨테이너가 없어도 빈 값을 내므로, 안 떠 있으면 "게시 포트 없음"으로 **통과**한다 —
 # 사례집 5·11번("안 뜬 것을 닫힌 것으로 읽었다")과 같은 형태다.
-echo "== 사전 확인: 스택이 실제로 떠 있는가 =="
+# **`running` 은 `준비됨` 이 아니다.**
+#
+# 컨테이너는 시작하자마자 `running` 이고, 그 시점의 uvicorn 은 아직 포트를 안
+# 열었다 — 실제로 `up -d` 직후 `/health` 를 물어 `Connection refused` 를 받았고,
+# 그 오류는 **"아직 안 떴다" 와 "기동에 실패했다" 를 구분해주지 못한다.**
+#
+# compose 자신은 이걸 알고 있다: `ai` 서비스 헬스체크가 `start_period: 20s`,
+# `retries: 12` 다. 그러니 검사도 그 신호를 봐야 한다 — 헬스체크가 있는
+# 컨테이너는 `healthy` 가 될 때까지 기다리고, 없는 것만 `running` 으로 본다.
+WAIT_SECONDS="${WAIT_SECONDS:-180}"
+
+health_of() {  # 헬스체크가 없으면 빈 문자열
+  docker inspect "$1" --format '{{if .State.Health}}{{.State.Health.Status}}{{end}}' 2>/dev/null
+}
+
+wait_ready() {  # 컨테이너 -> 0(준비됨) / 1(아님). 사유는 호출자가 찍는다
+  local c="$1" waited=0 status health
+  while [ "$waited" -lt "$WAIT_SECONDS" ]; do
+    status="$(docker inspect "$c" --format '{{.State.Status}}' 2>/dev/null)"
+    [ "$status" = "running" ] || return 1     # 없거나 죽었으면 기다릴 게 없다
+    health="$(health_of "$c")"
+    case "$health" in
+      "")        return 0 ;;                  # 헬스체크 없음 — running 이면 최선
+      healthy)   return 0 ;;
+      unhealthy) return 1 ;;                  # 기다려도 안 낫는다
+    esac
+    sleep 3; waited=$((waited + 3))
+  done
+  return 1
+}
+
+echo "== 사전 확인: 스택이 준비됐는가 (running 이 아니라 healthy) =="
 ALIVE=1
 for c in gimp-backend gimp-ai gimp-web gimp-rabbitmq gimp-elasticsearch gimp-postgres gimp-redis; do
-  S="$(docker inspect "$c" --format '{{.State.Status}}' 2>/dev/null)"
-  if [ "$S" = "running" ]; then
-    ok "$c 실행 중"
+  H="$(health_of "$c")"
+  if wait_ready "$c"; then
+    H="$(health_of "$c")"
+    ok "$c 준비됨${H:+ ($H)}"
   else
-    bad "$c 가 '$S' — 아래 포트 검사는 의미가 없다 (docker logs $c 를 볼 것)"
+    S="$(docker inspect "$c" --format '{{.State.Status}}' 2>/dev/null)"
+    H="$(health_of "$c")"
+    # **판정에 쓴 값을 전부 낸다.** "실패" 한 줄만 내면 안 떴는지, 아직인지,
+    # 죽었는지를 사람이 다시 조사해야 한다.
+    bad "$c 가 status='${S:-없음}' health='${H:-없음}' — 아래 검사는 의미가 없다 (docker logs $c)"
     ALIVE=0
   fi
 done
