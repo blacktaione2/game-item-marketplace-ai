@@ -17,6 +17,19 @@ class Settings(BaseSettings):
     # 다양성이 자산인 곳(하드네거티브 생성)만 자기 클라이언트를 따로 만든다.
     openai_temperature: float = 0.0
 
+    # **OpenAI 장애 시 폴백 프로바이더** (ADR-0042 / 계획서 ADR-0004).
+    #
+    # 키가 비면 폴백을 아예 만들지 않는다 — 없는 폴백이 있는 척하는 것보다 낫고,
+    # 그 사실이 기동 로그에 남는다. `ai/.env` 에 넣어야 한다. **저장소 루트의
+    # `.env` 는 docker-compose 용이라 앱이 읽지 않는다** — 실제로 이 라운드가
+    # 그 상태에서 시작했다(루트에만 있어서 아무 일도 안 일어났다).
+    anthropic_api_key: str = ""
+    anthropic_model: str = "claude-sonnet-4-5"
+    # 연속 실패가 이만큼 쌓이면 1차를 건너뛴다. 예외만 잡아 넘기면 장애 동안
+    # 모든 요청이 1차 타임아웃을 먼저 문다 — fail-open 의 지연 축이다.
+    llm_failure_threshold: int = 3
+    llm_circuit_reset_seconds: float = 60.0
+
     elasticsearch_url: str = "http://localhost:9200"
     index_prefix: str = "items"
 

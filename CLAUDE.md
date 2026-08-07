@@ -804,6 +804,25 @@ default"; a short key is broken in every profile.
   turns it into a second tune set — and **adoption and rejection are asymmetric**,
   since two agreeing runs are needed to ship a change but one clean failure is
   enough not to, the default being no change.
+- **OpenAI failure now falls over to Claude, then to a deterministic sentence**
+  (ADR-0042 in front of ADR-0041). Four things worth carrying:
+  - **Most of `anthropic_client.py` is format translation, and that is the
+    risk.** `LLMClient` is neutral but the agent loop speaks OpenAI shapes
+    (`{"role": "tool", "tool_call_id"}`), so matching only the interface
+    leaves `complete()` working while **the agent breaks silently** — exactly
+    when the fallback is needed. Consecutive tool results must be merged into
+    one user message; skip that and it works with one tool and 400s with two.
+  - **The breaker exists for a latency reason, not a correctness one.** Plain
+    try/except means every request during an outage pays the primary's
+    timeout first — the same axis that made a dead broker turn purchases into
+    60-second successes (ADR-0030). No new dependency: a counter and a
+    timestamp, like the rate limiters reusing what each side already had.
+  - **When both fail, the *primary* exception is raised.** Re-raising the
+    secondary's would point diagnosis at the wrong provider.
+  - **No key means no wrapper**, logged at startup with the file to fix —
+    wrapping a fallback that cannot work hides its absence until an outage.
+    The fallback runs at the same `temperature`; a shakier fallback makes
+    answers *worse* exactly when things are already broken.
 - The AI limiter **fails open** when Redis is down (it protects cost, not
   correctness). The purchase lock is the opposite and rejects — same Redis,
   deliberately opposite policies.
@@ -868,9 +887,14 @@ Elasticsearch. **Run it (and apply the SQL) whenever corpus items change**, or
 Postgres and ES drift apart and search results stop resolving to real rows.
 
 ### Gotchas worth knowing before touching this repo
-- **`OPENAI_API_KEY` belongs in `ai/.env`**, not the repo-root `.env`. The root
-  one is for docker-compose; the FastAPI app reads `ai/.env`. Both are
-  gitignored.
+- **`OPENAI_API_KEY` and `ANTHROPIC_API_KEY` belong in `ai/.env`**, not the
+  repo-root `.env`. The root one is for docker-compose; the FastAPI app reads
+  `ai/.env`, and compose's `ai`/`ai-init` services load that same file via
+  `env_file`, so **that one location covers local runs and the container**.
+  Both are gitignored. This bit for real: `ANTHROPIC_API_KEY` sat in the root
+  `.env` where nothing read it, and the fallback silently did not exist
+  (ADR-0042). Related: I claimed the key was absent **without looking** —
+  "it isn't there" and "I didn't check" are different statements.
 - **A code default that coincidentally equals the `.env.example` value hides a
   missing declaration until the secret is rotated.** The `ai` service got
   `REDIS_URL` but not `REDIS_PASSWORD`, so it connected as `gimp_local_pw` — the
