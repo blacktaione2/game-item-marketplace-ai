@@ -203,11 +203,23 @@ updated: 2026-07-31
 | `intent` | 추가 필드 | `llm_calls` |
 |---|---|---|
 | `faq_smalltalk` | — | **0** |
-| `item_search` | `results[]` | 2 |
-| `item_search` (0건) | `no_results: true`, `conditions[]`, `applied_filters` | **1** |
-| `price_forecast` | `forecast`, `resolved_item` | 2 |
+| `item_search` | `results[]` | **2** |
+| `item_search` (0건) | `no_results: true`, `conditions[]`, `applied_filters` | **2** |
+| `item_search` · `price_forecast` (도메인 밖) | `out_of_domain: true`, `results: []` | **2** |
+| `price_forecast` | `forecast`, `resolved_item` | **3** |
 | `anomaly_check` | `detection` | 1 |
 | `compound` | `tool_calls[]`, `tool_failures`, `stop_reason` | 1~6 (도구 호출 수 + 1) |
+
+> **검색을 타는 분기는 질의이해 + 도메인 판정으로 2회다** (ADR-0039). 둘은
+> `asyncio.gather`로 **동시에** 나가므로 지연은 하나치인데 **비용은 둘**이다.
+> `timings`에 `query_understanding_ms`와 `domain_gate_ms`가 따로 찍히는데,
+> 병렬이라 **두 값을 더하면 실제 지연보다 크게 나온다** — 검색 전체 시간은
+> `execution_ms`로 봐야 한다.
+>
+> 이 값은 세 번 바뀌었다: 2(검색 설명 LLM 있던 시절) → 1(ADR-0036) →
+> 2(ADR-0039). 바뀌지 않은 건 **검색 분기 전체가 같은 값**이라는 점이다.
+> 그래서 `llm_calls`로는 0건 여부도, 도메인 밖 여부도 알 수 없다 — 각각
+> `no_results`와 `out_of_domain`을 읽어야 한다.
 
 **0건 응답 예시** — 조건을 같이 돌려주는 것이 요점이다. 결과가 있으면 항목이
 스스로 종류·속성을 밝히지만 0건에는 검증할 대상이 없다.
@@ -231,6 +243,35 @@ updated: 2026-07-31
 > 뜻한다"고 적었는데 틀렸다 — `faq_smalltalk`은 확정 응답이라 **미적중에서도
 > 0**이다. 실배포에서 `hit=false, llm_calls=0`으로 실측됐다. 적중 여부는
 > `cache.hit`으로 읽고, `llm_calls`는 분기 비용만 말한다.
+
+**도메인 밖 응답 예시** (ADR-0039) — 이 거래소가 다루지 않는 주제다.
+
+```jsonc
+{
+  "intent": "price_forecast",
+  "answer": "게임 아이템·계정·게임 재화 거래에 관한 질문에만 답변할 수 있습니다. 아이템 검색, 시세 확인, 이상거래 점검을 도와드립니다.",
+  "results": [],
+  "out_of_domain": true,
+  "llm_calls": 2
+}
+```
+
+> **질의를 되풀이하지 않는다.** "삼성전자 주식은 다루지 않습니다"처럼 대상을
+> 받아 적으면, 게이트가 틀렸을 때(도메인 안을 거절했을 때) 그 문장이 오히려
+> 설득력을 갖는다. `_out_of_domain()`은 아예 질의를 인자로 받지 않는다.
+>
+> `llm_calls`가 **0이 아니라 2**인 이유: 판정과 질의이해가 병렬로 함께
+> 나갔으므로, 도메인 밖이라는 걸 알았을 때는 이미 둘 다 돈 뒤다. 판정을 먼저
+> 하고 통과할 때만 이해시키면 여기서 1을 아낄 수 있지만, 그 대가는 **모든
+> 요청의 지연**이라 택하지 않았다.
+>
+> `no_results`와 **다른 판정**이다. 0건은 조건을 완화하면 결과가 나올 수
+> 있고, 이건 완화할 조건이 없다. 둘 다 캐시에 저장되지 않지만 **이유가 다르다**
+> — 0건은 "가장 낡기 쉬운 답"이라서고, 도메인 밖은 낡지 않는다(내일도 밖이다).
+> 저장하지 않는 근거는 오직 **판정이 비결정적**이라는 것 하나다.
+>
+> `/api/search`도 같은 게이트를 지난다 — `in_domain: false`, `results: []`를
+> 내고 임베딩·ES·리랭킹을 아예 건너뛴다.
 
 **상태 코드**
 
@@ -451,8 +492,12 @@ Prometheus 텍스트 포맷. **Prometheus를 띄우지 않아도 쓸모가 있�
 > (ADR-0025). 실측상 **`cache_lookup`이 73%**이고 `cache_encode`는 27%다 —
 > ADR-0020이 "임베딩 낭비"로 적은 것은 틀린 귀속이었다.
 
-`outcome`: `ok` · `no_results` · `tool_failure` — 뒤 둘은 에러가 아니지만
-부하테스트에서 구분해서 봐야 한다.
+`outcome`: `ok` · `out_of_domain` · `no_results` · `tool_failure` — 뒤 셋은
+에러가 아니지만 부하테스트에서 구분해서 봐야 한다.
+
+> `out_of_domain`이 **운영에서 게이트를 보는 유일한 창**이다 (ADR-0039).
+> 오거부율은 배포 전에 평가셋으로 한 번 쟀을 뿐이고 실제 질의 분포는 그것과
+> 다르다 — 이 값이 갑자기 늘면 게이트가 멀쩡한 질의를 막고 있다는 뜻이다.
 
 > **라벨에 `item_id`·`trade_id`·`user_id`·질의 문자열을 넣지 말 것.** 전부
 > 무한히 늘어나는 값이라 시계열이 폭발한다. "어떤 아이템이 느렸나"는 메트릭이

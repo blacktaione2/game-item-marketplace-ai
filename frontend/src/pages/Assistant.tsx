@@ -304,6 +304,15 @@ function Result({
               결과 없음 <strong>LLM 설명 생략</strong>
             </span>
           )}
+          {/* **거절도 파이프라인의 동작이다** (ADR-0039). 이게 없으면 화면에는
+              안내 문장 하나만 남아서, 게이트가 판단한 것인지 그냥 검색이
+              실패한 것인지 구분되지 않는다. `no_results` 와 나란히 두는 이유는
+              둘이 서로 다른 판정이기 때문이다 — 동시에 뜰 일은 없다. */}
+          {data.out_of_domain && (
+            <span className={`badge ${data.llm_calls > 1 ? "fail" : "hit"}`}>
+              도메인 밖 <strong>검색·설명 생략</strong>
+            </span>
+          )}
           {data.tool_failures ? (
             <span className="badge fail">
               도구 실패 <strong>{data.tool_failures}건</strong>

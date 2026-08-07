@@ -80,6 +80,9 @@ _STAGE_BY_KEY: dict[str, str] = {
     "routing_ms": "routing",
     "execution_ms": "execution",
     "query_understanding_ms": "query_understanding",
+    # 도메인 판정 (ADR-0039). 질의이해와 **병렬**로 나가므로 둘을 더하면 실제
+    # 지연보다 크게 나온다 — 검색 전체 시간은 `execution_ms` 로 봐야 한다.
+    "domain_gate_ms": "domain_gate",
     "embedding_ms": "embedding",
     "retrieval_ms": "retrieval",
     "rerank_ms": "rerank",
@@ -135,6 +138,14 @@ def _outcome(response: dict[str, Any]) -> str:
     0건과 도구 실패는 에러가 아니지만 부하테스트에서 구분해서 봐야 한다 —
     0건이 늘면 캐시 미저장 경로가 늘고, 도구 실패가 늘면 에이전트가 재시도한다.
     """
+    # **도메인 밖 거절은 0건보다 먼저 본다** (ADR-0039). 두 플래그가 같이 설 일은
+    # 없지만, 순서를 정해두지 않으면 나중에 하나가 다른 하나를 가린다.
+    #
+    # 이 열이 있어야 게이트를 **운영에서** 볼 수 있다. 오거부율은 배포 전에 한 번
+    # 쟀을 뿐이고, 실제 사용자 질의 분포는 평가셋과 다르다 — 이 값이 갑자기 늘면
+    # 게이트가 멀쩡한 질의를 막고 있다는 뜻이다.
+    if response.get("out_of_domain"):
+        return "out_of_domain"
     if response.get("no_results"):
         return "no_results"
     if response.get("tool_failures"):

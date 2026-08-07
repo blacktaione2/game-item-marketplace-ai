@@ -93,6 +93,13 @@ export interface AssistantResponse {
   results?: SearchResultItem[];
   /** 검색이 0건이었음. LLM 없이 만들어진 확정 응답이다. */
   no_results?: boolean;
+  /**
+   * 이 거래소가 다루는 주제가 아니었음 (ADR-0039).
+   *
+   * `no_results` 와 **다른 판정**이다. 0건은 조건을 완화하면 결과가 나올 수
+   * 있고, 이건 완화할 조건이 없다.
+   */
+  out_of_domain?: boolean;
   /** 0건일 때만 온다 — 무슨 조건으로 찾았는지가 유일한 검증 근거라서. */
   conditions?: string[];
   applied_filters?: Record<string, string | number>;

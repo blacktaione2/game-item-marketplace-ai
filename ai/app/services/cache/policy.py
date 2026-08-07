@@ -70,6 +70,20 @@ def is_cacheable(intent: Intent, response: dict[str, Any] | None = None) -> bool
     if response is not None and response.get("no_results"):
         return False
 
+    # **"이 거래소가 다루는 주제가 아니다" 도 저장하지 않는다** (ADR-0039).
+    # 위와 **같은 이유 1, 다른 이유 2**다 — 둘을 한 덩어리로 읽으면 안 된다.
+    #
+    # 이유 1은 그대로 적용된다: 판정 근거가 LLM 의 비결정적 판단이라, 질의
+    # 문자열로 캐시하면 여러 판정 중 하나를 임의로 골라 TTL 동안 고정한다.
+    # 오거부(도메인 안을 밖이라고 판정)가 굳으면 멀쩡한 검색이 TTL 내내 막힌다.
+    #
+    # **이유 2는 적용되지 않는다.** 0건은 매물 하나만 등록돼도 거짓이 되지만,
+    # `"삼성전자 주식"` 은 내일도 이 거래소 밖이다. 즉 이 응답은 낡지 않는다 —
+    # 그런데도 저장하지 않는 근거는 오로지 이유 1이다. 판정이 결정적으로 바뀌면
+    # (예: 룰이나 보정된 분류기로 옮기면) 이 금지는 다시 볼 수 있다.
+    if response is not None and response.get("out_of_domain"):
+        return False
+
     return True
 
 

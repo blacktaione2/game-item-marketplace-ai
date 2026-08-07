@@ -96,15 +96,30 @@ _DEFAULT_FAQ = (
 # 읽혔고**, 그래서 모델이 `cold_start가 false이므로` 를 사용자 문장에 그대로 냈다.
 # 조건 분기는 이제 `_forecast_branch` 가 코드로 한다 — 모델이 그 필드를 볼 이유가
 # 없어진다. 측정: `scripts/evaluate_explanation_prompts.py`.
+# **질의를 넘기지 않는다** (ADR-0039). 넘기면 모델이 `result["name"]` 을 손에
+# 쥐고도 **질의의 주어를 고른다** — 배포된 화면에서 `"삼성전자 주식 어때?"` 에
+# `"삼성전자 주식의 최근 거래가는 약 26,090원"` 이라고 답했다. 숫자는 다른
+# 아이템의 진짜 예측값이었다.
+#
+# "질의의 대상을 그대로 쓰지 마세요" 를 한 줄 더하는 안도 있었지만, 이 저장소는
+# **혼동 대상을 이름으로 부르면 오히려 그쪽으로 쏠린 전례**가 있다(97.5% → 22%).
+# 안 넘기면 되풀이가 **구조적으로 불가능**하다 — ADR-0036 이 검색 설명 LLM 을
+# 아예 없앤 것과 같은 처방이다.
+#
+# 측정(`scripts/evaluate_explanation_prompts.py`, 같은 42건): 이전 판본은 도메인
+# 밖 케이스 9건에서 주어채택 1건 + **대상명 누락 9건**(`"이 아이템의…"` 이라고만
+# 하고 어느 아이템인지 끝내 안 밝힘). 이 판본은 **둘 다 0**이다. 정상 질의
+# 24건에서는 두 판본이 같다 — 즉 이건 게이트가 뚫렸을 때의 **2차 방어선**이다.
 _FORECAST_PROMPT = """다음은 아이템 시세 예측 결과입니다. 사용자에게 2~3문장으로 설명하세요.
 
 - 아래 결과는 내부 데이터입니다. **필드 이름(cold_start, baseline_price 등)을
   답변에 쓰지 마세요.** 사용자는 그 구조를 모릅니다.
+- **결과에 있는 아이템 이름을 답변에 그대로 밝히세요.** 그 아이템이 이 예측의
+  대상입니다.
 - 기준가는 {baseline_source}입니다. 판매자가 정한 등록가와 혼동하지 마세요.
 - {conditional}
 - 완결된 문장으로 끝내세요.
 
-질의: {query}
 결과: {result}"""
 
 # ADR-0038 로 교체됐다. 이전 판본의 마지막 지시가 `…별개라는 점.` 이라는
@@ -118,7 +133,6 @@ _ANOMALY_PROMPT = """다음은 거래 이상 여부 판정 결과입니다. 2~3�
 - **마지막에 다음 내용을 완결된 한 문장으로 덧붙이세요**: 이 판정은 합성 데모
   거래 데이터를 대상으로 한 것이며, 사용자의 실제 거래 번호와는 체계가 다릅니다.
 
-질의: {query}
 결과: {result}"""
 
 
@@ -264,6 +278,8 @@ async def _execute(
         result = await run_search(
             es=es, llm_client=llm_client, tenant_code=tenant_code, query=query, size=5
         )
+        if not result["in_domain"]:
+            return {**_out_of_domain(), "timings": result["timings"]}, intent
         if not result["results"]:
             return {**_no_results(result["filters"]), "timings": result["timings"]}, intent
         # 0건과 **같은 방식**으로 확정 응답을 만든다 (ADR-0036). 예전에는 여기서
@@ -272,7 +288,9 @@ async def _execute(
             {
                 "answer": _search_answer(result["filters"], len(result["results"])),
                 "results": result["results"],
-                "llm_calls": 1,
+                # 질의이해 + 도메인 판정. 둘은 병렬이라 지연은 하나치인데
+                # **비용은 둘이다** — 그래서 이 값은 2다 (ADR-0039).
+                "llm_calls": 2,
                 "timings": result["timings"],
             },
             intent,
@@ -296,7 +314,7 @@ async def _execute(
         # 넘기고 있어서, 이 경로만 노출돼 있었다(ADR-0028).
         result = await run_cpu(detect_trade, tenant_code, trade_id, IdSpace.SYNTHETIC)
         answer, explain_ms = await _timed_complete(
-            llm_client, _ANOMALY_PROMPT.format(query=query, result=result)
+            llm_client, _ANOMALY_PROMPT.format(result=result)
         )
         return (
             {
@@ -321,6 +339,11 @@ async def _forecast_branch(
     found = await run_search(
         es=es, llm_client=llm_client, tenant_code=tenant_code, query=query, size=1
     )
+    if not found["in_domain"]:
+        # **에이전트로 올리지 않는다.** 다른 실패는 "도구를 더 써보면 풀린다"라서
+        # 올릴 값어치가 있지만, 도메인 밖은 도구를 더 써도 밖이다. 올리면 LLM을
+        # 3~5회 더 태워서 다른 문장으로 같은 거짓말을 만든다.
+        return {**_out_of_domain(), "timings": found["timings"]}, Intent.PRICE_FORECAST
     if not found["results"]:
         return await _agent_branch(llm_client, tenant_code, query)
 
@@ -335,7 +358,6 @@ async def _forecast_branch(
     answer, explain_ms = await _timed_complete(
         llm_client,
         _FORECAST_PROMPT.format(
-            query=query,
             result=result,
             baseline_source=(
                 "거래 이력 부족 상태의 추정 기준가" if cold_start else "최근 체결가"
@@ -356,7 +378,8 @@ async def _forecast_branch(
             # 그러면 화면이 검색 결과 카드와 같은 모양을 만들 수 없어 별도
             # 표시를 만들게 된다 — 같은 아이템이 화면마다 다르게 보인다.
             "resolved_item": item,
-            "llm_calls": 2,
+            # 아이템 특정용 검색(질의이해 + 도메인 판정, 병렬) + 설명 = 3.
+            "llm_calls": 3,
             # 아이템 특정용 검색 + 예측 + 설명. 키가 겹치지 않아 병합이 안전하다.
             "timings": {
                 **found["timings"],
@@ -412,13 +435,15 @@ def _no_results(filters: dict[str, Any]) -> dict[str, Any]:
     않는다는 근거가 프롬프트 한 줄뿐이고, 결과가 없다는 걸 이미 아는 상태에서
     설명 호출을 한 번 더 쓴다.
 
-    `llm_calls`가 0이 아니라 **1**인 점에 주의. `run_search` 안의
-    `understand_query`가 이미 한 번 호출됐고 그건 건너뛸 수 없다 — 어떤 필터가
-    걸렸는지 알아야 0건 판정이 성립하기 때문이다.
+    `llm_calls`가 0이 아닌 점에 주의. `run_search` 안의 `understand_query`가 이미
+    호출됐고 그건 건너뛸 수 없다 — 어떤 필터가 걸렸는지 알아야 0건 판정이
+    성립하기 때문이다.
 
-    **ADR-0036 이후로는 결과가 있는 경로도 1이다.** 이 함수가 처음 생겼을 때는
-    "0건만 2 → 1"이 요점이었는데, 이제 검색 분기 전체가 1이라 그 대비가 없다.
-    즉 `llm_calls`로는 0건 여부를 알 수 없다 — `no_results` 플래그를 봐야 한다.
+    **값은 2다** (ADR-0039). 질의이해와 도메인 판정이 병렬로 함께 나가므로
+    지연은 하나치지만 비용은 둘이다. ADR-0036 시점에는 1이었다.
+
+    어느 쪽이든 **`llm_calls`로는 0건 여부를 알 수 없다** — 검색 분기 전체가 같은
+    값이기 때문이다. `no_results` 플래그를 봐야 한다.
     """
     conditions = _describe_filters(filters)
     if conditions:
@@ -443,7 +468,35 @@ def _no_results(filters: dict[str, Any]) -> dict[str, Any]:
         # 진짜 부재를 구분할 수단이 특히 필요하다.
         "applied_filters": filters,
         "conditions": conditions,
-        "llm_calls": 1,
+        "llm_calls": 2,
+    }
+
+
+def _out_of_domain() -> dict[str, Any]:
+    """이 거래소가 다루지 않는 주제 — 확정 응답을 만든다 (ADR-0039).
+
+    `"삼성전자 주식 어때?"` 가 시세 분기를 그대로 타고 **"삼성전자 주식의 최근
+    거래가는 약 26,090원"** 이라고 답한 것이 이 함수가 생긴 이유다. 숫자는
+    `게임 머니 1000만 골드` 의 진짜 예측값이었고 주어만 거짓이었다.
+
+    **질의를 되풀이하지 않는다.** "삼성전자 주식은 다루지 않습니다" 처럼 대상을
+    받아 적으면, 게이트가 틀렸을 때(도메인 안을 거절했을 때) 그 문장이 오히려
+    설득력을 갖는다. 무엇을 다루는지만 말하고 무엇을 물었는지는 말하지 않는다.
+
+    `llm_calls` 가 0이 아니라 **2**인 이유는 `_no_results` 와 같다 — 판정 호출과
+    질의이해가 **병렬로 함께 나갔고**, 도메인 밖이라는 걸 알았을 때는 이미 둘 다
+    돈 뒤다. 판정을 먼저 하고 통과할 때만 이해시키면 여기서 1을 아낄 수 있지만,
+    그 대가는 **모든 요청의 지연**이다(search/pipeline.py 주석 참고).
+    """
+    return {
+        "answer": (
+            "게임 아이템·계정·게임 재화 거래에 관한 질문에만 답변할 수 있습니다. "
+            "아이템 검색, 시세 확인, 이상거래 점검을 도와드립니다."
+        ),
+        "results": [],
+        # 캐시 정책이 이 플래그로 저장을 막는다(policy.is_cacheable).
+        "out_of_domain": True,
+        "llm_calls": 2,
     }
 
 

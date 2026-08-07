@@ -89,6 +89,21 @@ FORECAST_ITEMS = [1, 3, 5, 7, 24]
 # 표본이 3회짜리 하나뿐이라 그 지표가 사실상 안 돈다.
 ANOMALY_TRADES = [23659, 23673, 23663, 1, 500, 20000]
 
+# **도메인 밖 질의 × 진짜 예측 결과** — 관측된 결함을 그대로 재현한 케이스다.
+#
+# 게이트(ADR-0039)가 막긴 하지만 그것도 LLM 판정이라 100%가 아니다. 뚫렸을 때
+# 설명이 두 번째 방어선이 되는지를 이 케이스가 잰다.
+#
+# 세 번째 값은 **답변에 나오면 안 되는 고유명사**다. 고유명사를 고른 이유는
+# 이 저장소가 한국어 어미 때문에 지표를 두 번 틀렸기 때문이다 — `이상 거래`가
+# `이상 거래로 판별되지 않았습니다`를 잡았고, `거래를 고려`가 `거래를 고려하실
+# 때`를 잡았다. `삼성전자`는 어미가 붙지 않고, 정상 답변에는 등장할 길이 없다.
+OOD_FORECAST_CASES = [
+    (1, "삼성전자 주식 어때?", "삼성전자"),
+    (3, "비트코인 지금 사도 될까", "비트코인"),
+    (24, "서울 아파트 전세 얼마야", "아파트"),
+]
+
 # --- 지표 ------------------------------------------------------------------
 #
 # 답변에 나오면 안 되는 내부 식별자. **응답 JSON의 키 이름들이다** — 사용자는
@@ -160,6 +175,30 @@ _ADVICE = re.compile(
 
 def advises(answer: str) -> bool:
     return bool(_ADVICE.search(answer))
+
+
+def adopts_subject(answer: str, subject: str) -> bool:
+    """답변이 **질의의 주어를 예측 대상으로 받아 적었는가** (ADR-0039).
+
+    도메인 밖 케이스에서만 의미가 있다. 정상 케이스는 `subject` 가 비어 있어
+    항상 False 다 — 그래서 이 열의 분모는 다른 열과 다르다.
+    """
+    return bool(subject) and subject in answer
+
+
+def omits_item_name(answer: str, item_name: str) -> bool:
+    """답변이 **어느 아이템 얘기인지 밝히지 않았는가.**
+
+    `adopts_subject` 의 짝이다. 주어를 안 받아 적더라도 대상을 아예 말하지
+    않으면 사용자는 여전히 무엇에 대한 답인지 모른다 — "고치면서 다른 걸 잃는"
+    쪽을 잡기 위해 같이 잰다.
+
+    이름 전체(`+9 강화 롱소드`)를 요구하지는 않는다. 모델이 `롱소드는 …` 처럼
+    줄여 쓰는 것은 정상이므로, 두 글자 이상 토큰 하나만 있으면 밝힌 것으로 본다.
+    """
+    if not item_name:
+        return False
+    return not any(token in answer for token in item_name.split() if len(token) >= 2)
 
 
 def contradicts(answer: str, kind: str, result: dict[str, Any]) -> bool:
@@ -247,6 +286,43 @@ _ANOMALY_C = """당신은 게임 아이템 거래소의 이상거래 담당자�
 분석: {result}"""
 
 
+# --- D: 질의를 아예 넘기지 않는다 (ADR-0039 라운드) --------------------------
+#
+# 배포된 화면에서 `"삼성전자 주식 어때?"` 가 시세 분기를 타고 **"삼성전자 주식의
+# 최근 거래가는 약 26,090원"** 이라고 답했다. 숫자는 `게임 머니 1000만 골드` 의
+# 진짜 예측값이었다 — 모델은 `result["name"]` 을 손에 쥐고도 **질의의 주어를
+# 골랐다.**
+#
+# 도메인 게이트가 이걸 막지만 게이트도 LLM 판정이라 100% 가 아니다. 게이트가
+# 뚫렸을 때 **설명이 두 번째 방어선이 되는가**를 여기서 잰다.
+#
+# B 에 "질의의 대상을 그대로 쓰지 마세요" 를 한 줄 더하는 안도 있었지만, 이
+# 저장소는 **혼동 대상을 이름으로 부르면 오히려 그쪽으로 쏠린 전례**가 있다
+# (97.5% → 22%). `{query}` 를 안 넘기면 되풀이가 **구조적으로 불가능**해진다 —
+# ADR-0036 이 검색 설명 LLM 을 아예 없앤 것과 같은 처방이다.
+_FORECAST_D = """다음은 아이템 시세 예측 결과입니다. 사용자에게 2~3문장으로 설명하세요.
+
+- 아래 결과는 내부 데이터입니다. **필드 이름(cold_start, baseline_price 등)을
+  답변에 쓰지 마세요.** 사용자는 그 구조를 모릅니다.
+- **결과에 있는 아이템 이름을 답변에 그대로 밝히세요.** 그 아이템이 이 예측의
+  대상입니다.
+- 기준가는 {baseline_source}입니다. 판매자가 정한 등록가와 혼동하지 마세요.
+- {conditional}
+- 완결된 문장으로 끝내세요.
+
+결과: {result}"""
+
+_ANOMALY_D = """다음은 거래 이상 여부 판정 결과입니다. 2~3문장으로 설명하세요.
+가장 큰 기여 요인을 근거로 들어 설명하세요.
+
+- 아래 결과는 내부 데이터입니다. **필드 이름(contributions, is_anomaly 등)을
+  답변에 쓰지 마세요.**
+- **마지막에 다음 내용을 완결된 한 문장으로 덧붙이세요**: 이 판정은 합성 데모
+  거래 데이터를 대상으로 한 것이며, 사용자의 실제 거래 번호와는 체계가 다릅니다.
+
+결과: {result}"""
+
+
 # --- 에이전트(복합 분기) ----------------------------------------------------
 #
 # 복합 질의는 MCP 도구 결과 JSON 을 그대로 모델에게 보여준 뒤 최종 답변을 쓰게
@@ -298,10 +374,30 @@ def agent_payload(result: dict[str, Any], variant: str) -> dict[str, Any]:
 
 AGENT_VARIANTS = ("A(현재)", "B(명시)")
 
-VARIANTS = ("A(현재)", "B(명시)", "C(미언급)")
+VARIANTS = ("A(현재)", "B(명시)", "C(미언급)", "D(질의없음)")
 
 
 def build_prompt(kind: str, variant: str, query: str, result: dict[str, Any]) -> str:
+    if variant == "D(질의없음)":
+        # **`query` 를 넘길 자리가 없다.** 다른 안들과 달리 시그니처가 다르므로
+        # 먼저 가른다 — `.format(query=...)` 를 부르면 조용히 무시되는 게 아니라
+        # 이 안의 요점이 사라진다.
+        if kind == "forecast":
+            cold = result["cold_start"]
+            return _FORECAST_D.format(
+                result=result,
+                baseline_source=(
+                    "최근 체결가" if not cold else "거래 이력 부족 상태의 추정 기준가"
+                ),
+                conditional=(
+                    "이 아이템은 거래 이력이 부족해 비슷한 아이템들의 추세를 빌려 "
+                    "추정한 값입니다. 그 점을 반드시 밝히세요."
+                    if cold
+                    else "이 아이템은 거래 이력이 충분합니다. 추정이라는 언급은 하지 마세요."
+                ),
+            )
+        return _ANOMALY_D.format(result=result)
+
     if kind == "forecast":
         cold = result["cold_start"]
         baseline = "최근 체결가" if not cold else "거래 이력 부족 상태의 추정 기준가"
@@ -347,16 +443,30 @@ async def collect() -> list[dict[str, Any]]:
         temperature=settings.openai_temperature,
     )
 
-    cases: list[tuple[str, str, dict[str, Any]]] = []
-    print("[준비] 도구 결과를 케이스당 한 번만 계산한다 — 세 안이 같은 입력을 본다")
-    for item_id in FORECAST_ITEMS:
+    # (kind, query, result, 답변에 나오면 안 되는 주어)
+    cases: list[tuple[str, str, dict[str, Any], str]] = []
+    forecasts: dict[int, dict[str, Any]] = {}
+    print("[준비] 도구 결과를 케이스당 한 번만 계산한다 — 네 안이 같은 입력을 본다")
+    for item_id in {*FORECAST_ITEMS, *(i for i, _, _ in OOD_FORECAST_CASES)}:
         try:
-            result = await forecast_price(es=es, tenant_code=TENANT, item_id=item_id)
+            forecasts[item_id] = await forecast_price(
+                es=es, tenant_code=TENANT, item_id=item_id
+            )
         except Exception as error:
             print(f"  시세 item={item_id} 건너뜀: {type(error).__name__}")
-            continue
-        cases.append(("forecast", f"아이템 {item_id}번 시세 알려줘", result))
-        print(f"  시세 item={item_id}  cold_start={result['cold_start']}")
+
+    for item_id in FORECAST_ITEMS:
+        if item_id in forecasts:
+            result = forecasts[item_id]
+            cases.append(("forecast", f"아이템 {item_id}번 시세 알려줘", result, ""))
+            print(f"  시세 item={item_id}  cold_start={result['cold_start']}")
+
+    # **도메인 밖 질의 × 진짜 결과.** 예측은 위와 같은 것을 재사용한다 — 다시
+    # 계산하면 예측 자체의 변동이 프롬프트 차이로 잡힌다.
+    for item_id, query, subject in OOD_FORECAST_CASES:
+        if item_id in forecasts:
+            cases.append(("forecast", query, forecasts[item_id], subject))
+            print(f"  도메인밖 item={item_id}  주어={subject}  \"{query}\"")
 
     for trade_id in ANOMALY_TRADES:
         try:
@@ -364,7 +474,7 @@ async def collect() -> list[dict[str, Any]]:
         except Exception as error:
             print(f"  이상 trade={trade_id} 건너뜀: {type(error).__name__}")
             continue
-        cases.append(("anomaly", f"거래 {trade_id}번 이상거래야?", result))
+        cases.append(("anomaly", f"거래 {trade_id}번 이상거래야?", result, ""))
         print(f"  이상 trade={trade_id}  is_anomaly={result['is_anomaly']}")
 
     if not cases:
@@ -375,7 +485,7 @@ async def collect() -> list[dict[str, Any]]:
     print(f"\n[수집] 케이스 {len(cases)} × 안 {len(VARIANTS)} × 반복 {REPEATS} = LLM {total}회")
 
     rows: list[dict[str, Any]] = []
-    for kind, query, result in cases:
+    for kind, query, result, subject in cases:
         for variant in VARIANTS:
             prompt = build_prompt(kind, variant, query, result)
             for _ in range(REPEATS):
@@ -386,21 +496,26 @@ async def collect() -> list[dict[str, Any]]:
                         "kind": kind,
                         "query": query,
                         # 채점에 필요한 사실만 남긴다. 결과 전체를 넣으면 파일이
-                        # 커지고, 정작 채점은 이 둘만 본다.
+                        # 커지고, 정작 채점은 이것들만 본다.
                         "is_anomaly": bool(result.get("is_anomaly", False)),
                         "cold_start": bool(result.get("cold_start", False)),
+                        "ood_subject": subject,
+                        "item_name": str(result.get("name", "")),
                         "answer": answer,
                     }
                 )
-            print(f"  {kind:<9}{variant:<10}{query}")
+            print(f"  {kind:<9}{variant:<12}{query}")
 
     # --- 에이전트 경로 -----------------------------------------------------
     #
     # 시세 케이스만 쓴다 — 이 결함(도구 필드명 누출)이 나는 곳이 거기다.
     print()
     print("[수집] 에이전트 경로 (시스템 프롬프트 + 도구 페이로드 → 최종 문장)")
-    for kind, query, result in cases:
-        if kind != "forecast":
+    for kind, query, result, subject in cases:
+        # 도메인 밖 케이스는 여기서 제외한다 — 에이전트 경로의 방어는 MCP 도구가
+        # 내는 안내문(ADR-0039)이지 이 최종 문장 프롬프트가 아니다. 섞으면 이
+        # 표의 `주어채택` 열이 다른 방어선을 재게 된다.
+        if kind != "forecast" or subject:
             continue
         for variant in AGENT_VARIANTS:
             system = _AGENT_SYSTEM_A if variant == "A(현재)" else _AGENT_SYSTEM_B
@@ -420,6 +535,8 @@ async def collect() -> list[dict[str, Any]]:
                         "query": query,
                         "is_anomaly": False,
                         "cold_start": bool(result.get("cold_start", False)),
+                        "ood_subject": "",
+                        "item_name": str(result.get("name", "")),
                         "answer": answer,
                     }
                 )
@@ -443,12 +560,17 @@ def score(rows: list[dict[str, Any]]) -> None:
         variant, kind, answer = row["variant"], row["kind"], row["answer"]
         result = {"is_anomaly": row["is_anomaly"], "cold_start": row["cold_start"]}
         tally[variant]["n"] += 1
+        subject = row.get("ood_subject", "")
+        if subject:
+            tally[variant]["n밖"] += 1
         for label, hit in (
             ("누출", bool(leaked(answer))),
             ("미완결", incomplete(answer)),
             ("면책누락", missing_disclaimer(answer, kind, result)),
             ("모순", contradicts(answer, kind, result)),
             ("권유", advises(answer)),
+            ("주어채택", adopts_subject(answer, subject)),
+            ("대상명누락", omits_item_name(answer, row.get("item_name", ""))),
         ):
             if hit:
                 tally[variant][label] += 1
@@ -458,13 +580,19 @@ def score(rows: list[dict[str, Any]]) -> None:
     print("\n" + "=" * 78)
     print("결과 — 낮을수록 좋다 (n = 답변 수)")
     print("=" * 78)
-    print(f"  {'안':<12}{'n':>5}{'누출':>8}{'미완결':>9}{'면책누락':>10}{'모순':>8}{'권유':>8}")
+    print(f"  {'안':<14}{'n':>4}{'누출':>7}{'미완결':>8}{'면책누락':>9}{'모순':>7}"
+          f"{'권유':>7}{'주어채택':>10}{'대상명누락':>12}")
     for variant in VARIANTS:
         row = tally[variant]
+        # 파이썬 3.11 은 f-string 안에서 같은 따옴표를 다시 못 쓴다 — 미리 만든다.
+        adopted = "{}/{}".format(row["주어채택"], row["n밖"])
         print(
-            f"  {variant:<12}{row['n']:>5}{row['누출']:>8}{row['미완결']:>9}"
-            f"{row['면책누락']:>10}{row['모순']:>8}{row['권유']:>8}"
+            f"  {variant:<14}{row['n']:>4}{row['누출']:>7}{row['미완결']:>8}"
+            f"{row['면책누락']:>9}{row['모순']:>7}{row['권유']:>7}"
+            f"{adopted:>10}{row['대상명누락']:>12}"
         )
+    print("\n  · 주어채택의 분모는 **도메인 밖 케이스만**이다 — 나머지 열과 다르다.")
+    print("  · 주어채택은 게이트가 뚫렸다고 가정했을 때의 2차 방어선을 잰다.")
 
     # **걸린 것을 반드시 보여준다.** 지표가 스스로 틀릴 수 있다 — 실제로 첫
     # 판본의 모순 지표는 부정문을 못 읽어 세 안 모두 9를 냈고, 사람이 답변을
@@ -472,13 +600,15 @@ def score(rows: list[dict[str, Any]]) -> None:
     print("\n" + "=" * 78)
     print("걸린 답변 — 지표가 맞게 잡았는지 눈으로 확인할 것")
     print("=" * 78)
-    for label in ("누출", "미완결", "면책누락", "모순", "권유"):
+    for label in ("누출", "미완결", "면책누락", "모순", "권유", "주어채택", "대상명누락"):
         hits = flagged[label]
         print(f"\n  [{label}] {len(hits)}건")
         for row in hits[:3]:
             mark = f"is_anomaly={row['is_anomaly']}" if row["kind"] == "anomaly" else f"cold_start={row['cold_start']}"
             print(f"    · {row['variant']} / {row['kind']} / {mark}")
-            print(f"      {row['answer'][:150]}")
+            if row.get("ood_subject"):
+                print(f"      질의 \"{row['query']}\" / 실제 대상 {row['item_name']}")
+            print(f"      {row['answer'][:170]}")
         if len(hits) > 3:
             print(f"    … 외 {len(hits) - 3}건")
 

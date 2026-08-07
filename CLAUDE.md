@@ -83,12 +83,13 @@ LLM call**, naming the filters it searched with (`검 · 화염 속성 · 30,000
 different wordings; the new one gives one. Two things about it are easy to get
 wrong:
 
-- **`llm_calls` is 1 on this path, not 0.** `understand_query` inside
-  `run_search` already ran and **cannot be skipped** — the verdict is defined by
-  which filters got extracted. Only the explanation call disappears (2 → 1).
-  **Since ADR-0036 the search branch is 1 either way** — the explanation LLM is
-  gone, so `llm_calls` no longer separates "found" from "found nothing". Read
-  `no_results`. The trigger was a hallucination that the structured results
+- **`llm_calls` is not 0 on this path.** `understand_query` inside `run_search`
+  already ran and **cannot be skipped** — the verdict is defined by which filters
+  got extracted. The value has changed three times: 2 (explanation LLM era) → 1
+  (ADR-0036) → **2 (ADR-0039, the domain gate is a second call in parallel)**.
+  What has not changed is that **the whole search branch reports the same number**,
+  so `llm_calls` separates neither "found" from "found nothing" nor either from
+  "out of domain". Read `no_results` / `out_of_domain`. The trigger was a hallucination that the structured results
   directly contradicted: given four swords at 22,000–45,000원 for `10만원 이하 검`,
   the explanation said *"there are no swords under 100,000원 … all exceed it or
   are not swords"*. The prompt told the model to drop items whose type didn't
@@ -113,8 +114,62 @@ wrong:
   fastest. Don't confuse this with the roadmap's *rewrite* caching idea (query →
   rewritten query), which is fine and would help.
 
-Scope limit worth knowing: this handling does **not create** zero-hit results,
-it only speaks correctly about ones that already happen. `"2만원 이하 전설 등급
+**Out-of-domain queries are refused too** (ADR-0039), and the trigger was a
+confident lie: `"삼성전자 주식 어때?"` answered *"삼성전자 주식의 최근 거래가는
+약 26,090원"*. Every number was real — they were `게임 머니 1000만 골드`'s actual
+forecast. **Only the subject was false.** Three things about it are load-bearing:
+
+- **The judgment is its own LLM call, run in parallel with `understand_query`,
+  and putting it in that call's JSON schema was measured and rejected — twice.**
+  Adding an `in_domain` field cost **−0.234 → −0.248 rewrite token-set agreement
+  against a same-prompt control**, i.e. the loss did not move when the wording
+  was fixed, so it was the schema growing, not the words. Rewrite text feeds both
+  BM25 and kNN. Split out, the regression is **structurally zero** and
+  `test_domain_gate.py::TestExtractionPromptStaysClean` pins it. Cost is one more
+  call (search `llm_calls` 2, forecast 3); **latency cost is ~0 because the gate
+  is always the faster of the two** (measured 636–900ms vs 1237–2769ms), so never
+  add `query_understanding_ms` and `domain_gate_ms` together.
+- **The FAQ branch was left alone on purpose.** 9 of 38 out-of-domain queries
+  route there and `_DEFAULT_FAQ` already declines by naming the scope, with 0 LLM
+  calls. A gate on a path that is already correct is decoration, and decoration
+  sells false confidence. Coverage is search+forecast (22) + agent (7) + FAQ (9)
+  = 38/38.
+- **Prompt wording took five iterations and two of them made it worse.** False
+  rejection changed identity each round: price questions (29.9%) → vague targets
+  (13.4%) → game slang and typos (4.13%). Then listing the catalogue of item types
+  pushed it *up* to 5.30% — **an enumeration meant to widen inclusion got used as
+  grounds for exclusion**, and a companion "playing the game is NO" rule fired on
+  the *words* `스킬`/`강화` inside legitimate item queries. Removing both gave
+  **0.59% / 0.98% across two runs** (miss 1/38 both times). That second number is
+  one query away from failing its own 1% bar — it passed, without margin, and
+  that is worth knowing before trusting it. The false-rejection figure is
+  **in-sample**: the rules came from reading this eval set's failures. The
+  prompt's examples were invented to be absent from all 563 eval sentences.
+
+`_out_of_domain()` **takes no arguments**, so echoing the user's subject is
+impossible by signature rather than by instruction — the same move as ADR-0036.
+The response is not cached, and **only the first of ADR-0016's two reasons
+applies**: the verdict is non-deterministic, so a false rejection would freeze for
+the whole TTL. It does not go stale (`"삼성전자 주식"` is outside tomorrow too).
+Don't read the two vetoes as one.
+
+For the agent branch, MCP `search_items` returns **a sentence, not an empty
+list** — an empty list cannot distinguish "we don't handle this" from "we handle
+it but have no listings", and the model reads the second and answers anyway. Same
+prescription as `estimate_note`. Note this path did **not** fire in the
+end-to-end check: the agent declined from its own system prompt without calling
+any tool (`llm_calls=1`), so the note had to be verified by calling the tool
+directly. A path that was never walked cannot be called working.
+
+The explanation prompts stopped receiving `query` in the same round. Measured on
+the same 42 cases, the previously-shipping prompt scored **주어채택 1/9 and
+대상명누락 9/9 on out-of-domain cases** — it would say *"현재 이 아이템의 최근
+거래가는…"* without ever naming which item. Dropping `{query}` and requiring the
+item's name scores 0 on both. On ordinary queries the two are identical, so this
+is purely the second line of defence for when the gate misses.
+
+Scope limit worth knowing: the zero-result handling does **not create** zero-hit
+results, it only speaks correctly about ones that already happen. `"2만원 이하 전설 등급
 무기"` is a zero-answer query that still returns 3 approximations, because
 `전설 등급` is a *third* axis (`rarity`) that is **not the same free work** —
 subcategory/element were readable off the descriptions, whereas grade doesn't
@@ -343,7 +398,7 @@ flow are still curl-verified only; see the roadmap's 기술 부채 section.
   Branches escalate to the agent when they can't resolve a required id. An empty
   `ITEM_SEARCH` result short-circuits to `_no_results()` (deterministic answer,
   no explanation LLM call, not cached — ADR-0016).
-- `app/services/search/` — mapping, embedding, es_client, filters, hybrid
+- `app/services/search/` — mapping, embedding, es_client, filters, **domain_gate**, hybrid
   (BM25+kNN via one `_msearch`, app-side RRF), query_understanding, reranker,
   indexer, pipeline
 - `app/services/training/` — hard_negatives (triplet mining), evaluation
@@ -372,6 +427,13 @@ flow are still curl-verified only; see the roadmap's 기술 부채 section.
   with **deliberate repeat-counterparty structure** — without it,
   `pair_trades_7d` alone separates the composite anomaly and the whole
   interaction test collapses.
+  `out_of_domain.py` holds the **hand-written** domain-gate eval — 38 out-of-domain
+  queries **and** 16 in-domain ones chosen to *look* out-of-domain. Both lists are
+  required: a one-sided set makes the opposite extreme score perfectly, and a set
+  of obvious in-domain queries would report 0% false rejection because the sample
+  was easy, not because the gate is safe. Keep the game-adjacent-but-not-trading
+  group (`"이 보스 어떻게 잡아?"`) — without it a gate that passes anything
+  containing a game word scores full marks.
   `intent_utterances.py` holds the **hand-written** router eval + boundary sets
   (LLM-generated training utterances live in `data/intent_train.json`);
   `cache_pairs.py` holds the synonym/trap pairs for cache threshold work.
@@ -380,7 +442,8 @@ flow are still curl-verified only; see the roadmap's 기술 부채 section.
   compare_eval_sets, train_forecast, train_anomaly, generate_intent_data,
   train_intent_router, evaluate_semantic_cache, evaluate_rerank_floor,
   evaluate_hard_filters, evaluate_rewrite_determinism, evaluate_explanation_prompts,
-  benchmark_cpu_stages. **The last two answer different questions and must stay
+  evaluate_domain_gate, benchmark_cpu_stages. **`evaluate_rerank_floor` and
+  `evaluate_hard_filters` answer different questions and must stay
   separate**: `evaluate_rerank_floor` documents a *rejected* approach (it sweeps
   thresholds and would print a recommendation), while `evaluate_hard_filters`
   measures how many unfit results a threshold-free filter leaves. It A/Bs within
@@ -391,13 +454,18 @@ flow are still curl-verified only; see the roadmap's 기술 부채 section.
   versioning for reproducibility). `models/` is gitignored — regenerate with
   the build/finetune scripts.
 
-- `tests/` — `python -m pytest` from `ai/` (148 tests, no `pytest-asyncio` — the
+- `tests/` — `python -m pytest` from `ai/` (174 tests, no `pytest-asyncio` — the
   few async cases use `asyncio.run`). Deliberately limited to
   deterministic units: RRF fusion, router rules, cache keys/tenant isolation,
   per-intent TTL + the no-result storage veto, id-space guards, filter→DSL
-  conversion, explanation-prompt guards (ADR-0038), **both** search answers (empty and found — the found one asserts it
+  conversion, explanation-prompt guards (ADR-0038, plus "neither prompt sees the
+  query" — ADR-0039), **both** search answers (empty and found — the found one asserts it
   never denies results that exist, ADR-0036), route auth coverage, temperature
-  plumbing. Model quality is judged
+  plumbing, and the **domain gate's wiring** (ADR-0039 — the verdict itself is an
+  LLM call and is measured by `evaluate_domain_gate.py`, not here; what the tests
+  pin is that search short-circuits, that `NO` is matched at the front rather than
+  as a substring, and that `in_domain` has not crept back into the extraction
+  prompt). Model quality is judged
   by the training scripts' held-out
   reports, not by unit tests. Everything else is manually verified (see the
   roadmap's 기술 부채 section).
@@ -594,15 +662,32 @@ default"; a short key is broken in every profile.
   should stay that way — a display exists for humans and its rules will change
   again. This is the third of four times a check here was itself wrong; the
   pattern and its checklist are in
-  `docs/05-Troubleshooting/검사-자체가-틀린-사례들.md` — **18 cases now**, and
-  four of them came from a single day of building new measurement tools. Two
+  `docs/05-Troubleshooting/검사-자체가-틀린-사례들.md` — **19 cases now**, and
+  five of them came from a single day of building new measurement tools. Two
   share one cause worth naming: **Korean draws its distinctions in the verb
   ending, but regexes are easiest to write against nouns**, so `이상 거래` also
   matched `이상 거래로 판별되지 않았습니다` and `거래를 고려` also matched
   `거래를 고려하실 때 참고하시기 바랍니다`. Both were caught by reading the
-  flagged samples, never by the numbers. Corollary: **run any new
+  flagged samples, never by the numbers. **The same failure then recurred in a
+  prompt** (ADR-0039): a "playing the game is out of scope" rule fired on the
+  words `스킬`/`강화` inside legitimate item queries. Corollary: **run any new
   check against a deliberately failing case too** — a check only ever seen
   passing is indistinguishable from one that always passes.
+- **A failed call is missing data, not an answer.** Case 19 is the first where
+  one defect produced a false alarm and a silent pass *at the same time*: the
+  collector returned `in_domain: None` on error, one metric counted it via
+  `is not False` (so 443 rate-limit failures became a 63.2% "miss rate") and its
+  neighbour via `is False` (so the same failures made false-rejection look
+  *better*). Drop errors from the denominator **and refuse to score at all** past
+  a small error rate — dropping alone leaves half the sample gone behind a
+  plausible number. It was caught only because the collector printed per-set
+  failure counts, which is the same "put every value the verdict used into the
+  output" rule paying off again.
+- **A one-sided metric makes the opposite extreme optimal.** Measure rejection
+  only and "reject everything" scores perfectly; measure pass-through only and
+  "pass everything" does. The domain-gate eval carries a hand-written
+  out-of-domain set *and* an in-domain set whose members deliberately look
+  out-of-domain, for exactly this reason.
 - **Measure the instrument's idle floor before you set a threshold on it, and
   never set one on `max`.** ADR-0028 pre-registered "ticker max < 20ms", then
   got 32.75ms and 17.89ms from the *same code* — because an idle server with
