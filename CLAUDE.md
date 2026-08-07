@@ -255,10 +255,14 @@ docs-only commit runs nothing. Two things about it are load-bearing:
   Green CI therefore says nothing about the broker path — `load/verify-mq.sh` is what
   covers queue drain, DLQ, and broker-down latency.
 
-Note what the green badges do and don't mean: the backend suite is still the
-single Initializr `contextLoads()` and asserts no behaviour. It is worth running
-only because context-startup failure is a regression class that actually bit here
-(the Redisson/Boot-4 `RedisProperties` relocation).
+Note what the green badges do and don't mean. **This paragraph used to say the
+backend suite was "still the single Initializr `contextLoads()`" — that went stale
+when ADR-0030/0031/0034 added behavioural tests, and it contradicted this file's
+own build section.** It is 57 tests now; what remains true is that
+`contextLoads()` is worth running on its own, because context-startup failure is a
+regression class that actually bit here (the Redisson/Boot-4 `RedisProperties`
+relocation). Still absent: the Redis lock and the trade flow are curl-verified
+only, and the load test is deliberately not in CI (see above).
 
 Load-test facts worth carrying (`load/`, k6):
 
@@ -297,9 +301,11 @@ scraping during a load test steals CPU from the thing being measured on a shared
 (histograms are cumulative), and start the dashboards only for demos.
 
 **The search-quality thread is closed for now** — the three
-remaining items all have prerequisites: `"무속성"` extraction needs a prompt eval
-set, the `rarity` axis needs a grade taxonomy invented, and the reranker floor
-needs cross-query score comparability (see above). Anything that would have
+remaining items had prerequisites. **One is now done**: `"무속성"` extraction
+(ADR-0040) — the prerequisite was a labelled eval set, and the fix turned out not
+to be a prompt change at all. The `rarity` axis still needs a grade taxonomy
+invented, and the reranker floor still needs cross-query score comparability
+(see above). Anything that would have
 followed floor adoption — notably splitting "no results matched your conditions"
 from "results matched but scored too low" — **is moot**, since nothing cuts on
 relevance now.
@@ -1106,12 +1112,42 @@ Postgres and ES drift apart and search results stop resolving to real rows.
   rather than trust a single one. Separately, **filter extraction is ~1% wrong
   on `"불속성"` (it comes back as `무속성`)** — that is an accuracy bug, not a
   determinism one, and `"무속성 검"` is worse still (see below).
-- **The `무속성` direction of the element filter does not work.** `"무속성 검
-  찾아줘"` yields `element="무속성"` only 8 times in 50; the other 42 come back
-  `null`, because the model reads "무속성" as "no element mentioned". So a request
-  for non-elemental swords still returns 불꽃의 대검. The data is fine — the
-  extraction isn't. Fixing it needs a prompt eval set first (see the prompt-edit
-  gotcha above); it is registered on the roadmap.
+- **The `무속성` direction of the element filter is fixed, and not by touching the
+  prompt** (ADR-0040). `"무속성 검 찾아줘"` used to yield `element="무속성"` only 8
+  times in 50 — the model reads "무속성" as "no element mentioned" — so a request
+  for non-elemental swords still returned 불꽃의 대검, and that matters because
+  **35 of the 42 corpus items are 무속성**: losing the filter makes the search
+  effectively unfiltered. The prompt already said `무속성/속성 없는 -> "무속성"`
+  *and* spelled out the `null`-vs-`무속성` distinction, so it was **already
+  instructed in exactly the right words and still wrong 42/50**. Now
+  `fill_missing_element()` in `query_understanding.py` fills it from the literal
+  query text when extraction returned `null`. Five things to keep:
+  - **It only fills, never overwrites**, so it cannot reach the other elements
+    (97.5%) and does not touch the separate `불속성 → 무속성` mis-extraction —
+    that one is a *wrong value*, not `null`.
+  - **It covers `무속성` only. Do not widen it to other elements.** `"화염 저항
+    방어구"` contains `화염` but the answer is `null` (element is what an item
+    *emits*; resistance is a different axis), and the prompt gets that right
+    today — 12/12 on the resistance group. A keyword fill would break it.
+    `무속성` is safe precisely because it has no resistance counterpart.
+  - **Negation is a known limit, deliberately.** `"무속성 아닌 검"` cannot be
+    expressed (`element` is a single equality), so it fills nothing — filtering
+    to the exact opposite of the request is far worse than not filtering.
+  - **The bigger win was determinism, not accuracy.** The raw extraction swung
+    62% ↔ 86% between two runs while the post-checked result was **93% both
+    times with the same residual**. A deterministic stage covering a stochastic
+    one removes the variance this repo has fought since ADR-0017.
+  - **Two pre-registered bars failed and were left failed** (same as ADR-0028).
+    Both were mis-written by me: the 타속성 bar was meant to be *relative* to the
+    baseline but written as an absolute 95% (before == after, so the change is
+    innocent), and the 무속성 95% bar was **unsatisfiable by construction**
+    because the eval set deliberately contains one unhandled phrasing
+    (`"속성 안 붙은 신발"`) = 7.1% of that group. Adoption rests on the three
+    pre-registered *오채움 = 0* bars, on 16/16 changed judgments being correct
+    with zero regressions, and on two runs agreeing.
+  - Still open, found by the same eval set: **`"어둠 속성 로브"` returns `null`
+    6/6** despite the prompt mapping `어둠 -> 암흑`. Same family; not fixed the
+    same way, because filling `암흑` by keyword would break `"암흑 저항 목걸이"`.
 - **MCP runs over an in-memory transport, not HTTP.** The agent lives in the
   same FastAPI app, and a self-HTTP call would risk deadlock against the known
   event-loop blocking. The protocol is real; only the transport is in-process.
