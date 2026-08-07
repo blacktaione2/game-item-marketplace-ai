@@ -193,6 +193,36 @@ CODE="$(curl -s -o /dev/null -w '%{http_code}' "$WEB/items/3")"
 [ "$CODE" = "200" ] && ok "/items/3 직접 접근 = 200" || bad "/items/3 = $CODE (기대 200)"
 
 echo
+echo "== 판정 3-b: index.html 이 캐시되지 않는가 =="
+# **배포가 정상이고 이미지 안 번들에도 새 코드가 있는데 화면만 옛것이었다.**
+# `/assets/` 는 해시 파일명이라 영구 캐시가 맞지만, **그 이름을 알려주는 건
+# index.html 하나뿐**이라 이게 낡으면 새 배포가 브라우저에 도달하지 못한다.
+# 지시를 안 적으면 "캐시 안 함"이 아니라 브라우저 휴리스틱이 적용된다.
+#
+# 둘을 같이 본다 — 한쪽만 보면 "전부 no-cache" 로 되돌려도 통과한다(그러면
+# 자산까지 매번 다시 받는다).
+HTML_CC="$(curl -sI "$WEB/" | tr -d '\r' | grep -i '^cache-control:' | head -1)"
+case "$HTML_CC" in
+  *no-cache*|*no-store*|*"max-age=0"*)
+    ok "index.html — ${HTML_CC:-(없음)}" ;;
+  *)
+    bad "index.html 이 재검증 없이 캐시된다 — Cache-Control: ${HTML_CC:-'(헤더 없음)'}
+         배포해도 브라우저가 옛 번들을 계속 쓴다. frontend/nginx.conf 의
+         location / 에 add_header Cache-Control \"no-cache\"; 가 있는지 확인" ;;
+esac
+
+ASSET="$(curl -s "$WEB/" | grep -o '/assets/[A-Za-z0-9._-]*\.js' | head -1)"
+if [ -z "$ASSET" ]; then
+  bad "index.html 에서 자산 경로를 못 찾았다 — 이 검사가 대상에 닿지 못했다"
+else
+  ASSET_CC="$(curl -sI "$WEB$ASSET" | tr -d '\r' | grep -i '^cache-control:' | head -1)"
+  case "$ASSET_CC" in
+    *immutable*) ok "$ASSET — ${ASSET_CC}" ;;
+    *) bad "해시 자산이 길게 캐시되지 않는다 — ${ASSET_CC:-'(헤더 없음)'}" ;;
+  esac
+fi
+
+echo
 echo "== 판정 4: CORS 헤더 없음 =="
 # grep 은 설정 유무만 본다. 여기서는 **실제 응답 헤더**를 본다 —
 # 프레임워크 기본값처럼 소스에 안 보이는 경로까지 잡으려면 이쪽이어야 한다.

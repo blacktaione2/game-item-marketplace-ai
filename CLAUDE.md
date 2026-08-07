@@ -665,8 +665,8 @@ default"; a short key is broken in every profile.
   should stay that way — a display exists for humans and its rules will change
   again. This is the third of four times a check here was itself wrong; the
   pattern and its checklist are in
-  `docs/05-Troubleshooting/검사-자체가-틀린-사례들.md` — **20 cases now**, and
-  six of them came from a single day of building new measurement tools. Two
+  `docs/05-Troubleshooting/검사-자체가-틀린-사례들.md` — **21 cases now**, and
+  seven of them came from a single day of building new measurement tools. Two
   share one cause worth naming: **Korean draws its distinctions in the verb
   ending, but regexes are easiest to write against nouns**, so `이상 거래` also
   matched `이상 거래로 판별되지 않았습니다` and `거래를 고려` also matched
@@ -686,6 +686,17 @@ default"; a short key is broken in every profile.
   plausible number. It was caught only because the collector printed per-set
   failure counts, which is the same "put every value the verdict used into the
   output" rule paying off again.
+- **`curl` always asks the server; a browser may not.** Every check in
+  `verify-container.sh` passed (14/14), the deployed image's bundle contained the
+  new code, and the screen still showed the old UI — the browser was serving both
+  `index.html` and the old hashed JS from its own cache. `frontend/nginx.conf` gave
+  `/assets/` a correct `immutable` year, but **`index.html` had no directive at
+  all, and "no directive" means browser heuristic caching, not "don't cache"** —
+  and index.html is the only thing that names the hashed bundle. It now sends
+  `Cache-Control: no-cache` (revalidate, usually a 304), and 판정 3-b asserts
+  **both** halves: no-cache on the HTML and `immutable` on an asset path scraped
+  out of that HTML. Checking only the first would pass a config that turned all
+  caching off.
 - **A one-sided metric makes the opposite extreme optimal.** Measure rejection
   only and "reject everything" scores perfectly; measure pass-through only and
   "pass everything" does. The domain-gate eval carries a hand-written
