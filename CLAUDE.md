@@ -145,6 +145,27 @@ forecast. **Only the subject was false.** Three things about it are load-bearing
   that is worth knowing before trusting it. The false-rejection figure is
   **in-sample**: the rules came from reading this eval set's failures. The
   prompt's examples were invented to be absent from all 563 eval sentences.
+- **A third round tried to fix that residual and everything it tried was
+  rejected** (ADR-0039's 정정 section). Three things it overturned, all worth
+  carrying: the recorded diagnosis was wrong (*"vagueness and off-topic squashed
+  into one boolean"* fails to explain 2 of the 7 rejections — `장신구 시장이
+  어떻게 될지` names a real category); `경계 2/16` was **the set being easy**, not
+  the gate being good (the same shipped prompt cuts **5/32** once the boundary set
+  is doubled); and the eval sets grew — boundary 16→32, out-of-domain 38→41, plus
+  a **40-query held-out set**, with the originals frozen as `BOUNDARY_V1` /
+  `OOD_V1_EXCLUDED` so the old denominators survive. The control reproduced its
+  historical v1 numbers exactly (1/38, 2/16), which is what makes the rest
+  readable. Three variants, ~2,990 calls, ~$0.25, **nothing shipped**.
+- **The blind spot that round found is still open**: game-mechanics questions
+  carrying item vocabulary (`강화 확률 올리는 방법 있어?`, `세트 효과 조건이 뭐야`)
+  pass the gate — 4 of 5 held-out cases. The old out-of-domain set could not see
+  this because its game-but-not-trading group (`보스`, `스킬트리`) contained **no
+  item vocabulary at all**, so a gate keying on item words scored full marks.
+  Severity is lower than the bug that created this ADR, and that is *because* of
+  its own defences: search has no explanation LLM (ADR-0036) and the forecast
+  prompt never sees the query and must name the item, so the failure is an
+  **irrelevant answer, not a false one** — structurally, though the path has not
+  been walked end to end.
 
 `_out_of_domain()` **takes no arguments**, so echoing the user's subject is
 impossible by signature rather than by instruction — the same move as ADR-0036.
@@ -671,7 +692,7 @@ default"; a short key is broken in every profile.
   should stay that way — a display exists for humans and its rules will change
   again. This is the third of four times a check here was itself wrong; the
   pattern and its checklist are in
-  `docs/05-Troubleshooting/검사-자체가-틀린-사례들.md` — **21 cases now**, and
+  `docs/05-Troubleshooting/검사-자체가-틀린-사례들.md` — **23 cases now**, and
   seven of them came from a single day of building new measurement tools. Two
   share one cause worth naming: **Korean draws its distinctions in the verb
   ending, but regexes are easiest to write against nouns**, so `이상 거래` also
@@ -731,6 +752,33 @@ default"; a short key is broken in every profile.
   on p99 and the over-threshold count, which agreed across both runs. General
   rule: a threshold whose derivation never mentions the noise floor has no
   derivation, and **any bar worth trusting must be run twice**.
+  - **The discrete version of that bit too** (ADR-0039's correction, case 22): a
+    pre-registered bar of `2/16 → ≤1/16` is **indistinguishable from one coin
+    flip** — exact 95% intervals are [1.6%, 38.3%] and [0.2%, 30.2%]. Registering
+    a bar before seeing results does not make it *measurable*; those are separate
+    questions, and the second one is only ever caught in **measurement-design
+    review, not code review**. Print the interval next to every small-sample rate.
+- **Adding an example or a clause to a prompt can narrow the clause it was meant
+  to widen** — three times now (ADR-0039). Listing the catalogue cut names off the
+  list; "playing the game is NO" fired on the words `스킬`/`강화`; and adding
+  *"budget-only phrasing counts too"* to the vagueness clause made the model read
+  that clause as **requiring** a budget, so `추천 좀 해줘` started getting cut.
+  To widen a clause, **try removing examples first** and measure that.
+  - Related: **reframing what the judgment is about changes the sentence's
+    grammatical subject.** Asking "is the *subject* something sellable" rejected
+    `활 가격에 대한 전망은 어때?`, because the subject of a price question is
+    `가격`, not the item. In Korean the topic and the subject often differ; check
+    price-form queries first whenever the gate prompt is touched.
+- **A held-out set is necessary but not sufficient.** ADR-0039's variant C passed
+  *every* held-out bar and was still rejected — the regression it caused
+  (pure-vague queries) lived in a class deliberately left out of the held-out set
+  for having ambiguous labels. **Whatever you exclude is what the held-out set
+  cannot see.** Score both: held-out answers "is the targeted gain real", the
+  in-sample set answers "what broke paying for it". Two more rules from that
+  round: **use a held-out set once** — reading it and then editing the prompt
+  turns it into a second tune set — and **adoption and rejection are asymmetric**,
+  since two agreeing runs are needed to ship a change but one clean failure is
+  enough not to, the default being no change.
 - The AI limiter **fails open** when Redis is down (it protects cost, not
   correctness). The purchase lock is the opposite and rejects — same Redis,
   deliberately opposite policies.
