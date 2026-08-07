@@ -164,8 +164,27 @@ forecast. **Only the subject was false.** Three things about it are load-bearing
   Severity is lower than the bug that created this ADR, and that is *because* of
   its own defences: search has no explanation LLM (ADR-0036) and the forecast
   prompt never sees the query and must name the item, so the failure is an
-  **irrelevant answer, not a false one** — structurally, though the path has not
-  been walked end to end.
+  **irrelevant answer, not a false one**. That was measured on the live deploy
+  (2026-08-08), not just argued: of the 8 probes, **4 route to `faq_smalltalk`
+  and are already declined correctly at 0 LLM calls**, one asks a clarifying
+  question, one label was withdrawn as genuinely ambiguous, and **only 2 are
+  real defects** — both `price_forecast`, both naming the real item they
+  forecast, so no subject substitution. Two lasting points:
+  - **A gate eval is not a pipeline eval.** `미검출 4/41` scores the gate on
+    inputs it never receives in production, because the gate only sits on
+    `item_search`/`price_forecast`. The fix is *not* to drop them from the
+    denominator: routing was compared local vs deployed and only **6/8 agreed**
+    — all 3 rules-decided ones reproduced, 2 of 5 classifier-decided ones did
+    not. **"Does it reach the gate" is not a stable property of a query.** So
+    print the branch beside each miss and read ADR-0039's coverage argument
+    per-*branch* (every branch is covered), never per-query.
+  - **The 2 remaining defects are ADR-0018's problem wearing a new hat.**
+    `_forecast_branch` takes `run_search(size=1)`'s top hit however weakly it
+    matched, so what's missing is a *relevance* judgment, not a topic one — and
+    cross-encoder logits are only comparable within one query's candidate set.
+    It looks simple enough to retry ("just cut low scores"), which is exactly
+    why it is written down: reopening it needs per-query normalisation that is
+    demonstrably comparable across queries, not a better threshold.
 
 `_out_of_domain()` **takes no arguments**, so echoing the user's subject is
 impossible by signature rather than by instruction — the same move as ADR-0036.
