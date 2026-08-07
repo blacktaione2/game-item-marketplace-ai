@@ -34,6 +34,7 @@ from typing import Any
 
 from anthropic import AsyncAnthropic
 
+from app.core.metrics import record_llm_call
 from app.services.llm.base import ChatResult, LLMClient, ToolCall
 
 logger = logging.getLogger(__name__)
@@ -80,7 +81,15 @@ class AnthropicClient(LLMClient):
         if tools:
             kwargs["tools"] = [_to_anthropic_tool(tool) for tool in tools]
 
-        response = await self._client.messages.create(**kwargs)
+        # 폴백도 실패할 수 있고, 그때는 ADR-0041 의 내려앉기가 받는다.
+        # 두 프로바이더를 같은 방식으로 세야 "둘 다 흔들린다" 를 볼 수 있다.
+        try:
+            response = await self._client.messages.create(**kwargs)
+        except Exception:
+            record_llm_call("anthropic", ok=False)
+            raise
+        record_llm_call("anthropic", ok=True)
+
         return _to_chat_result(response)
 
 

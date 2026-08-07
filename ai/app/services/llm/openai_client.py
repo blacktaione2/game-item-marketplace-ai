@@ -4,6 +4,7 @@ from typing import Any
 
 from openai import AsyncOpenAI
 
+from app.core.metrics import record_llm_call
 from app.services.llm.base import ChatResult, LLMClient, ToolCall
 
 logger = logging.getLogger(__name__)
@@ -36,7 +37,16 @@ class OpenAIClient(LLMClient):
         if tools:
             kwargs["tools"] = tools
 
-        response = await self._client.chat.completions.create(**kwargs)
+        # 실패도 센다 (ADR-0042). 폴백이 붙으면 이 실패가 **응답에는 안 나타나므로**
+        # — 사용자는 Claude 가 쓴 답을 정상으로 받는다 — 여기서 안 세면 OpenAI 가
+        # 흔들리고 있다는 사실이 집계 어디에도 안 남는다.
+        try:
+            response = await self._client.chat.completions.create(**kwargs)
+        except Exception:
+            record_llm_call("openai", ok=False)
+            raise
+        record_llm_call("openai", ok=True)
+
         message = response.choices[0].message
         return ChatResult(
             content=message.content or "",
