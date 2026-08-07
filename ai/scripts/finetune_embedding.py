@@ -40,6 +40,10 @@ def main() -> None:
     parser.add_argument("--lr", type=float, default=2e-5)
     parser.add_argument("--warmup-ratio", type=float, default=0.1)
     parser.add_argument("--include-easy", action="store_true")
+    # HuggingFace `TrainingArguments` 의 기본값과 같은 42다. 기본값을 바꾸지
+    # 않으므로 기존 동작은 그대로다 — **드러내는 것**이 목적이다. 시드가 코드에
+    # 안 보이면 "재학습하면 같은 모델이 나오는가"를 물어볼 수조차 없다.
+    parser.add_argument("--seed", type=int, default=42)
     args = parser.parse_args()
 
     from datasets import Dataset
@@ -79,6 +83,7 @@ def main() -> None:
         logging_steps=10,
         save_strategy="no",
         report_to=[],
+        seed=args.seed,
     )
 
     trainer = SentenceTransformerTrainer(

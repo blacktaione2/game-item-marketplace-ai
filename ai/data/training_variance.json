@@ -1,0 +1,118 @@
+{
+  "before": {
+    "recall@1": 0.1481,
+    "recall@3": 0.3148,
+    "recall@5": 0.4444,
+    "recall@10": 0.6111,
+    "mrr": 0.3005,
+    "mean_rank": 10.72
+  },
+  "arms": {
+    "same-seed": [
+      {
+        "label": "seed42-a",
+        "seed": 42,
+        "weights_sha256": "b04b0b45480d1f4b",
+        "metrics": {
+          "recall@1": 0.3889,
+          "recall@3": 0.537,
+          "recall@5": 0.6111,
+          "recall@10": 0.7778,
+          "mrr": 0.5099,
+          "mean_rank": 7.24
+        }
+      },
+      {
+        "label": "seed42-b",
+        "seed": 42,
+        "weights_sha256": "b04b0b45480d1f4b",
+        "metrics": {
+          "recall@1": 0.3889,
+          "recall@3": 0.537,
+          "recall@5": 0.6111,
+          "recall@10": 0.7778,
+          "mrr": 0.5099,
+          "mean_rank": 7.24
+        }
+      }
+    ],
+    "diff-seed": [
+      {
+        "label": "seed1",
+        "seed": 1,
+        "weights_sha256": "4c59a26851903181",
+        "metrics": {
+          "recall@1": 0.3889,
+          "recall@3": 0.537,
+          "recall@5": 0.5556,
+          "recall@10": 0.7222,
+          "mrr": 0.4999,
+          "mean_rank": 7.61
+        }
+      },
+      {
+        "label": "seed2",
+        "seed": 2,
+        "weights_sha256": "583f25a498897841",
+        "metrics": {
+          "recall@1": 0.4074,
+          "recall@3": 0.5556,
+          "recall@5": 0.5926,
+          "recall@10": 0.7593,
+          "mrr": 0.5126,
+          "mean_rank": 7.41
+        }
+      },
+      {
+        "label": "seed3",
+        "seed": 3,
+        "weights_sha256": "62258778cfbcc757",
+        "metrics": {
+          "recall@1": 0.3889,
+          "recall@3": 0.537,
+          "recall@5": 0.5926,
+          "recall@10": 0.7593,
+          "mrr": 0.5028,
+          "mean_rank": 7.7
+        }
+      }
+    ],
+    "threads": [
+      {
+        "label": "seed42-thr1",
+        "seed": 42,
+        "threads": 1,
+        "weights_sha256": "98565cf41e8f638b",
+        "metrics": {
+          "recall@1": 0.3889,
+          "recall@3": 0.537,
+          "recall@5": 0.6111,
+          "recall@10": 0.7778,
+          "mrr": 0.5099,
+          "mean_rank": 7.24
+        }
+      },
+      {
+        "label": "seed42-thr2",
+        "seed": 42,
+        "threads": 2,
+        "weights_sha256": "3f34b98e7e144d62",
+        "metrics": {
+          "recall@1": 0.3889,
+          "recall@3": 0.537,
+          "recall@5": 0.6111,
+          "recall@10": 0.7778,
+          "mrr": 0.5099,
+          "mean_rank": 7.24
+        }
+      }
+    ]
+  },
+  "worst_spread": {
+    "recall@1": 0.01849999999999996,
+    "recall@3": 0.01859999999999995,
+    "recall@5": 0.03700000000000003,
+    "recall@10": 0.03710000000000002,
+    "mrr": 0.012699999999999934
+  }
+}

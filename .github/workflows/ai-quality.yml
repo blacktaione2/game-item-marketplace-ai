@@ -1,0 +1,134 @@
+name: ai-quality
+
+# 검색 품질 게이트 — 임베딩을 재학습해 IR 지표(Recall@k / MRR)로 판정한다.
+#
+# **`ai.yml` 과 분리한 이유는 무게가 아니라 `paths` 다.** 이 저장소는 워크플로를
+# 파일별로 쪼개 각자 `paths` 필터를 갖게 하는 규칙을 이미 쓴다(문서 커밋은
+# 아무것도 안 돈다). 게이트는 학습이 필요해 5분쯤 걸리는데, 라우터 한 줄을
+# 고쳤다고 그 비용을 낼 이유가 없다. 그래서 **임베딩 품질에 실제로 영향을 주는
+# 경로만** 아래에 적는다.
+#
+# **RAGAS 는 게이트가 아니다.** 아래 `ragas-report` 잡을 볼 것 — 수동 실행이고
+# 판정하지 않는다. 이유는 그 잡의 주석에 있다.
+
+# **YAML 앵커(`&`/`*`)를 쓰지 않는다.** GitHub Actions 의 파서는 앵커를
+# 지원하지 않아서, 중복을 줄이려다 워크플로가 통째로 파싱 단계에서 깨진다.
+# push 와 pull_request 의 목록은 손으로 같게 유지한다.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'ai/app/corpus/**'
+      - 'ai/app/services/training/**'
+      - 'ai/app/core/config.py'
+      - 'ai/data/train_triplets.jsonl'
+      - 'ai/data/eval_queries.jsonl'
+      - 'ai/scripts/finetune_embedding.py'
+      - 'ai/scripts/evaluate_embedding.py'
+      - 'ai/scripts/check_ir_gate.py'
+      - '.github/workflows/ai-quality.yml'
+  pull_request:
+    paths:
+      - 'ai/app/corpus/**'
+      - 'ai/app/services/training/**'
+      - 'ai/app/core/config.py'
+      - 'ai/data/train_triplets.jsonl'
+      - 'ai/data/eval_queries.jsonl'
+      - 'ai/scripts/finetune_embedding.py'
+      - 'ai/scripts/evaluate_embedding.py'
+      - 'ai/scripts/check_ir_gate.py'
+      - '.github/workflows/ai-quality.yml'
+  # RAGAS 리포트는 여기로만 돈다.
+  workflow_dispatch:
+    inputs:
+      ragas:
+        description: 'RAGAS 리포트까지 실행 (OpenAI 호출 216회 발생)'
+        type: boolean
+        default: false
+
+concurrency:
+  group: ai-quality-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ir-gate:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ai
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: ai/requirements.txt
+
+      - name: torch (CPU 휠) 설치
+        run: pip install torch --index-url https://download.pytorch.org/whl/cpu
+
+      - name: 의존성 설치
+        run: pip install -r requirements.txt
+
+      # 베이스 모델은 470MB 다(250k 어휘 x 384차원 임베딩 행렬). 매번 받을 이유가
+      # 없다. 키를 config.py 해시로 잡아서 **베이스 모델을 바꾸면 캐시가 무효화**
+      # 되게 한다 — 상수 키로 두면 모델을 바꿔도 옛 모델을 계속 쓴다.
+      - name: HuggingFace 캐시
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: hf-${{ hashFiles('ai/app/core/config.py') }}
+
+      # **모델을 캐시하지 않는다.** 학습은 트리플 162건 x 2에폭 = 약 20스텝이라
+      # 1분이 안 걸린다. 캐시는 "낡은 모델이 조용히 재사용된다"는 실패 모드를
+      # 새로 만드는데, 그 대가로 아낄 게 없다.
+      - name: 임베딩 파인튜닝
+        run: python -m scripts.finetune_embedding
+
+      # 수집. 판정하지 않는다.
+      - name: IR 지표 측정
+        run: python -m scripts.evaluate_embedding --json ../ir_metrics.json
+
+      # 판정. 문턱은 스크립트 안에 있고 그 근거도 같이 있다.
+      - name: IR 게이트
+        run: python -m scripts.check_ir_gate ../ir_metrics.json
+
+      # -----------------------------------------------------------------------
+      # RAGAS 는 **리포트지 게이트가 아니다.** 그래서 게이트 뒤에 붙고, 판정하지
+      # 않으며, 수동 실행에서만 돈다.
+      #
+      # 이유 둘 다 이 저장소가 이미 겪은 것이다:
+      #
+      # 1. **LLM 심판의 변동폭을 특성화하지 않았다.** 문턱은 잡음을 재고 나서
+      #    정하는 것이고, 그러지 않아 사전 등록 기준이 실패한 전례가 두 번 있다
+      #    (ADR-0028, ADR-0040). 위 IR 문턱은 재학습 변동을 7회 측정해서 잡았는데,
+      #    RAGAS 에 같은 걸 하려면 같은 데이터를 여러 번 채점해야 하고 그 자체가
+      #    호출 비용이다. **재기 전에는 문턱을 걸지 않는다.**
+      # 2. **매 커밋 OpenAI 요금이 나간다.** 질의 54건 x 지표 2종 x 모델 2개
+      #    = 216회. 부하 테스트를 CI 에 넣지 않은 것과 같은 판단이다.
+      #
+      # **별도 잡으로 두지 않은 이유**: 잡을 나누면 셋업과 학습을 통째로 두 번
+      # 하게 되고, 게이트가 판정한 모델과 RAGAS 가 채점한 모델이 **다른 실행에서
+      # 나온 것**이 된다. 같은 잡의 조건부 스텝이면 그 질문 자체가 없다.
+      - name: RAGAS 리포트 (수동 실행 + 체크 시에만)
+        if: github.event_name == 'workflow_dispatch' && inputs.ragas
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          # 키가 없으면 216회를 시도한 뒤 전부 실패하고, 그 실패는 "품질이
+          # 나쁘다"처럼 보인다. **실패한 호출은 답이 아니라 결측이다**(사례집 19).
+          test -n "$OPENAI_API_KEY" || {
+            echo "OPENAI_API_KEY 시크릿이 없습니다 — RAGAS 를 돌릴 수 없습니다."
+            exit 1
+          }
+          python -m scripts.evaluate_embedding --ragas --json ../ir_metrics.json
+
+      # **통과했을 때도 수치를 남긴다.** 초록/빨강만으로는 "얼마나 통과했는지"를
+      # 알 수 없고, 문턱을 다시 잡을 때 필요한 게 바로 그 여유폭이다.
+      - name: 지표 아티팩트
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ir-metrics
+          path: ir_metrics.json

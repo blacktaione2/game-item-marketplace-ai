@@ -10,6 +10,12 @@ train 아이템이 방해 문서로 섞여 있어야 현실적인 난이도가 �
 실행:
   python -m scripts.evaluate_embedding                # IR 지표만 (LLM 호출 없음)
   python -m scripts.evaluate_embedding --ragas        # RAGAS까지
+  python -m scripts.evaluate_embedding --json out.json  # 기계 판독용 (CI 게이트)
+
+**수집과 채점은 분리한다.** 이 스크립트는 수치를 내기만 하고 합격/불합격을
+판단하지 않는다. 판단은 `scripts/check_ir_gate.py` 가 이 `--json` 출력을 읽어
+한다. 그래야 문턱을 고칠 때 재학습·재평가를 다시 하지 않는다 — 이 저장소가
+프롬프트 평가에서 이미 쓰는 규칙과 같다(`--score-only`).
 """
 
 from __future__ import annotations
@@ -106,6 +112,7 @@ def main() -> None:
     parser.add_argument("--finetuned", default="models/embedding-finetuned")
     parser.add_argument("--top-k", type=int, default=5, help="RAGAS에 넘길 컨텍스트 수")
     parser.add_argument("--ragas", action="store_true")
+    parser.add_argument("--json", help="지표를 이 경로에 JSON으로 저장 (CI 게이트용)")
     args = parser.parse_args()
 
     from sentence_transformers import SentenceTransformer
@@ -135,12 +142,33 @@ def main() -> None:
         print(f"\n파인튜닝 모델이 없습니다: {tuned_path}")
         print("먼저 python -m scripts.finetune_embedding 을 실행하세요.")
         print(f"\n파인튜닝 전 지표: {before}")
-        return
+        # **0으로 끝내면 안 된다.** CI가 이걸 호출하는데 "모델이 없다"가 통과로
+        # 읽히면 게이트가 통째로 공허해진다 — 이 저장소가 이미 두 번 겪은
+        # "안 뜬 것을 닫힌 것으로 읽었다"와 같은 형태다(사례집 5·11).
+        raise SystemExit(1)
 
     tuned = SentenceTransformer(str(tuned_path))
     after, rank_after = evaluate_model(tuned, queries, gold_indices, corpus_texts)
 
     print_table(before, after)
+
+    if args.json:
+        Path(args.json).write_text(
+            json.dumps(
+                {
+                    "n_queries": len(queries),
+                    "n_corpus": len(corpus_texts),
+                    "base_model": settings.embedding_base_model,
+                    "tuned_path": str(tuned_path),
+                    "before": before,
+                    "after": after,
+                },
+                ensure_ascii=False,
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+        print(f"\n지표 저장: {args.json}")
 
     if args.ragas:
         contexts_before = [
