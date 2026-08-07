@@ -243,6 +243,13 @@ R --scan --pattern 'ratelimit:assistant*' | xargs -r docker exec gimp-redis \
 | `price_forecast` | `forecast`, `resolved_item` | **3** |
 | `anomaly_check` | `detection` | 1 |
 | `compound` | `tool_calls[]`, `tool_failures`, `stop_reason` | 1~6 (도구 호출 수 + 1) |
+| `price_forecast` (설명 LLM 실패) | `degraded: true` | **2** |
+| `anomaly_check` (설명 LLM 실패) | `degraded: true` | **0** |
+
+> **`degraded: true` 는 500 이 아니다** (ADR-0041). 설명 LLM 이 죽어도 그 시점에는
+> 예측·판정이 **이미 계산돼 있다** — 없는 것은 산문뿐이라, `_search_answer` 와
+> 같은 방식으로 결정적 문장을 만들어 돌려준다. `llm_calls` 가 줄어드는 이유는
+> **그 호출이 성사되지 않았기** 때문이다. 안 줄이면 안 나간 돈을 세게 된다.
 
 > **검색을 타는 분기는 질의이해 + 도메인 판정으로 2회다** (ADR-0039). 둘은
 > `asyncio.gather`로 **동시에** 나가므로 지연은 하나치인데 **비용은 둘**이다.
@@ -313,7 +320,14 @@ R --scan --pattern 'ratelimit:assistant*' | xargs -r docker exec gimp-redis \
 |---|---|
 | 404 | 테넌트 인덱스 없음 |
 | 503 | 예측/이상탐지 모델 미학습. 본문에 실행할 명령이 들어 있다 — `python -m scripts.train_forecast` / `train_anomaly` |
-| 500 | 그 외 |
+| 500 | 그 외. **본문은 일반 메시지이고 예외 문자열이 들어가지 않는다** |
+
+> **500 본문에서 예외 문자열을 뺐다** (ADR-0041). 업스트림 메시지에는 ES
+> 인덱스명·쿼리 DSL·내부 호스트가 섞여 나온다. 백엔드는
+> `server.error.include-stacktrace: never` 로 같은 자세를 처음부터 취하고 있었고
+> **AI 서버 다섯 라우터만 안 맞춰져 있었다.** 진단은 서버 로그
+> (`logger.exception`)로 한다 — 누출을 막으면서 진단 수단까지 없애면 안 된다.
+> `tests/test_error_detail_leak.py` 가 소스를 훑어 고정한다.
 
 `stop_reason`은 `max_steps`(설정 `agent_max_steps`, 기본 5)에 걸렸는지를 알려준다.
 
@@ -504,7 +518,25 @@ Phase 2의 OpenAI 왕복 확인용이었다. **인증 의존성이 없었다** �
 
 ## `GET /health`
 
-`{"status": "ok", "service": "ai-server"}`
+```jsonc
+{
+  "status": "ok",
+  "service": "ai-server",
+  "llm_fallback": true,              // ANTHROPIC_API_KEY 가 구성됐는가 (ADR-0042)
+  "llm_fallback_model": "claude-sonnet-4-5"   // 안 붙었으면 null
+}
+```
+
+> **폴백 구성 여부를 여기에 실은 이유**: 원래는 기동 시 `logger.info` 로만
+> 남겼는데 **이 앱은 로깅을 설정하지 않는다** — 파이썬 루트 기본값이 `WARNING`
+> 이라 그 줄은 어디에도 안 나온다. 배포 후 `docker logs | grep` 이 빈 결과를
+> 냈고, 그건 **"폴백이 없다" 와 "로그가 안 보인다" 를 구분해주지 못했다.**
+>
+> **키 자체는 절대 싣지 않는다.** `/health` 는 인증에서 제외돼 있으므로 여기
+> 실을 수 있는 것은 비밀이 아닌 사실뿐이다.
+>
+> 백엔드의 `AiHealthResponse` 는 `status`·`service` 만 읽는 **부분집합**이다.
+> Boot 의 Jackson 이 모르는 필드를 무시하므로 이쪽이 늘어나도 안 깨진다.
 
 ## `GET /metrics`
 
@@ -518,10 +550,20 @@ Prometheus 텍스트 포맷. **Prometheus를 띄우지 않아도 쓸모가 있�
 | `ai_llm_calls_total` | Counter | `tenant`, `intent` |
 | `ai_cache_lookups_total` | Counter | `tenant`, `result` |
 | `ai_rate_limited_total` | Counter | `tenant`, `path` |
+| `ai_llm_provider_calls_total` | Counter | `provider`, `outcome` |
 
 > `ai_rate_limited_total`은 **`record_response()`를 지나지 않는다** — 한도 거절은
 > 파이프라인 진입 전에 끝나 응답 자체가 만들어지지 않기 때문이다. "계측 지점은
-> 하나"라는 원칙(ADR-0019)의 유일한 예외다. 백엔드 쪽 짝은
+> 하나"라는 원칙(ADR-0019)의 **첫 번째** 예외다.
+>
+> **두 번째 예외가 `ai_llm_provider_calls_total`이다** (ADR-0042). 이 사실은
+> **응답 모양이 아니다** — 에이전트 한 요청이 `chat()`을 다섯 번 부르고 그중
+> 둘만 폴백일 수 있다. 계측을 폴백 래퍼가 아니라 **각 클라이언트 안에** 둔
+> 이유는, 키가 없으면 래퍼를 아예 만들지 않아서 **폴백 없는 구성에서 아무것도
+> 안 잡히기** 때문이다 — 정작 프로바이더가 하나뿐이라 더 취약한 쪽이다.
+>
+> **`ai_llm_calls_total`과 짝지어 읽는다.** 전자는 응답의 `llm_calls` **상수**
+> 에서 오고 후자는 **실제 호출**을 센다 — **어긋나면 그 상수가 틀린 것**이다. 백엔드 쪽 짝은
 > `rate_limited_total{scope}`이며, `trade.rejection`에 합치지 않았다 — 토큰
 > 발급은 거래가 아니라 이름이 거짓이 된다.
 
@@ -545,8 +587,12 @@ Prometheus 텍스트 포맷. **Prometheus를 띄우지 않아도 쓸모가 있�
 > (ADR-0026). 즉 ADR-0020의 "임베딩 낭비"라는 지목은 **결과적으로 옳았고**
 > ADR-0025의 반박이 틀렸다 — **부하 중 벽시계 시간은 그 단계의 일이 아니다.**
 
-`outcome`: `ok` · `out_of_domain` · `no_results` · `tool_failure` — 뒤 셋은
-에러가 아니지만 부하테스트에서 구분해서 봐야 한다.
+`outcome`: `ok` · `out_of_domain` · `no_results` · `tool_failure` · `degraded`
+— 뒤 넷은 에러가 아니지만 부하테스트에서 구분해서 봐야 한다.
+
+> **`degraded`는 500이 안 나므로 다른 데서는 안 보인다** (ADR-0041). 사용자는
+> 답을 받았으니 실패가 아니지만 `ok`도 아니다 — 이 값이 늘면 LLM 프로바이더가
+> 흔들리고 있다는 뜻이다.
 
 > `out_of_domain`이 **운영에서 게이트를 보는 유일한 창**이다 (ADR-0039).
 > 오거부율은 배포 전에 평가셋으로 한 번 쟀을 뿐이고 실제 질의 분포는 그것과

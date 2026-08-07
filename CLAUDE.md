@@ -483,6 +483,12 @@ flow are still curl-verified only; see the roadmap's 기술 부채 section.
   was easy, not because the gate is safe. Keep the game-adjacent-but-not-trading
   group (`"이 보스 어떻게 잡아?"`) — without it a gate that passes anything
   containing a game word scores full marks.
+  `element_queries.py` holds the **hand-written, answer-labelled** element eval
+  (39 queries in five groups: 무속성 / 타속성 / **미언급** / 저항 / 부정형).
+  The `미언급` group is the load-bearing one — without it, "fill 무속성
+  everywhere" scores perfectly. It also deliberately contains one phrasing the
+  implementation does *not* handle (`"속성 안 붙은 신발"`), because an eval set
+  everything passes cannot show a limit.
   `intent_utterances.py` holds the **hand-written** router eval + boundary sets
   (LLM-generated training utterances live in `data/intent_train.json`);
   `cache_pairs.py` holds the synonym/trap pairs for cache threshold work.
@@ -491,7 +497,8 @@ flow are still curl-verified only; see the roadmap's 기술 부채 section.
   compare_eval_sets, train_forecast, train_anomaly, generate_intent_data,
   train_intent_router, evaluate_semantic_cache, evaluate_rerank_floor,
   evaluate_hard_filters, evaluate_rewrite_determinism, evaluate_explanation_prompts,
-  evaluate_domain_gate, benchmark_cpu_stages. **`evaluate_rerank_floor` and
+  evaluate_domain_gate, evaluate_element_extraction, benchmark_cpu_stages.
+  **`evaluate_rerank_floor` and
   `evaluate_hard_filters` answer different questions and must stay
   separate**: `evaluate_rerank_floor` documents a *rejected* approach (it sweeps
   thresholds and would print a recommendation), while `evaluate_hard_filters`
@@ -503,7 +510,7 @@ flow are still curl-verified only; see the roadmap's 기술 부채 section.
   versioning for reproducibility). `models/` is gitignored — regenerate with
   the build/finetune scripts.
 
-- `tests/` — `python -m pytest` from `ai/` (174 tests, no `pytest-asyncio` — the
+- `tests/` — `python -m pytest` from `ai/` (**257 tests**, no `pytest-asyncio` — the
   few async cases use `asyncio.run`). Deliberately limited to
   deterministic units: RRF fusion, router rules, cache keys/tenant isolation,
   per-intent TTL + the no-result storage veto, id-space guards, filter→DSL
@@ -514,7 +521,14 @@ flow are still curl-verified only; see the roadmap's 기술 부채 section.
   LLM call and is measured by `evaluate_domain_gate.py`, not here; what the tests
   pin is that search short-circuits, that `NO` is matched at the front rather than
   as a substring, and that `in_domain` has not crept back into the extraction
-  prompt). Model quality is judged
+  prompt). Newer additions keep the same shape — all of them run **without a
+  network**, which is possible precisely because each round pushed the decidable
+  part into code: `fill_missing_element` (ADR-0040), the degradation fallbacks and
+  their `degraded` outcome (ADR-0041), a source scan proving **no router
+  interpolates the exception into a 500 body**, and the whole OpenAI→Anthropic
+  **message-format translation** plus circuit-breaker behaviour (ADR-0042). The
+  live provider round-trip was walked once by hand and recorded in the ADR, not
+  pinned here. Model quality is judged
   by the training scripts' held-out
   reports, not by unit tests. Everything else is manually verified (see the
   roadmap's 기술 부채 section).
