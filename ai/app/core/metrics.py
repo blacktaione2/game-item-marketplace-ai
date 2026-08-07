@@ -69,6 +69,45 @@ rate_limited_total = Counter(
     registry=REGISTRY,
 )
 
+# 프로바이더별 실제 호출 수 (ADR-0042). **계측 지점 원칙의 두 번째 예외이고,
+# 여기도 예외인 이유를 적어둔다.**
+#
+# ## 왜 record_response() 로는 안 되나
+#
+# 이 사실이 **응답 모양이 아니다.** 에이전트 한 요청이 `chat()` 을 다섯 번 부르고
+# 그중 둘만 폴백일 수 있다 — 응답 하나에 프로바이더가 섞인다. `record_response()`
+# 는 요청당 한 번 도는 자리라 이걸 표현할 방법이 없다.
+#
+# ## 왜 폴백 래퍼가 아니라 각 클라이언트에서 세나
+#
+# 키가 없으면 래퍼를 아예 만들지 않는다(ADR-0042). 래퍼에서 세면 **폴백이 없는
+# 구성에서는 아무것도 안 잡힌다** — 정작 프로바이더가 하나뿐이라 더 취약한 쪽이다.
+#
+# ## 무엇을 고치는가 — 새 기능이 아니라 내가 만든 드리프트다
+#
+# `ai_llm_calls_total` 은 *"이 요청이 LLM 을 몇 번 썼나"* 를 센다. 프로바이더가
+# 하나일 땐 그게 곧 OpenAI 사용량이었는데, **폴백이 붙는 순간 그 해석이 깨졌다.**
+# 어디에 청구됐는지 말해주지 않는다.
+#
+# 부수 효과가 하나 더 있다. `ai_llm_calls_total` 은 응답의 `llm_calls` **상수**에서
+# 오고 이건 **실제 호출**을 센다 — **둘이 어긋나면 그 상수가 틀린 것**이다.
+# ADR-0039·0041 에서 그 값을 세 번 손으로 고쳤으니 교차 검증이 생기는 셈이다.
+llm_provider_calls_total = Counter(
+    "ai_llm_provider_calls_total",
+    "프로바이더별 실제 LLM 호출 수",
+    # 라벨 카디널리티 2 x 2 = 4. 테넌트를 넣지 않는다 — 프로바이더 장애는
+    # 테넌트와 무관하고, 넣으면 시계열만 늘린다.
+    labelnames=("provider", "outcome"),
+    registry=REGISTRY,
+)
+
+
+def record_llm_call(provider: str, ok: bool) -> None:
+    """LLM 호출 1건을 센다. 클라이언트 구현이 직접 부른다."""
+    llm_provider_calls_total.labels(
+        provider=provider, outcome="ok" if ok else "failed"
+    ).inc()
+
 # `timings` 키 → 메트릭의 stage 라벨. 키에서 `_ms`를 떼는 규칙이 아니라
 # 명시적 표를 쓴다 — 새 키가 생겼을 때 조용히 통과하지 않고 눈에 띄게 하려고.
 _STAGE_BY_KEY: dict[str, str] = {

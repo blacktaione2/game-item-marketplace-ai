@@ -316,3 +316,66 @@ class TestItIsCheckableWithoutLogs:
         missing_branch = source.split("if not settings.anthropic_api_key:")[1]
         missing_branch = missing_branch.split("return primary")[0]
         assert "logger.warning" in missing_branch
+
+
+class TestProviderAccounting:
+    """**어느 프로바이더에 청구됐는지**를 센다 (ADR-0042).
+
+    새 기능이 아니라 **폴백이 만든 드리프트를 메우는 것**이다.
+    `ai_llm_calls_total` 은 *"이 요청이 LLM 을 몇 번 썼나"* 인데, 프로바이더가
+    하나일 땐 그게 곧 OpenAI 사용량이었다. 둘이 되는 순간 그 해석이 깨진다.
+    """
+
+    def _counts(self):
+        from app.core.metrics import llm_provider_calls_total
+
+        out = {}
+        for metric in llm_provider_calls_total.collect():
+            for sample in metric.samples:
+                if sample.name.endswith("_total"):
+                    key = (sample.labels["provider"], sample.labels["outcome"])
+                    out[key] = sample.value
+        return out
+
+    def test_failures_are_counted_even_though_the_user_never_sees_them(self):
+        """**폴백이 붙으면 1차 실패가 응답에 안 나타난다** — 사용자는 Claude 가 쓴
+        답을 정상으로 받는다. 여기서 안 세면 OpenAI 가 흔들린다는 사실이 집계
+        어디에도 안 남는다.
+        """
+        from app.core.metrics import record_llm_call
+
+        before = self._counts().get(("openai", "failed"), 0.0)
+        record_llm_call("openai", ok=False)
+        assert self._counts()[("openai", "failed")] == before + 1
+
+    def test_both_providers_use_the_same_counter(self):
+        """둘을 같은 방식으로 세야 "둘 다 흔들린다" 를 볼 수 있다."""
+        from app.core.metrics import record_llm_call
+
+        record_llm_call("anthropic", ok=True)
+        assert ("anthropic", "ok") in self._counts()
+
+    def test_the_clients_actually_call_it(self):
+        """헬퍼만 있고 배선이 없으면 아무것도 안 센다.
+
+        실제 왕복은 네트워크가 필요하므로 **호출 지점이 있다는 것**을 소스에서
+        확인한다 — 이 저장소가 `in_domain` 필드 회귀를 고정한 방식과 같다.
+        """
+        import inspect
+
+        from app.services.llm import anthropic_client, openai_client
+
+        for module, provider in (
+            (openai_client, "openai"),
+            (anthropic_client, "anthropic"),
+        ):
+            source = inspect.getsource(module)
+            assert f'record_llm_call("{provider}", ok=False)' in source
+            assert f'record_llm_call("{provider}", ok=True)' in source
+
+    def test_the_label_set_stays_small(self):
+        """`tenant` 를 넣지 않는다 — 프로바이더 장애는 테넌트와 무관하고,
+        넣으면 시계열만 늘린다."""
+        from app.core.metrics import llm_provider_calls_total
+
+        assert llm_provider_calls_total._labelnames == ("provider", "outcome")
