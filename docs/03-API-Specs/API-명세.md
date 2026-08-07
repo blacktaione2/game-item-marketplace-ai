@@ -65,9 +65,38 @@ updated: 2026-07-31
 >
 > **일일 한도는 한국시간 자정에 리셋된다** — 키에 날짜가 들어간다. 고정 윈도우라
 > 자정 전후로 몰리면 짧은 시간에 2배가 가능하고, 그건 수용한다(실제 비용 상한은
-> OpenAI 월 한도다).
+> OpenAI 월 한도다). **24시간이 아니다** — 언제 처음 물어봤든 자정에 풀린다.
+>
+> `Retry-After` 는 남은 TTL 이고, 일일 키의 TTL 은 **자정까지 남은 초**다
+> (2026-08-07 수정 — 그전엔 86,400이라 최대 하루 가까이 과장했다. ADR-0031 참고).
 
 **부하테스트는 이 한도에 걸린다.** 완화 구성으로 띄우는 절차는 `load/README.md`.
+
+### 운영 중 한도를 지워야 할 때
+
+배포 검증(`load/verify-container.sh`)이 한 실행에 `/api/assistant` 를 **9회**
+쓴다. 하루 다섯 번쯤 돌리면 50회가 소진되고, 그때 검사는 **"판정 불가 — 한도
+소진(429)"** 이라고 정확히 말한다(그전엔 "게이트가 막았다" / "Redis 를 의심하라"
+로 엉뚱하게 보고했다).
+
+```bash
+REDIS_PW=$(grep -E '^REDIS_PASSWORD=' .env | cut -d= -f2-)
+R() { docker exec gimp-redis redis-cli --no-auth-warning -a "$REDIS_PW" "$@"; }
+R --scan --pattern 'ratelimit:assistant*' | while read -r k; do printf '%s = ' "$k"; R GET "$k"; done
+R --scan --pattern 'ratelimit:assistant*' | xargs -r docker exec gimp-redis \
+  redis-cli --no-auth-warning -a "$REDIS_PW" DEL
+```
+
+> 패턴이 `ratelimit:assistant*` 로 좁아 **시맨틱 캐시·구매 한도·Redisson 락은
+> 안 건드린다.** 다만 이건 비용 방어를 잠깐 푸는 것이라 검증할 때만 쓴다.
+>
+> **`REDIS_PASSWORD` 는 호스트에서 전개해야 한다.** compose 의 redis 서비스에는
+> `environment:` 블록이 없고 `command:` 의 `${REDIS_PASSWORD}` 는 호스트에서
+> 치환되므로, **컨테이너 안에 그 변수는 없다**(`sh -c '... "$REDIS_PASSWORD"'`
+> 로 쓰면 빈 값으로 인증해 `WRONGPASS` 가 난다).
+>
+> 카운터 값이 한도를 넘어 보이는 것은 정상이다 — `INCR` 이 먼저라 **거절된
+> 요청도 센다.** 그 값은 허용 횟수가 아니라 **시도 횟수**다.
 
 ## 알림 (ADR-0030)
 

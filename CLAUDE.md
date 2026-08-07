@@ -601,7 +601,13 @@ explain ("midnight KST") rather than at each user's first call. It accepts the
 fixed-window 2× boundary at day scale — the real ceiling is the OpenAI monthly cap,
 and this layer targets ordinary abuse, not adversarial precision. **A request
 rejected by the per-minute limit must not consume the daily budget** (increment only
-after the first check passes). `X-Forwarded-For` is read too — but **only from
+after the first check passes). **The daily key's TTL is seconds-until-midnight, not
+86,400** — `_hit()` returns the remaining TTL and the handler ships it as
+`Retry-After`, so a 24-hour TTL told a user who first asked at 01:00 and hit the cap
+at 23:00 to come back in *22 hours* when the real answer was one. The TTL had been
+dismissed as housekeeping because the key's *date* decides the reset; **a value you
+treat as internal is worth checking for leaks into observable output.**
+`X-Forwarded-For` is read too — but **only from
 addresses in `rate-limit.trusted-proxies`, which defaults to empty**, so an
 unconfigured deployment behaves exactly as before instead of trusting a spoofable
 header.

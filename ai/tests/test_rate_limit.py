@@ -198,3 +198,50 @@ def test_redis_failure_fails_open(monkeypatch):
     monkeypatch.setattr(rate_limit, "get_redis_client", lambda: BrokenRedis())
     get_settings.cache_clear()
     assert call(actor()) is not None
+
+
+class TestDailyExpiryTracksMidnight:
+    """일일 키의 TTL 이 **자정까지**여야 한다 (2026-08-07).
+
+    리셋 시각은 키 이름의 날짜가 정하므로 TTL 은 청소용이다 — 그런데 그 값이
+    `Retry-After` 로 사용자에게 나간다. 86,400(첫 호출 + 24시간)을 걸면
+    "언제 풀리는가"를 최대 하루 가까이 과장해서 답하게 된다.
+    """
+
+    def test_returns_time_to_midnight_not_a_full_day(self):
+        from datetime import datetime
+
+        # 01:00 에 첫 호출 -> 자정까지 23시간. 24시간이 아니다.
+        at_0100 = datetime(2026, 8, 7, 1, 0, 0)
+        assert rate_limit.seconds_until_kst_midnight(at_0100) == 23 * 3600
+
+        # 23:00 이면 1시간. 예전 판본은 여기서도 79,200(22시간)을 냈다.
+        at_2300 = datetime(2026, 8, 7, 23, 0, 0)
+        assert rate_limit.seconds_until_kst_midnight(at_2300) == 3600
+
+    def test_never_returns_zero(self):
+        """자정 정각에 0을 주면 `EXPIRE key 0` 이 되어 키가 즉시 사라진다."""
+        from datetime import datetime
+
+        just_before = datetime(2026, 8, 7, 23, 59, 59, 999999)
+        assert rate_limit.seconds_until_kst_midnight(just_before) >= 1
+
+    def test_the_limiter_uses_it_for_the_daily_key(self, fake_redis, monkeypatch):
+        """함수만 맞고 배선이 안 되면 아무것도 안 고친 것이다.
+
+        **실제 남은 초로 단언하지 않는다** — 실행 시각에 따라 달라져서 범위로
+        볼 수밖에 없고, `1 <= x <= 86400` 은 예전 값(86,400)도 통과시킨다.
+        함수를 가짜 값으로 바꿔치고 **그 값이 그대로 TTL 이 되는지**를 본다.
+
+        분당 키가 60인 것도 같이 본다 — 안 그러면 "전부 자정"으로 바꿔놓고도
+        통과한다.
+        """
+        monkeypatch.setattr(rate_limit, "seconds_until_kst_midnight", lambda _: 4321)
+        call(actor())
+
+        daily = [k for k in fake_redis.ttls if "assistant_daily" in k]
+        minute = [k for k in fake_redis.ttls if "assistant_daily" not in k]
+        assert len(daily) == 1 and len(minute) == 1
+
+        assert fake_redis.ttls[daily[0]] == 4321
+        assert fake_redis.ttls[minute[0]] == 60
