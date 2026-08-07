@@ -25,6 +25,18 @@ fi
 PASS=0
 FAIL=0
 
+# **어느 판본이 돌고 있는지 먼저 밝힌다.**
+#
+# 이 저장소는 검사 스크립트가 낡은 채로 여섯 단계를 지나간 전례가 있고(ADR-0031
+# 이 `demo-token` 을 지웠는데 이 파일을 안 고쳐서 첫 줄에서 죽어 있었다), 방금도
+# `git pull` 없이 돌려 **고친 검사가 옛 판본으로 실패를 보고**했다.
+#
+# 검사 결과를 읽기 전에 "무엇을 실행했는가"가 보여야 한다. 커밋과 작업 트리
+# 오염 여부 둘 다 낸다 — 로컬에서 고치고 커밋 안 한 상태도 흔하다.
+_head="$(git -C "$(dirname "$0")/.." log --oneline -1 2>/dev/null || echo '(git 아님)')"
+_dirty="$(git -C "$(dirname "$0")/.." status --porcelain 2>/dev/null | head -1)"
+printf '검사 판본: %s%s\n\n' "$_head" "${_dirty:+  [작업 트리에 미커밋 변경 있음]}"
+
 ok()   { printf '  [PASS] %s\n' "$1"; PASS=$((PASS+1)); }
 bad()  { printf '  [FAIL] %s\n' "$1"; FAIL=$((FAIL+1)); }
 
