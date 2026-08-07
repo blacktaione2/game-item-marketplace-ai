@@ -232,12 +232,32 @@ stage 1, id-space prefixing, JWT auth, rate limiting, and bundle splitting.
 Three of those rounds ended in a **correction rather than a feature**, and each
 correction was left as an inline block rather than a rewrite — see the roadmap's
 마감 정리 for the list and for what was deliberately left unstarted (ELK/tracing,
-`asyncio.to_thread`, RAGAS gate, real password auth), each with its trigger.
+`asyncio.to_thread`, real password auth), each with its trigger. The RAGAS gate
+was on that list and **shipped in ADR-0043 — but not as a RAGAS gate** (below).
 
-CI is three GitHub Actions workflows (`.github/workflows/{ai,backend,frontend}.yml`),
-split into separate files so each can carry its own `paths` filter — a
-docs-only commit runs nothing. Two things about it are load-bearing:
+CI is four GitHub Actions workflows
+(`.github/workflows/{ai,backend,frontend,ai-quality}.yml`), split into separate
+files so each can carry its own `paths` filter — a docs-only commit runs nothing.
+Four things about it are load-bearing:
 
+- **The search-quality gate is `ai-quality.yml`, and RAGAS is not what gates it**
+  (ADR-0043). Deterministic Recall@k/MRR carry pass/fail (no LLM calls, free); RAGAS
+  is a `workflow_dispatch` report, because its judge variance was never characterised
+  and a threshold on unmeasured noise is the mistake ADR-0028 and ADR-0040 already
+  made twice. It also bills 216 calls per run. **ADR-0021's recorded blocker for this
+  ("a model-artifact distribution strategy must come first") turned out to be two
+  independent problems written as one** — retraining is ~20 steps so there is nothing
+  to distribute, and the billing half vanishes once RAGAS is demoted. *A deferral
+  reason bundled into one line looks bigger than it is; split it per item.*
+  **The floors (recall@1 0.35 / recall@5 0.48 / mrr 0.47) came from measuring
+  retraining variance first**, and measuring it correctly needed three arms: the seed
+  is pinned at 42, so re-running twice yields **bitwise-identical weights** and a
+  "variance" of 0 that is structural, not measured. Changing thread count gives
+  *different weights but identical metrics to 4 decimals* — so the cross-machine axis
+  is far smaller than the seed axis (the only real one: 0.0127–0.0370). **Print the
+  artifact hash beside any repeated-run measurement**, or "same numbers" cannot be
+  told from "same file". Scope is honest: this catches large regressions (corpus
+  corruption, wrong base model, broken triplets), not subtle quality drift.
 - **The load test is deliberately NOT in CI**, and the reason is not weight:
   a GH runner is a third environment whose numbers compare to neither ADR-0020
   nor the deployment target, there is no SLO to assert yet (ADR-0020 declined to
@@ -497,7 +517,14 @@ flow are still curl-verified only; see the roadmap's 기술 부채 section.
   compare_eval_sets, train_forecast, train_anomaly, generate_intent_data,
   train_intent_router, evaluate_semantic_cache, evaluate_rerank_floor,
   evaluate_hard_filters, evaluate_rewrite_determinism, evaluate_explanation_prompts,
-  evaluate_domain_gate, evaluate_element_extraction, benchmark_cpu_stages.
+  evaluate_domain_gate, evaluate_element_extraction, benchmark_cpu_stages,
+  evaluate_training_variance, check_ir_gate.
+  **The last two are the CI gate's two halves and must stay split** (ADR-0043):
+  `evaluate_training_variance` derives the thresholds (train 7×, LLM 0×) and
+  `check_ir_gate` applies them to whatever `evaluate_embedding --json` wrote — so
+  changing a threshold costs no retraining, the same collect/score split the prompt
+  harnesses use. `evaluate_embedding` **exits 1 when the fine-tuned model is
+  missing**; it used to print advice and exit 0, which CI would have read as a pass.
   **`evaluate_rerank_floor` and
   `evaluate_hard_filters` answer different questions and must stay
   separate**: `evaluate_rerank_floor` documents a *rejected* approach (it sweeps
@@ -508,9 +535,12 @@ flow are still curl-verified only; see the roadmap's 기술 부채 section.
   the filtered field, or measuring the filter becomes circular.
 - `data/` — generated triplets and eval query sets (tracked; small and worth
   versioning for reproducibility). `models/` is gitignored — regenerate with
-  the build/finetune scripts.
+  the build/finetune scripts. **`training_variance.json` is tracked and
+  `/ir_metrics.json` is not**, and the split is the point: the first is the
+  *derivation* of `check_ir_gate`'s thresholds (delete it and the numbers become
+  unverifiable), the second is a per-run output that CI ships as an artifact.
 
-- `tests/` — `python -m pytest` from `ai/` (**257 tests**, no `pytest-asyncio` — the
+- `tests/` — `python -m pytest` from `ai/` (**267 tests**, no `pytest-asyncio` — the
   few async cases use `asyncio.run`). Deliberately limited to
   deterministic units: RRF fusion, router rules, cache keys/tenant isolation,
   per-intent TTL + the no-result storage veto, id-space guards, filter→DSL
@@ -528,9 +558,13 @@ flow are still curl-verified only; see the roadmap's 기술 부채 section.
   interpolates the exception into a 500 body**, and the whole OpenAI→Anthropic
   **message-format translation** plus circuit-breaker behaviour (ADR-0042). The
   live provider round-trip was walked once by hand and recorded in the ADR, not
-  pinned here. Model quality is judged
-  by the training scripts' held-out
-  reports, not by unit tests. Everything else is manually verified (see the
+  pinned here. `test_ir_gate.py` (ADR-0043) is the newest and follows the same
+  rule for a check that only ever runs in CI: **every passing case is paired with
+  a failing one**, including the vacuity guards (same base/tuned path, all-identical
+  metrics) that the "compared the tuned model against itself" defect would trip.
+  Model quality itself is still judged by the training scripts' held-out reports —
+  what CI gates is that the reports did not collapse (ADR-0043's floors), not that
+  they improved subtly. Everything else is manually verified (see the
   roadmap's 기술 부채 section).
 
 Setup: `python -m venv .venv && .venv/Scripts/python -m pip install -r
@@ -731,7 +765,7 @@ default"; a short key is broken in every profile.
   should stay that way — a display exists for humans and its rules will change
   again. This is the third of four times a check here was itself wrong; the
   pattern and its checklist are in
-  `docs/05-Troubleshooting/검사-자체가-틀린-사례들.md` — **25 cases now**, and
+  `docs/05-Troubleshooting/검사-자체가-틀린-사례들.md` — **26 cases now**, and
   seven of them came from a single day of building new measurement tools. Two
   share one cause worth naming: **Korean draws its distinctions in the verb
   ending, but regexes are easiest to write against nouns**, so `이상 거래` also
@@ -742,6 +776,27 @@ default"; a short key is broken in every profile.
   words `스킬`/`강화` inside legitimate item queries. Corollary: **run any new
   check against a deliberately failing case too** — a check only ever seen
   passing is indistinguishable from one that always passes.
+  - **And then read the result correctly** — case 26 is the first time a
+    deliberately-failing case was built right and *read* wrong. `cmd | tail`
+    followed by `$?` reads **`tail`'s** exit code, which is always 0, so two
+    guards that were correctly exiting 1 both reported success. The filter was
+    added only to tidy cp949-mangled Korean output. **Never put a display filter
+    on the command whose exit code is the verdict** (`${PIPESTATUS[0]}`,
+    `set -o pipefail`, or redirect to a file and read it separately). Same family
+    as the `grep … | head -1` that invented a Cache-Control policy. Note this
+    class **cannot happen in a CI `run:` step**, so a hand check is weaker than
+    the workflow here, not stronger.
+- **When something pins reproducibility, repetition measures nothing.** Training
+  runs at a fixed `seed=42`, so "run it twice and compare" yields **bitwise
+  identical weights** — a variance of 0 that is structural, not measured, and
+  indistinguishable from a stable process. Vary the thing that is actually pinned
+  (seed), keep a same-seed pair as the control, and **print the artifact's hash
+  next to every run**: without it, "the metrics matched" cannot be told from "it
+  was the same file". Doing this surfaced a genuinely useful fact — different
+  thread counts produce *different weights but identical metrics*, so the
+  cross-machine axis is far smaller than the seed axis (ADR-0043). This is the
+  discrete cousin of "repeating a procedure on the same tune/holdout split
+  measures noise, not generalisation".
 - **A failed call is missing data, not an answer.** Case 19 is the first where
   one defect produced a false alarm and a silent pass *at the same time*: the
   collector returned `in_domain: None` on error, one metric counted it via

@@ -17,3 +17,9 @@
 
 # 부하테스트 산출물 (실행마다 생성). 요약은 ADR/DevLog에 남긴다.
 load/out/
+
+# IR 게이트가 실행마다 쓰는 지표 파일. CI에서는 아티팩트로 올라간다.
+# **`ai/data/training_variance.json` 은 반대로 추적한다** — 그쪽은 실행 산출물이
+# 아니라 `check_ir_gate.py` 문턱의 **유도 근거**라서, 없으면 그 숫자를 검증할
+# 방법이 사라진다.
+/ir_metrics.json
