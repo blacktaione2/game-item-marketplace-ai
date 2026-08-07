@@ -142,6 +142,52 @@ else
 fi
 
 echo
+echo "== 판정 1-c: 도메인 밖 질의를 거절하는가 (ADR-0039) =="
+# `"삼성전자 주식 어때?"` 가 시세 분기를 그대로 타고 **"삼성전자 주식의 최근
+# 거래가는 약 26,090원"** 이라고 답했다. 숫자는 다른 아이템의 진짜 예측값이었다.
+#
+# **질의는 룰이 판정하는 것으로 고른다.** 분류기(KoELECTRA)는 학습할 때마다
+# 가중치가 달라서 같은 질의가 배포판마다 다른 분기로 간다 — 실제로 로컬은
+# `compound 0.5861`, 배포는 `price_forecast 0.9179` 였다. 룰은 순수 정규식이라
+# 어디서나 같다. `시세` 는 PRICE_FORECAST 룰, `있어?` 는 ITEM_SEARCH 룰이다.
+#
+# **반대 방향을 같이 본다.** 거절만 확인하면 "전부 거절" 하는 게이트가 만점을
+# 받는다 — 그건 검색을 통째로 죽인 상태다.
+verdict() {  # 질의 -> out_of_domain 플래그
+  write_query "$TMP/d.json" "$1"
+  curl -s -X POST "$WEB/api/ai/assistant" \
+    -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+    --data-binary "@$TMP/d.json" \
+  | "$PY" -c "
+import sys,json
+try:
+    d=json.load(sys.stdin)
+    print(str(d.get('out_of_domain', False)), d.get('intent','?'),
+          d.get('llm_calls','?'), len(d.get('results') or []))
+except Exception: print('<파싱실패>','?','?','?')"
+}
+for Q in "금값 시세 알려줘" "나이키 운동화 270 있어?"; do
+  read -r V_FLAG V_INTENT V_LLM V_N <<EOF
+$(verdict "$Q")
+EOF
+  if [ "$V_FLAG" = "True" ] && [ "$V_N" = "0" ]; then
+    ok "거절: \"$Q\" (intent=$V_INTENT, LLM ${V_LLM}회, 결과 0건)"
+  else
+    bad "거절 안 됨: \"$Q\" — out_of_domain=$V_FLAG intent=$V_INTENT llm=$V_LLM 결과 ${V_N}건"
+  fi
+done
+# 대조군 — 이게 실패하면 게이트가 멀쩡한 검색을 막고 있다는 뜻이다.
+read -r V_FLAG V_INTENT V_LLM V_N <<EOF
+$(verdict "5만원 이하 검 찾아줘")
+EOF
+if [ "$V_FLAG" = "False" ] && [ "${V_N:-0}" -gt 0 ]; then
+  ok "대조군 통과: \"5만원 이하 검 찾아줘\" (결과 ${V_N}건)"
+else
+  bad "대조군 실패 — 도메인 안 질의가 막혔다. out_of_domain=$V_FLAG 결과 ${V_N}건.
+         게이트가 전부 거절하고 있다면 미검출 0% 는 아무 의미가 없다"
+fi
+
+echo
 echo "== 판정 3: SPA 폴백 =="
 CODE="$(curl -s -o /dev/null -w '%{http_code}' "$WEB/items/3")"
 [ "$CODE" = "200" ] && ok "/items/3 직접 접근 = 200" || bad "/items/3 = $CODE (기대 200)"

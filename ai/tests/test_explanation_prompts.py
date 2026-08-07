@@ -22,8 +22,8 @@ class TestAnomalyPrompt:
         """
         # "덧붙이세요:" 뒤에 오는 내용이 완결 어미로 끝나야 한다.
         appended = _ANOMALY_PROMPT.split("덧붙이세요**:")[-1]
-        # 프롬프트 뒷부분(질의/결과 자리표시자)은 빼고 지시 문장만 본다.
-        instruction = appended.split("질의:")[0].strip()
+        # 프롬프트 뒷부분(결과 자리표시자)은 빼고 지시 문장만 본다.
+        instruction = appended.split("결과:")[0].strip()
         assert instruction.endswith("다."), instruction
         assert not re.search(r"라는 점\.$", instruction), "명사형 조각이 되돌아왔다"
 
@@ -54,3 +54,39 @@ class TestForecastPrompt:
         """
         assert "등록가와 혼동하지 마세요" in _FORECAST_PROMPT
         assert "{baseline_source}" in _FORECAST_PROMPT
+
+    def test_it_names_the_item_it_forecast(self):
+        """대상을 안 밝히면 사용자는 무엇에 대한 답인지 모른다.
+
+        `{query}` 를 뺀 것의 짝이다 — 질의를 안 주면서 대상도 안 밝히면
+        "이 아이템의 최근 거래가는…" 이라는 주어 없는 문장이 된다. 실측:
+        이전 판본이 도메인 밖 케이스 9건에서 **9건 다** 그랬다.
+        """
+        assert "아이템 이름을 답변에 그대로 밝히세요" in _FORECAST_PROMPT
+
+
+class TestNeitherPromptSeesTheQuery:
+    """**질의를 넘기지 않는다** (ADR-0039).
+
+    넘기면 모델이 `result["name"]` 을 손에 쥐고도 질의의 주어를 고른다 —
+    `"삼성전자 주식 어때?"` 에 `"삼성전자 주식의 최근 거래가는 약 26,090원"`
+    이라고 답했고, 숫자는 다른 아이템의 진짜 예측값이었다.
+
+    "질의의 대상을 쓰지 마세요" 라는 지시로 막지 않은 이유: 이 저장소는
+    **혼동 대상을 이름으로 부르면 오히려 그쪽으로 쏠린 전례**가 있다. 자리표시자
+    자체가 없으면 되풀이가 **구조적으로 불가능**하다.
+    """
+
+    def test_forecast_prompt_has_no_query_placeholder(self):
+        assert "{query}" not in _FORECAST_PROMPT
+
+    def test_anomaly_prompt_has_no_query_placeholder(self):
+        assert "{query}" not in _ANOMALY_PROMPT
+
+    def test_formatting_without_a_query_still_works(self):
+        """자리표시자가 남아 있으면 `.format()` 이 KeyError 로 죽는다 —
+        호출부와 프롬프트가 어긋난 채로 배포되는 걸 여기서 막는다."""
+        _ANOMALY_PROMPT.format(result={"trade_id": 1})
+        _FORECAST_PROMPT.format(
+            result={"name": "검"}, baseline_source="최근 체결가", conditional="..."
+        )

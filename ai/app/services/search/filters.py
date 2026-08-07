@@ -60,6 +60,11 @@ class QueryUnderstanding(BaseModel):
 
     rewritten_query: str
     filters: SearchFilters = Field(default_factory=SearchFilters)
+    # **도메인 판정(`in_domain`)은 여기 없다.** 한 번 넣어봤고 측정으로
+    # 기각됐다(ADR-0039). 이 프롬프트에 필드를 하나 더하면 추출이 같이 흔들린다 —
+    # 재작성 토큰집합 일치도가 대조군 대비 **-0.24** 떨어졌고, 문구를 고쳐도
+    # 그대로였다(-0.234 → -0.248). 스키마가 늘어난 것 자체의 대가다.
+    # 판정은 `domain_gate.judge_in_domain()` 이 **별도 호출로 병렬** 수행한다.
 
 
 def _range(minimum: float | int | None, maximum: float | int | None) -> dict[str, Any]:

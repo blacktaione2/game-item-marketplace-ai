@@ -22,14 +22,16 @@ class TestNoResultPayload:
         assert "검 · 화염 속성 · 30,000원 이하" in payload["answer"]
         assert "없습니다" in payload["answer"]
 
-    def test_costs_one_llm_call_not_zero(self):
+    def test_costs_llm_calls_not_zero(self):
         """`understand_query`는 건너뛸 수 없다 — 필터를 알아야 0건 판정이 선다.
 
-        **ADR-0036 이후 결과가 있는 경로도 1이다.** 처음엔 "0건만 2 → 1"이
-        요점이었는데 이제 검색 분기 전체가 1이라 그 대비가 없다. 그래서
-        `llm_calls`로 0건 여부를 알 수 없고, `no_results`를 봐야 한다.
+        값은 세 번 바뀌었다: 2(설명 LLM 있던 시절) → 1(ADR-0036) →
+        **2(ADR-0039, 도메인 판정이 병렬로 하나 더 나간다)**.
+
+        바뀌지 않은 건 **검색 분기 전체가 같은 값**이라는 점이다. 그래서
+        `llm_calls`로는 0건 여부를 알 수 없고 `no_results`를 봐야 한다.
         """
-        assert _no_results({"subcategory": "검"})["llm_calls"] == 1
+        assert _no_results({"subcategory": "검"})["llm_calls"] == 2
 
     def test_exposes_the_filters_it_searched_with(self):
         """0건에는 검증할 결과가 없어서 필터가 유일한 근거다.
