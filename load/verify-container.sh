@@ -40,6 +40,30 @@ printf '검사 판본: %s%s\n\n' "$_head" "${_dirty:+  [작업 트리에 미커�
 ok()   { printf '  [PASS] %s\n' "$1"; PASS=$((PASS+1)); }
 bad()  { printf '  [FAIL] %s\n' "$1"; FAIL=$((FAIL+1)); }
 
+# **본문을 파싱하기 전에 HTTP 코드를 본다.** 오류 본문에는 찾는 필드가 없고,
+# "필드 없음"은 대개 **의미 있는 값 하나와 똑같이 보인다** — 429 가
+# `out_of_domain=False, 결과 0건` 으로 보여서 검사가 "게이트가 멀쩡한 검색을
+# 막았다"고 정반대로 보고했고, 캐시 검사는 같은 429 를 "Redis 연결을 의심하라"로
+# 보고했다.
+#
+# 200 이 아니면 그 검사는 **성립하지 않는다.** 통과도 실패도 아니라 판정 불가다.
+transport_fault() {  # 코드 -> 사람이 읽을 사유 (200이면 빈 문자열)
+  case "$1" in
+    200) printf '' ;;
+    429) printf '한도 소진(429). 이 스크립트가 한 실행에 /api/assistant 를 9회 쓰고 일일 한도는 사용자당 50회다. 분당이면 1분 뒤, 일일이면 KST 자정 이후' ;;
+    401) printf '인증 실패(401). 토큰 만료이거나 JWT_SECRET 이 두 곳에서 다르다' ;;
+    5*)  printf "서버 오류($1). docker logs gimp-ai 를 볼 것" ;;
+    *)   printf "예상 밖 응답($1)" ;;
+  esac
+}
+
+# `/api/assistant` 호출 + HTTP 코드. 본문은 stdout 첫 줄 뒤에 그대로 나온다.
+assistant_call() {  # 본문파일 -> "코드\n본문"
+  curl -s -w '\n%{http_code}' -X POST "$WEB/api/ai/assistant" \
+    -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+    --data-binary "@$1"
+}
+
 # 한글 질의는 셸 인자로 넘기면 로케일 코덱에 깨진다(cp949 경계).
 # UTF-8 파일로 써서 --data-binary 로 보낸다 — docs/05-Troubleshooting 참고.
 TMP="$(mktemp -d)"
@@ -82,10 +106,14 @@ echo
 echo "== 판정 1: /api/assistant 4분기 =="
 branch() {  # 이름, 질의, 기대 intent
   write_query "$TMP/q.json" "$2"
-  RES="$(curl -s -X POST "$WEB/api/ai/assistant" \
-    -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
-    --data-binary "@$TMP/q.json")"
-  GOT="$(printf '%s' "$RES" | "$PY" -c "
+  RES="$(assistant_call "$TMP/q.json")"
+  CODE="$(printf '%s' "$RES" | tail -1)"
+  FAULT="$(transport_fault "$CODE")"
+  if [ -n "$FAULT" ]; then
+    bad "$1 — 판정 불가: $FAULT"
+    return
+  fi
+  GOT="$(printf '%s' "$RES" | sed '$d' | "$PY" -c "
 import sys,json
 try:
     d=json.load(sys.stdin); print(d.get('intent','<없음>'), len(d.get('answer','')))
@@ -118,11 +146,12 @@ echo "== 판정 1-b: 캐시가 실제로 적중하는가 =="
 # 0 이 찍혔고, 그 값은 "적중"으로 오독되기 딱 좋다. 검색을 쓰면 미적중 2회 /
 # 적중 0회라 두 단언이 **둘 다 일한다.**
 write_query "$TMP/c.json" "5만원 이하 검 찾아줘" true
-cache_probe() {  # 한 번 물어보고 (적중여부, llm 호출수)를 낸다
-  curl -s -X POST "$WEB/api/ai/assistant" \
-    -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
-    --data-binary "@$TMP/c.json" \
-  | "$PY" -c "
+cache_probe() {  # 한 번 물어보고 "코드 적중여부 llm호출수 0건여부" 를 낸다
+  local resp code
+  resp="$(assistant_call "$TMP/c.json")"
+  code="$(printf '%s' "$resp" | tail -1)"
+  printf '%s ' "$code"
+  printf '%s' "$resp" | sed '$d' | "$PY" -c "
 import sys,json
 try:
     d=json.load(sys.stdin)
@@ -135,10 +164,17 @@ except Exception: print('<파싱실패>', '?', '?')"
 }
 FIRST="$(cache_probe)"    # 1회차: 저장시킨다 (이미 있으면 그대로 적중)
 SECOND="$(cache_probe)"
-read -r C_HIT C_LLM C_RES <<EOF
+read -r C_CODE C_HIT C_LLM C_RES <<EOF
 $SECOND
 EOF
-if [ "$C_HIT" = "True" ] && [ "$C_LLM" = "0" ]; then
+FIRST_CODE="${FIRST%% *}"
+C_FAULT="$(transport_fault "$C_CODE")"
+[ -z "$C_FAULT" ] && C_FAULT="$(transport_fault "$FIRST_CODE")"
+if [ -n "$C_FAULT" ]; then
+  # **429 를 "Redis 를 의심하라"로 보고하면 안 된다.** 캐시는 멀쩡한데 요청이
+  # 파이프라인에 들어가지도 못한 상태다.
+  bad "캐시 판정 불가 — $C_FAULT (1회차 코드 $FIRST_CODE, 2회차 $C_CODE)"
+elif [ "$C_HIT" = "True" ] && [ "$C_LLM" = "0" ]; then
   ok "같은 질의 2회차 = 캐시 적중, LLM 0회 (1회차: $FIRST)"
 elif [ "$C_RES" = "no_results" ]; then
   # 0건은 **설계상 저장하지 않는다**(policy.is_cacheable). 캐시가 멀쩡해도
@@ -176,9 +212,7 @@ echo "== 판정 1-c: 도메인 밖 질의를 거절하는가 (ADR-0039) =="
 verdict() {  # 질의 -> "HTTP코드 out_of_domain intent llm_calls 결과수"
   write_query "$TMP/d.json" "$1"
   local resp code
-  resp="$(curl -s -w '\n%{http_code}' -X POST "$WEB/api/ai/assistant" \
-    -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
-    --data-binary "@$TMP/d.json")"
+  resp="$(assistant_call "$TMP/d.json")"
   code="$(printf '%s' "$resp" | tail -1)"
   printf '%s ' "$code"
   printf '%s' "$resp" | sed '$d' | "$PY" -c "
@@ -188,17 +222,6 @@ try:
     print(str(d.get('out_of_domain', False)), d.get('intent','?'),
           d.get('llm_calls','?'), len(d.get('results') or []))
 except Exception: print('<파싱실패>','?','?','?')"
-}
-
-# 200 이 아니면 게이트 판정 자체가 성립하지 않는다. 그 사실을 그대로 말한다.
-transport_fault() {  # 코드 -> 사람이 읽을 사유 (200이면 빈 문자열)
-  case "$1" in
-    200) printf '' ;;
-    429) printf '한도 소진(429). 이 스크립트가 한 실행에 9회를 쓰고 일일 한도는 50회다. 1분 뒤 또는 KST 자정 이후 다시 돌린다' ;;
-    401) printf '인증 실패(401). 토큰 만료이거나 JWT_SECRET 이 두 곳에서 다르다' ;;
-    5*)  printf "서버 오류($1). docker logs gimp-ai 를 볼 것" ;;
-    *)   printf "예상 밖 응답($1)" ;;
-  esac
 }
 
 for Q in "금값 시세 알려줘" "나이키 운동화 270 있어?"; do
