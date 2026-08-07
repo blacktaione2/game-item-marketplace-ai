@@ -269,3 +269,50 @@ class TestWiring:
             __import__("app.services.llm.dependencies", fromlist=["x"])
         )
         assert "temperature=settings.openai_temperature" in source
+
+
+class TestItIsCheckableWithoutLogs:
+    """**로그 레벨에 기대지 않고 확인할 수 있어야 한다.**
+
+    처음엔 기동 시 `logger.info` 로만 남겼는데, 이 앱은 로깅을 설정하지 않아
+    파이썬 루트 기본값(`WARNING`) 아래가 전부 버려진다. 배포 후
+    `docker logs | grep` 이 빈 결과를 냈고 **"폴백 없음" 과 "로그가 안 보임" 이
+    구분되지 않았다.**
+    """
+
+    def test_health_reports_whether_a_fallback_is_configured(self, monkeypatch):
+        import asyncio
+
+        from app.core.config import Settings
+        from app.routers.health import health
+
+        with_key = asyncio.run(health(Settings(anthropic_api_key="sk-ant-x")))
+        assert with_key["llm_fallback"] is True
+        assert with_key["llm_fallback_model"]
+
+        without = asyncio.run(health(Settings(anthropic_api_key="")))
+        assert without["llm_fallback"] is False
+        # 안 붙었는데 모델명이 보이면 "설정됐다" 로 오독된다.
+        assert without["llm_fallback_model"] is None
+
+    def test_health_never_carries_the_key_itself(self):
+        """`/health` 는 인증 없이 열려 있다. 실을 수 있는 것은 비밀이 아닌 사실뿐."""
+        import asyncio
+
+        from app.core.config import Settings
+        from app.routers.health import health
+
+        secret = "sk-ant-super-secret-value"
+        body = asyncio.run(health(Settings(anthropic_api_key=secret)))
+        assert secret not in str(body)
+
+    def test_the_missing_case_is_a_warning_not_info(self):
+        """`info` 면 아무 데도 안 나온다 — 그리고 그게 봐야 하는 쪽이다."""
+        import inspect
+
+        from app.services.llm import dependencies
+
+        source = inspect.getsource(dependencies.get_llm_client)
+        missing_branch = source.split("if not settings.anthropic_api_key:")[1]
+        missing_branch = missing_branch.split("return primary")[0]
+        assert "logger.warning" in missing_branch

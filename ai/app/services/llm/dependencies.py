@@ -27,12 +27,20 @@ def get_llm_client() -> LLMClient:
     )
 
     if not settings.anthropic_api_key:
-        logger.info(
+        # **`warning` 이다. `info` 로 두면 아무 데도 안 나온다** — 이 앱은 로깅을
+        # 설정하지 않으므로 파이썬 루트 기본값 `WARNING` 아래는 전부 버려진다.
+        # 실제로 배포 후 `docker logs | grep` 이 빈 결과를 냈고, 그건 "폴백 없음"
+        # 과 "로그가 안 보임" 을 구분해주지 못했다.
+        #
+        # 레벨도 내용상 맞다 — 폴백 없이 도는 것은 정상이 아니라 **약화된 구성**이다.
+        logger.warning(
             "LLM 폴백 없음 — ANTHROPIC_API_KEY 가 비어 있다 (ai/.env 를 확인할 것. "
             "저장소 루트 .env 는 docker-compose 용이라 앱이 읽지 않는다)"
         )
         return primary
 
+    # 정상 구성이라 `info` 가 맞다. 대신 **눈으로 확인할 자리는 `/health` 에 있다**
+    # (`llm_fallback`) — 로그 레벨에 기대지 않는다.
     logger.info("LLM 폴백 활성 — %s", settings.anthropic_model)
     return FallbackLLMClient(
         primary=primary,
