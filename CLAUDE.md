@@ -696,7 +696,11 @@ default"; a short key is broken in every profile.
   `Cache-Control: no-cache` (revalidate, usually a 304), and 판정 3-b asserts
   **both** halves: no-cache on the HTML and `immutable` on an asset path scraped
   out of that HTML. Checking only the first would pass a config that turned all
-  caching off.
+  caching off. **That check then misfired on its own first run**: nginx's
+  `expires` and `add_header` each emit their own `Cache-Control` line, so the
+  response carries two, and `grep … | head -1` read only `max-age=31536000` and
+  missed `immutable`. Repeated headers are equivalent to one comma-joined value —
+  **`head -1` silently invents a policy that has no basis.** Join them.
 - **A one-sided metric makes the opposite extreme optimal.** Measure rejection
   only and "reject everything" scores perfectly; measure pass-through only and
   "pass everything" does. The domain-gate eval carries a hand-written

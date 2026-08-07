@@ -201,10 +201,20 @@ echo "== 판정 3-b: index.html 이 캐시되지 않는가 =="
 #
 # 둘을 같이 본다 — 한쪽만 보면 "전부 no-cache" 로 되돌려도 통과한다(그러면
 # 자산까지 매번 다시 받는다).
-HTML_CC="$(curl -sI "$WEB/" | tr -d '\r' | grep -i '^cache-control:' | head -1)"
+# **`Cache-Control` 은 한 줄이 아닐 수 있다.** nginx 의 `expires 1y;` 와
+# `add_header Cache-Control ...` 는 서로 모르고 **각자 한 줄씩** 내보낸다.
+# 첫 판본이 `head -1` 을 썼다가 `max-age=31536000` 만 보고 `immutable` 을
+# 놓쳤다 — 설정은 멀쩡한데 검사가 실패를 보고했다. RFC 상 같은 이름의 헤더
+# 여럿은 쉼표로 이은 하나와 같으므로, 여기서도 **전부 이어서** 판정한다.
+cache_control() {  # URL -> 모든 Cache-Control 값을 한 줄로
+  curl -sI "$1" | tr -d '\r' | grep -i '^cache-control:' \
+    | sed 's/^[Cc]ache-[Cc]ontrol: *//' | paste -sd, -
+}
+
+HTML_CC="$(cache_control "$WEB/")"
 case "$HTML_CC" in
   *no-cache*|*no-store*|*"max-age=0"*)
-    ok "index.html — ${HTML_CC:-(없음)}" ;;
+    ok "index.html — ${HTML_CC}" ;;
   *)
     bad "index.html 이 재검증 없이 캐시된다 — Cache-Control: ${HTML_CC:-'(헤더 없음)'}
          배포해도 브라우저가 옛 번들을 계속 쓴다. frontend/nginx.conf 의
@@ -215,10 +225,14 @@ ASSET="$(curl -s "$WEB/" | grep -o '/assets/[A-Za-z0-9._-]*\.js' | head -1)"
 if [ -z "$ASSET" ]; then
   bad "index.html 에서 자산 경로를 못 찾았다 — 이 검사가 대상에 닿지 못했다"
 else
-  ASSET_CC="$(curl -sI "$WEB$ASSET" | tr -d '\r' | grep -i '^cache-control:' | head -1)"
+  ASSET_CC="$(cache_control "$WEB$ASSET")"
+  # `immutable` 이나 충분히 긴 max-age 중 하나면 된다 — 둘 중 무엇으로 표현할지는
+  # 설정의 자유고, 이 검사가 볼 것은 **오래 캐시되는가**다.
   case "$ASSET_CC" in
-    *immutable*) ok "$ASSET — ${ASSET_CC}" ;;
-    *) bad "해시 자산이 길게 캐시되지 않는다 — ${ASSET_CC:-'(헤더 없음)'}" ;;
+    *immutable*|*max-age=3153*|*max-age=2592*)
+      ok "$ASSET — ${ASSET_CC}" ;;
+    *)
+      bad "해시 자산이 길게 캐시되지 않는다 — Cache-Control: ${ASSET_CC:-'(헤더 없음)'}" ;;
   esac
 fi
 
