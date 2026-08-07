@@ -23,6 +23,7 @@ from __future__ import annotations
 import logging
 import re
 import time
+from collections.abc import Callable
 from typing import Any
 
 from elasticsearch import AsyncElasticsearch
@@ -313,14 +314,17 @@ async def _execute(
         # 전체가 멈춘다. `/api/anomaly/*`는 `def` 핸들러라 FastAPI가 이미 스레드로
         # 넘기고 있어서, 이 경로만 노출돼 있었다(ADR-0028).
         result = await run_cpu(detect_trade, tenant_code, trade_id, IdSpace.SYNTHETIC)
-        answer, explain_ms = await _timed_complete(
-            llm_client, _ANOMALY_PROMPT.format(result=result)
+        answer, explain_ms, degraded = await _timed_complete(
+            llm_client,
+            _ANOMALY_PROMPT.format(result=result),
+            lambda: _anomaly_answer(result),
         )
         return (
             {
                 "answer": answer,
                 "detection": result,
-                "llm_calls": 1,
+                "llm_calls": 0 if degraded else 1,
+                **({"degraded": True} if degraded else {}),
                 "timings": {**result["timings"], "explain_ms": explain_ms},
             },
             intent,
@@ -355,7 +359,7 @@ async def _forecast_branch(
     # true면"이라고 조건을 걸면 모델이 그 필드를 읽어야 하고, 읽은 이름은
     # 문장으로 새어나온다. 여기서 미리 갈라 완성된 지시문을 넘긴다.
     cold_start = result["cold_start"]
-    answer, explain_ms = await _timed_complete(
+    answer, explain_ms, degraded = await _timed_complete(
         llm_client,
         _FORECAST_PROMPT.format(
             result=result,
@@ -369,6 +373,7 @@ async def _forecast_branch(
                 else "이 아이템은 거래 이력이 충분합니다. 추정이라는 언급은 하지 마세요."
             ),
         ),
+        lambda: _forecast_answer(result),
     )
     return (
         {
@@ -379,7 +384,9 @@ async def _forecast_branch(
             # 표시를 만들게 된다 — 같은 아이템이 화면마다 다르게 보인다.
             "resolved_item": item,
             # 아이템 특정용 검색(질의이해 + 도메인 판정, 병렬) + 설명 = 3.
-            "llm_calls": 3,
+            # 설명이 실패해 내려앉았으면 그 호출은 **성사되지 않았으므로** 2다.
+            "llm_calls": 2 if degraded else 3,
+            **({"degraded": True} if degraded else {}),
             # 아이템 특정용 검색 + 예측 + 설명. 키가 겹치지 않아 병합이 안전하다.
             "timings": {
                 **found["timings"],
@@ -412,16 +419,36 @@ async def _agent_branch(
     )
 
 
-async def _timed_complete(llm_client: LLMClient, prompt: str) -> tuple[str, float]:
-    """설명 생성 LLM 호출 + 소요 시간.
+async def _timed_complete(
+    llm_client: LLMClient,
+    prompt: str,
+    fallback: Callable[[], str],
+) -> tuple[str, float, bool]:
+    """설명 생성 LLM 호출 + 소요 시간 + **내려앉았는지**.
 
     검색 분기는 LLM을 2회 부르는데 재작성(`query_understanding_ms`)만 분해돼
     있고 설명 생성은 `execution_ms`에 묻혀 있었다. 부하테스트에서 "느린 게
     LLM인가"를 답하려면 두 호출이 다 보여야 한다.
+
+    ## 실패하면 500이 아니라 결정적 문장으로 내려앉는다 (ADR-0041)
+
+    이 호출이 터지면 `/api/assistant` 의 포괄 예외 처리가 **500** 을 냈다. 그런데
+    이 시점에는 **답에 필요한 것이 이미 다 손에 있다** — 시세 분기는 예측 결과를,
+    이상거래 분기는 판정과 기여도를 이미 계산해뒀다. 없는 것은 산문뿐이다.
+
+    ADR-0036 이 검색 분기에서 한 것과 같다: 결정 단계가 이미 가진 값으로 문장을
+    만든다. 거기서는 그게 **주 경로**였고 여기서는 **폴백**이라는 것만 다르다.
+
+    실패를 조용히 넘기지 않는다 — 경고를 남기고 응답에 `degraded` 를 실어
+    메트릭에서 보이게 한다. 이 저장소가 `core/rate_limit.py` 에 적어둔 규칙
+    그대로다: **열되 기록한다.**
     """
     started = time.perf_counter()
-    answer = await llm_client.complete(prompt)
-    return answer, _ms(started)
+    try:
+        return await llm_client.complete(prompt), _ms(started), False
+    except Exception:
+        logger.warning("설명 생성 실패 — 결정적 문장으로 대체한다", exc_info=True)
+        return fallback(), _ms(started), True
 
 
 _SALE_TYPE_LABELS = {"FIXED_PRICE": "즉시구매", "AUCTION": "경매"}
@@ -574,6 +601,56 @@ def _search_answer(filters: dict[str, Any], count: int) -> str:
     if conditions:
         return f"{' · '.join(conditions)} 조건으로 {count}건 찾았습니다."
     return f"검색 결과 {count}건입니다."
+
+
+def _forecast_answer(result: dict[str, Any]) -> str:
+    """설명 LLM 이 죽었을 때의 시세 문장 (ADR-0041).
+
+    `_search_answer` 와 같은 방식이다 — 이미 확정된 값만으로 만든다. **여기서
+    새로 판단하는 것은 하나도 없다.**
+
+    사과하지 않는다. 사용자가 물은 것에 대한 답은 전부 들어 있고, 없는 것은
+    산문뿐이다. `degraded` 는 운영자가 보는 값이지 사용자에게 할 말이 아니다.
+    """
+    change = result["expected_change_pct"]
+    direction = "상승" if change > 0 else "하락" if change < 0 else "보합"
+    sentence = (
+        f"{result['name']}의 최근 거래가는 {result['anchor_price']:,.0f}원입니다. "
+        f"앞으로 {result['horizon_days']}일 동안 약 {abs(change):.2f}% "
+        f"{direction}이 예상됩니다."
+    )
+    if result["cold_start"]:
+        # 프롬프트가 조건부로 붙이던 문장을 여기서도 붙인다. 콜드스타트인데
+        # 그 사실을 안 밝히면 추정치를 실측치처럼 읽는다.
+        sentence += (
+            " 이 아이템은 거래 이력이 부족해 비슷한 아이템들의 추세를 빌려 "
+            "추정한 값입니다."
+        )
+    return sentence
+
+
+def _anomaly_answer(result: dict[str, Any]) -> str:
+    """설명 LLM 이 죽었을 때의 이상거래 문장 (ADR-0041).
+
+    판정과 기여도는 이미 계산돼 있다. 기여도 1위를 근거로 붙이는 것도 프롬프트가
+    시키던 것과 같다 — 다만 여기서는 모델이 고르는 게 아니라 **정렬된 첫 항목**이라
+    설명이 실제 계산과 어긋날 수 없다.
+    """
+    verdict = "이상 징후가 있습니다" if result["is_anomaly"] else "이상 징후가 없습니다"
+    sentence = f"거래 {result['trade_id']}번은 {verdict}."
+    if contributions := result.get("contributions"):
+        top = contributions[0]
+        sentence += (
+            f" 가장 크게 작용한 요인은 {top['feature']}"
+            f"(기여도 {top['share'] * 100:.0f}%)입니다."
+        )
+    # 프롬프트가 반드시 붙이게 하던 고지다. 합성 코퍼스 기반이라는 사실이
+    # 빠지면 사용자가 자기 거래 번호로 착각한다.
+    sentence += (
+        " 이 판정은 합성 데모 거래 데이터를 대상으로 한 것이며, "
+        "사용자의 실제 거래 번호와는 체계가 다릅니다."
+    )
+    return sentence
 
 
 def _ms(started: float) -> float:

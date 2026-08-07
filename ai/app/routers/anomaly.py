@@ -1,3 +1,4 @@
+import logging
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -11,6 +12,8 @@ from app.services.anomaly.exceptions import (
     UnknownTenantError,
 )
 from app.services.anomaly.pipeline import detect_trade, list_alerts
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/anomaly", tags=["anomaly"])
 
@@ -47,7 +50,11 @@ def detect(
     except AnomalyModelNotTrainedError as e:
         raise HTTPException(status_code=503, detail=str(e)) from e
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"이상거래 탐지 실패: {e}") from e
+        # 예외 문자열을 클라이언트로 내보내지 않는다 (ADR-0041). 서버에는 남긴다.
+        logger.exception("anomaly 탐지 실패")
+        raise HTTPException(
+            status_code=500, detail="이상거래 탐지에 실패했습니다."
+        ) from e
 
 
 @router.get("/alerts")
@@ -65,4 +72,8 @@ def alerts(
     except AnomalyModelNotTrainedError as e:
         raise HTTPException(status_code=503, detail=str(e)) from e
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"알림 조회 실패: {e}") from e
+        # 예외 문자열을 클라이언트로 내보내지 않는다 (ADR-0041). 서버에는 남긴다.
+        logger.exception("anomaly 알림 조회 실패")
+        raise HTTPException(
+            status_code=500, detail="알림 조회에 실패했습니다."
+        ) from e
