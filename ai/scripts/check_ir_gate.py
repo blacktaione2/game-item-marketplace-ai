@@ -58,6 +58,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -135,6 +136,37 @@ def evaluate_gate(data: dict, verbose: bool = True) -> list[str]:
     return failures
 
 
+def summary_markdown(data: dict, failures: list[str]) -> str:
+    """GitHub Actions 실행 요약에 붙일 표.
+
+    **여유폭을 사람이 클릭 한 번으로 보게 하는 것이 목적이다.** 아티팩트는
+    공개 저장소여도 다운로드에 토큰이 필요해서, 통과했을 때 "얼마나 통과했는지"가
+    사실상 안 보인다. 그런데 문턱을 다시 유도할 때 필요한 게 정확히 그 여유폭이다.
+    """
+    before, after = data["before"], data["after"]
+    lines = [
+        "### IR 품질 게이트",
+        "",
+        f"질의 {data['n_queries']}건 · 코퍼스 {data['n_corpus']}건",
+        "",
+        "| 지표 | 베이스 | 튜닝 | 개선 | 하한 | 여유 |",
+        "|---|---|---|---|---|---|",
+    ]
+    for m in MUST_IMPROVE:
+        floor = FLOOR[m]
+        lines.append(
+            f"| `{m}` | {before[m]:.4f} | **{after[m]:.4f}** | "
+            f"{after[m] - before[m]:+.4f} | {floor:.2f} | {after[m] - floor:+.4f} |"
+        )
+    lines.append("")
+    if failures:
+        lines.append("**실패**")
+        lines += [f"- {f}" for f in failures]
+    else:
+        lines.append("통과. 여유폭이 좁아지면 `evaluate_training_variance.py` 로 재유도할 것.")
+    return "\n".join(lines) + "\n"
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("metrics_json")
@@ -145,7 +177,16 @@ def main() -> None:
         # 파일이 없는 것은 통과가 아니다 — 평가가 안 돌았다는 뜻이다.
         raise SystemExit(f"지표 파일이 없습니다: {path}")
 
-    failures = evaluate_gate(json.loads(path.read_text(encoding="utf-8")))
+    data = json.loads(path.read_text(encoding="utf-8"))
+    failures = evaluate_gate(data)
+
+    # **파이프로 붙이지 않는다.** `check_ir_gate | tee -a $GITHUB_STEP_SUMMARY`
+    # 로 쓰면 스텝의 종료 코드가 `tee` 의 것이 되어 **게이트 실패가 묻힌다**
+    # (사례 26). 여기서 직접 쓰면 그 문제가 아예 없다.
+    summary = os.environ.get("GITHUB_STEP_SUMMARY")
+    if summary:
+        with open(summary, "a", encoding="utf-8") as fh:
+            fh.write(summary_markdown(data, failures))
 
     print("\n" + "-" * 52)
     if failures:
