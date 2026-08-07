@@ -1,3 +1,4 @@
+import logging
 from typing import Any
 
 from elasticsearch import AsyncElasticsearch
@@ -13,6 +14,8 @@ from app.services.llm.base import LLMClient
 from app.services.llm.dependencies import get_llm_client
 from app.services.search.es_client import get_es_client
 from app.services.search.exceptions import TenantIndexNotFoundError
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/assistant", tags=["assistant"])
 
@@ -57,4 +60,12 @@ async def assistant(
     except (ForecastModelNotTrainedError, AnomalyModelNotTrainedError) as e:
         raise HTTPException(status_code=503, detail=str(e)) from e
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"요청 처리 실패: {e}") from e
+        # **예외 문자열을 클라이언트로 내보내지 않는다** (ADR-0041). 업스트림
+        # 메시지에는 ES 인덱스명·쿼리 DSL·내부 호스트가 섞여 나온다. 백엔드는
+        # `server.error.include-stacktrace: never` 로 같은 자세를 이미 취하고
+        # 있었고, 여기만 안 맞춰져 있었다 — **한쪽만 선언된 설정은 결정이 아니라
+        # 누락이다**(`REDIS_PASSWORD` 때와 같은 모양).
+        #
+        # 대신 서버에는 남긴다. 안 남기면 진단 수단이 같이 사라진다.
+        logger.exception("assistant 요청 처리 실패 (tenant=%s)", actor.tenant_code)
+        raise HTTPException(status_code=500, detail="요청 처리에 실패했습니다.") from e

@@ -150,6 +150,14 @@ def _outcome(response: dict[str, Any]) -> str:
         return "no_results"
     if response.get("tool_failures"):
         return "tool_failure"
+    # **설명 LLM 이 죽어 결정적 문장으로 내려앉았다** (ADR-0041). 사용자는 답을
+    # 받았으므로 실패가 아니지만 `ok` 도 아니다 — 이 값이 늘면 LLM 프로바이더가
+    # 흔들리고 있다는 뜻이고, 그건 500 이 안 나기 때문에 **다른 데서는 안 보인다.**
+    #
+    # 앞의 셋과 같이 설 일은 없다(각각 다른 분기에서 나온다). 그래도 순서를
+    # 정해두는 이유는 위 주석과 같다 — 나중에 하나가 다른 하나를 가리지 않게.
+    if response.get("degraded"):
+        return "degraded"
     return "ok"
 
 

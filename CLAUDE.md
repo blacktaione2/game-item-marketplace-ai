@@ -807,6 +807,32 @@ default"; a short key is broken in every profile.
 - The AI limiter **fails open** when Redis is down (it protects cost, not
   correctness). The purchase lock is the opposite and rejects — same Redis,
   deliberately opposite policies.
+- **The explanation LLM failing is no longer a 500** (ADR-0041). Before it was,
+  and the asymmetry was accidental: search survives an OpenAI outage because
+  `understand_query` falls back to the raw query and the domain gate fails open,
+  while forecast/anomaly died — **even though the answer was already computed by
+  then**. Only the prose was missing. They now fall back to deterministic
+  sentences built the same way `_search_answer()` builds its (ADR-0036); that
+  makes `llm_calls` drop (forecast 3→2, anomaly 1→0, since the call never landed)
+  and sets `outcome="degraded"`, which exists precisely because **no 500 means no
+  other signal**. Two details worth keeping: the fallback is passed as a
+  *callable* so the success path never builds a sentence it won't use, and the
+  fallback re-states what the prompt used to add conditionally (cold-start
+  disclosure, the synthetic-corpus notice) — omit those and the response is only
+  honest while the model is up. The agent branch is untouched: there the LLM *is*
+  the branch, so an honest 500 is right.
+- **A 500 must not carry the exception string, and all five AI routers did.**
+  Upstream messages leak ES index names, query DSL, and internal hosts; the
+  backend already had `server.error.include-stacktrace: never` and only the AI
+  server was out of step — **a setting one side declares and its neighbour
+  doesn't is an omission, not a decision** (same shape as `REDIS_PASSWORD`).
+  Fixing one and stopping would have repeated the "lesson not carried to the
+  neighbouring check" pattern, so all five changed at once, each logging via
+  `logger.exception` (drop that and you lose the diagnosis with the leak).
+  `tests/test_error_detail_leak.py` scans the sources, because a per-router rule
+  is silent when forgotten — and it checks its own regex against a deliberately
+  bad string, since a check only ever seen passing is indistinguishable from one
+  that always passes.
 
 - **The synthetic corpus and PostgreSQL share overlapping id ranges for
   different entities.** Corpus users are 1–206 and trades 1–26,702; Postgres has
