@@ -53,7 +53,7 @@ Oracle Cloud ARM(aarch64, 4 OCPU/24GB)에서 돕니다. nginx 단일 오리진 �
    다른 아이템의 **진짜 예측값**에 주어만 바꿔 답했습니다 — "삼성전자 주식의
    최근 거래가는 약 26,090원"
    ([ADR-0039](docs/01-Decisions/0039-도메인-밖-질의-거절.md)).
-9. 아이템을 눌러 **구매** → 재고가 줄고, 몇 초 뒤 상단에 **알림** 배지가 뜹니다
+10. 아이템을 눌러 **구매** → 재고가 줄고, 몇 초 뒤 상단에 **알림** 배지가 뜹니다
    (RabbitMQ를 거칩니다).
 
 </details>
@@ -92,8 +92,10 @@ flowchart TD
     C -->|적중| R[응답 · LLM 0회]
     C -->|미적중| RT[Intent Router<br/>규칙 → KoELECTRA]
     RT --> F[FAQ · 정적 응답<br/>LLM 0회]
-    RT --> S[검색<br/>BM25+kNN → RRF → 리랭커<br/>LLM 1~2회]
-    RT --> P[시세 예측<br/>LSTM / Cold Start<br/>LLM 2회]
+    RT --> D{도메인 밖?}
+    D -->|밖| X[확정 거절 · 검색 생략]
+    D -->|안| S[검색<br/>BM25+kNN → RRF → 리랭커<br/>LLM 2회]
+    RT --> P[시세 예측<br/>LSTM / Cold Start<br/>LLM 3회]
     RT --> A[이상거래 탐지<br/>오토인코더<br/>LLM 1회]
     RT --> AG[에이전트<br/>MCP 도구 호출<br/>LLM 1~6회]
 ```
@@ -310,11 +312,11 @@ npm run dev                # :5173
 ### 테스트
 
 ```bash
-cd ai && python -m pytest  # 137건. 외부 서비스·모델 불필요
-cd backend && ./gradlew test --rerun-tasks   # 49건. Postgres·Redis·RabbitMQ 필요
+cd ai && python -m pytest  # 174건. 외부 서비스·모델 불필요
+cd backend && ./gradlew test --rerun-tasks   # 57건. Postgres·Redis 필요
 ```
 
-CI가 커밋마다 도는 건 여기까지다 — **AI 137건 + 백엔드 49건 + 프론트 빌드.**
+CI가 커밋마다 도는 건 여기까지다 — **AI 174건 + 백엔드 57건 + 프론트 빌드.**
 부하테스트는 CI에 넣지 않았다(환경이 달라 수치가 비교 불가, 걸 SLO가 아직 없음,
 `live-llm`이 실제 과금). 근거는
 [ADR-0021](docs/01-Decisions/0021-ci-cd-1단계.md).

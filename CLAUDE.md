@@ -373,7 +373,7 @@ notifications (`NotificationController`, incl. `PATCH /read`), my trade history
 check to the FastAPI server.
 
 Build/run from `backend/`: `./gradlew build`, `./gradlew bootRun` (port 8080).
-No lint task configured yet. The suite is **55 tests** across `DomainRuleTest`,
+No lint task configured yet. The suite is **57 tests** across `DomainRuleTest`,
 `NotificationFlowTest`, `AuthenticationTest`, `LoginTest`, `MyDataScopeTest`, and
 the Initializr `contextLoads()`; it needs the live Postgres/Redis from
 docker-compose. **`./gradlew test` alone can report BUILD SUCCESSFUL having run

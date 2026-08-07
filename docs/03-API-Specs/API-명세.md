@@ -174,25 +174,30 @@ updated: 2026-07-31
   "query": "5만원 이하 검 찾아줘",
   "intent": "item_search",          // faq_smalltalk|item_search|price_forecast|anomaly_check|compound|unknown
   "routing": {
-    "decided_by": "rules",          // rules|classifier
+    "decided_by": "rules",          // rules|classifier|low_confidence|fallback_no_model
     "confidence": null,             // 분류기가 판정했을 때만 숫자
     "initial_intent": "item_search" // intent와 다르면 분기가 에스컬레이션한 것
   },
   "answer": "…",
-  "llm_calls": 1,                   // 의도마다 다르다 — 아래 표
+  "llm_calls": 2,                   // 의도마다 다르다 — 아래 표
   "cache": { "hit": false },
   "timings": { "routing_ms": 0.1, "execution_ms": 2140.5 }
 }
 ```
+
+> `decided_by`는 넷이다. `low_confidence`는 분류기가 임계값 아래라 COMPOUND로
+> 보낸 것이고(그때만 `classifier_intent`가 같이 온다), `fallback_no_model`은
+> 분류기가 아직 학습되지 않아 룰만으로 돈 것이다 — **분류기가 없다고 라우팅이
+> 죽지는 않는다.**
 
 **미적중일 때 의도별 `llm_calls`**
 
 | 의도 | 호출 | 내역 |
 |---|---|---|
 | `faq_smalltalk` | **0** | 확정 응답. LLM 을 안 부른다 |
-| `item_search` | **1** | 질의 이해 1회. **설명 생성은 없다** (ADR-0036) |
-| `price_forecast` | 2 | 질의 이해 + 설명 |
-| `anomaly_check` | 1 | 설명 |
+| `item_search` | **2** | 질의 이해 + 도메인 판정(**병렬**). 설명 생성은 없다 (ADR-0036·0039) |
+| `price_forecast` | **3** | 위 둘 + 설명 |
+| `anomaly_check` | 1 | 설명. 검색을 타지 않아 도메인 판정이 없다 |
 | `compound` | 도구 수 + 1 | 에이전트 |
 
 캐시 적중 시 `cache`는 `{hit, match_type, similarity, cached_query}`가 되고
@@ -306,8 +311,9 @@ MCP 도구가 감싸고 있어 남겨둔 개별 엔드포인트. 라우팅·캐�
   "query": "5만원 이하 검",
   "rewritten_query": "검 소드 대검 단검",
   "filters": { "category": "무기", "subcategory": "검", "price_max": 50000.0 },
+  "in_domain": true,
   "reranked": true,
-  "timings": { "query_understanding_ms": 0, "embedding_ms": 0, "retrieval_ms": 0, "rerank_ms": 0 },
+  "timings": { "query_understanding_ms": 0, "domain_gate_ms": 0, "embedding_ms": 0, "retrieval_ms": 0, "rerank_ms": 0 },
   "results": [
     {
       "item_id": 5, "tenant_id": 1,
@@ -322,6 +328,13 @@ MCP 도구가 감싸고 있어 남겨둔 개별 엔드포인트. 라우팅·캐�
 ```
 
 `filters`는 `exclude_none`이라 **걸리지 않은 조건은 키 자체가 없다.**
+
+`in_domain`이 `false`면 `results`는 빈 배열이고 **`embedding_ms` 이후의 계측 키가
+아예 없다** — 임베딩·ES·리랭킹을 건너뛰기 때문이다(ADR-0039). 이 엔드포인트는
+판정만 실어 보내고 거절 문구는 만들지 않는다. 무엇을 할지는 호출자가 정한다.
+
+`query_understanding_ms`와 `domain_gate_ms`는 **병렬로 나간 두 호출이라 더하면
+안 된다.**
 
 `rerank_score`는 크로스인코더 로짓이라 **전부 음수일 수 있고, 질의를 가로질러
 비교할 수 없다.** 이 값에 전역 임계값을 걸려는 시도는 두 번 측정해서 두 번
@@ -484,13 +497,24 @@ Prometheus 텍스트 포맷. **Prometheus를 띄우지 않아도 쓸모가 있�
 > 발급은 거래가 아니라 이름이 거짓이 된다.
 
 `stage`: `cache`(= `cache_encode` + `cache_lookup`) · `routing` · `execution` ·
-`query_understanding` · `embedding` · `retrieval` · `rerank` · `explain` ·
-`forecast_window` · `forecast_inference` · `anomaly_scoring` · `agent_llm` ·
-`agent_tool`
+`query_understanding` · **`domain_gate`** · `embedding` · `retrieval` · `rerank` ·
+`explain` · `forecast_window` · `forecast_inference` · `anomaly_scoring` ·
+`agent_llm` · `agent_tool`
+
+> `query_understanding`과 `domain_gate`는 **병렬로 나가는 두 LLM 호출**이라
+> (ADR-0039) 더하면 실제 지연보다 크다. 검색 전체는 `execution`으로 본다.
+> 적중 경로에서 `cache_encode`는 **없어야** 정상이다(ADR-0026) — 있으면 회귀다.
 
 > `cache`를 둘로 가른 이유는 적중 경로의 비용을 귀속시키려면 재야 했기 때문이다
-> (ADR-0025). 실측상 **`cache_lookup`이 73%**이고 `cache_encode`는 27%다 —
-> ADR-0020이 "임베딩 낭비"로 적은 것은 틀린 귀속이었다.
+> (ADR-0025).
+>
+> **[정정] 그때 나온 "`cache_lookup` 73% / `cache_encode` 27%"를 비율 그대로
+> 읽으면 안 된다.** 그건 10 VU 부하 중의 **벽시계 시간**이고, 격리해서 재면
+> `lookup()`이 **1.05ms**, `encode_one`이 **15.77ms**다. `encode_one`이 `async`
+> 핸들러 안의 동기 CPU 호출이라 이벤트 루프를 막았고, **73%는 나머지 요청들이
+> 그 27%를 기다린 시간**이었다. 지연화 후 p95가 279ms → 25.9ms 가 됐다
+> (ADR-0026). 즉 ADR-0020의 "임베딩 낭비"라는 지목은 **결과적으로 옳았고**
+> ADR-0025의 반박이 틀렸다 — **부하 중 벽시계 시간은 그 단계의 일이 아니다.**
 
 `outcome`: `ok` · `out_of_domain` · `no_results` · `tool_failure` — 뒤 셋은
 에러가 아니지만 부하테스트에서 구분해서 봐야 한다.

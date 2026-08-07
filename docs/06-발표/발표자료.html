@@ -141,9 +141,9 @@ tbody tr:last-child td{border-bottom:none}
   <div class="eyebrow">한 장 요약</div>
   <h2>무엇을, 어디까지 만들었나</h2>
   <div class="cards">
-    <div class="card"><div class="n">Phase 0–9</div><div class="l">인프라부터 컨테이너화까지</div></div>
-    <div class="card"><div class="n">ADR 35건</div><div class="l">결정마다 배경·대안·영향</div></div>
-    <div class="card"><div class="n">테스트 186건</div><div class="l">AI 137 · 백엔드 49</div></div>
+    <div class="card"><div class="n">Phase 0–11</div><div class="l">인프라부터 실배포·거절 게이트까지</div></div>
+    <div class="card"><div class="n">ADR 39건</div><div class="l">결정마다 배경·대안·영향</div></div>
+    <div class="card"><div class="n">테스트 231건</div><div class="l">AI 174 · 백엔드 57</div></div>
     <div class="card"><div class="n">LLM 0~6회</div><div class="l">요청 유형에 따라</div></div>
   </div>
   <ul>
@@ -182,14 +182,14 @@ tbody tr:last-child td{border-bottom:none}
     <thead><tr><th>요청 유형</th><th>파이프라인</th><th style="text-align:right">LLM 호출</th></tr></thead>
     <tbody>
       <tr><td>FAQ · 스몰토크</td><td>정적 응답</td><td class="num after">0회</td></tr>
-      <tr><td>아이템 검색</td><td>Rewrite+Text-to-DSL → BM25+kNN → RRF → 크로스인코더 재순위</td><td class="num">1~2회</td></tr>
-      <tr><td>시세 문의</td><td>거래 이력 충분 시 LSTM, 부족하면 Cold Start 백오프</td><td class="num">2회</td></tr>
+      <tr><td>아이템 검색</td><td>Rewrite+Text-to-DSL ‖ 도메인 판정 → BM25+kNN → RRF → 크로스인코더 재순위</td><td class="num">2회 (병렬)</td></tr>
+      <tr><td>시세 문의</td><td>거래 이력 충분 시 LSTM, 부족하면 Cold Start 백오프</td><td class="num">3회</td></tr>
       <tr><td>이상거래 점검</td><td>오토인코더 재구성 오차 + 피처별 기여도 분해</td><td class="num">1회</td></tr>
       <tr><td>복합 질의</td><td>MCP 도구를 부르는 순차 에이전트</td><td class="num">1~6회</td></tr>
     </tbody>
   </table>
   <ul>
-    <li><strong>Rewrite와 Text-to-DSL을 한 호출로 합쳤다</strong> — 따로 부르면 검색 한 번에 왕복이 2회 붙는다</li>
+    <li><strong>Rewrite와 Text-to-DSL을 한 호출로 합쳤다</strong> — 따로 부르면 검색 한 번에 왕복이 2회 붙는다. 다만 <strong>공짜가 아니다</strong>: 같은 스키마에 도메인 판정을 얹었더니 재작성 일치도가 대조군 대비 <strong>-0.248</strong> 떨어져, 그것만은 병렬 별도 호출로 뺐다</li>
     <li><strong>RRF는 앱 레이어 구현</strong> — ES 네이티브 RRF는 Platinum 라이선스, 이 클러스터는 basic이다</li>
     <li><strong>리랭커는 다국어 mMARCO</strong> — 영어 전용 모델은 한국어를 자모로 쪼개 재순위가 <em>안 하느니만 못했다</em></li>
   </ul>
@@ -240,6 +240,7 @@ tbody tr:last-child td{border-bottom:none}
     <tbody>
       <tr><td>하드 필터 — 부적합 검색 결과</td><td class="num before">50건</td><td class="num after">14건</td><td style="color:var(--ink-3)">적합 손실 0</td></tr>
       <tr><td>질의 재작성 결정성 — 모드 일치율</td><td class="num before">0.840</td><td class="num after">0.990</td><td style="color:var(--ink-3)"><code>temperature</code>가 미설정이었다</td></tr>
+      <tr><td>도메인 밖 질의 — 손으로 쓴 38건 중 통과</td><td class="num before">38건</td><td class="num after">1건</td><td style="color:var(--ink-3)">오거부 0.98%</td></tr>
       <tr><td>이벤트 루프 지연 — p99</td><td class="num before">29.33ms</td><td class="num after">10.65ms</td><td style="color:var(--ink-3)">동기 CPU 호출 분리</td></tr>
     </tbody>
   </table>
@@ -259,6 +260,8 @@ tbody tr:last-child td{border-bottom:none}
         <strong>함정이 더 유사하다</strong> → FAQ에만 허용</td></tr>
       <tr><td><strong>프롬프트로 혼동 방지</strong></td><td><code>불속성</code>/<code>무속성</code>을 구분하라는 <strong>한 줄</strong>이 정답률을
         <span class="warnx">97.5% → 22%</span>로 떨어뜨렸다. 되돌림</td></tr>
+      <tr><td><strong>도메인 판정을 질의이해 호출에 얹기</strong></td><td>2회 측정, 2회 기각. 호출을 안 늘리는 게 장점이었는데 <strong>재작성 일치도가 대조군 대비 -0.234 → -0.248</strong> 로 <strong>문구를 고쳐도 그대로</strong>였다 — 스키마가 는 것 자체의 대가다</td></tr>
+      <tr><td><strong>게이트 프롬프트에 취급 품목 열거</strong></td><td>포함을 넓히려 넣었는데 <strong>배제의 근거로 쓰였다</strong> — 오거부 4.13% → 5.30%</td></tr>
       <tr><td><strong><code>asyncio.to_thread</code></strong></td><td>로드맵에 그 이름으로 등록해뒀는데 <strong>측정이 기각했다</strong> —
         기본 실행기에서 torch가 <span class="warnx">+85% 느려진다</span></td></tr>
     </tbody>
