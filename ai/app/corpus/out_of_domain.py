@@ -260,7 +260,6 @@ HOLDOUT_IN: list[tuple[str, str]] = [
 HOLDOUT_OUT: list[tuple[str, str]] = [
     # 게임 메커니즘 — 1차에서 드러난 사각지대. 아이템 어휘를 달고 거래가 아니다.
     # **위 `아이템인접` 과 낱말이 겹치도록 짝지었다.**
-    ("강화 확률 올리는 방법 있어?", "게임메커니즘"),
     ("이 무기 스킬 연계 어떻게 해", "게임메커니즘"),
     ("장비 내구도 어떻게 수리해", "게임메커니즘"),
     ("세트 효과 조건이 뭐야", "게임메커니즘"),
@@ -278,6 +277,25 @@ HOLDOUT_OUT: list[tuple[str, str]] = [
     ("주말에 갈 만한 데 추천", "생활지식"),
 ]
 
+
+# --- 라벨이 갈리는 것 — **채점하지 않는다** ---------------------------------
+#
+# 어느 쪽으로 라벨을 붙여도 논증이 되는 질의다. 채점 세트에 넣으면 프롬프트가
+# 아니라 **내 라벨을 재게 된다.** 혼잣말 부류를 held-out 에서 뺀 것과 같은 이유고,
+# 지우지 않고 남기는 이유는 **다음에 세트를 만들 사람이 같은 고민을 다시 하지
+# 않게** 하기 위해서다.
+AMBIGUOUS_LABEL: list[tuple[str, str]] = [
+    # 배포본 실측(2026-08-07): `item_search` 로 가서 **강화 주문서 (성공률 70%)**
+    # 를 포함한 5건을 돌려줬다. "방법" 을 물었으니 게임 플레이 질문이라는 읽기와,
+    # 거래소의 정직한 답이 "그 확률을 올려주는 물건을 판다" 라는 읽기가 **둘 다
+    # 성립한다.** `전사 스킬트리 추천해줘`(밖)와 달리 상업적 답이 실재한다.
+    (
+        "강화 확률 올리는 방법 있어?",
+        "게임메커니즘/거래 경계 — 답이 실제로 취급 품목이라 밖이라 단정 못 한다",
+    ),
+]
+
+AMBIGUOUS_QUERIES = [query for query, _ in AMBIGUOUS_LABEL]
 
 OUT_OF_DOMAIN_QUERIES = [query for query, _ in OUT_OF_DOMAIN]
 LOOKS_OUT_BUT_IN_QUERIES = [query for query, _ in LOOKS_OUT_BUT_IN]
@@ -303,6 +321,12 @@ def _assert_disjoint() -> None:
     leaked = tune & set(HOLDOUT_QUERIES)
     if leaked:
         raise ValueError(f"held-out 이 tune 세트와 겹칩니다: {sorted(leaked)}")
+
+    # **라벨이 갈린다고 빼놓고 어딘가에서 채점하면 뺀 의미가 없다.**
+    scored = tune | set(HOLDOUT_QUERIES)
+    still_scored = scored & set(AMBIGUOUS_QUERIES)
+    if still_scored:
+        raise ValueError(f"라벨 보류 질의가 채점 세트에 있습니다: {sorted(still_scored)}")
 
 
 def _assert_v1_still_resolves() -> None:

@@ -424,6 +424,41 @@ def _beta_cdf(x: float, a: float, b: float) -> float:
     return front * (f - 1.0)
 
 
+def _branch_of(query: str) -> tuple[str, str]:
+    """이 질의가 **어느 분기로 가는가** — 미검출 옆에 같이 찍는다.
+
+    ## 왜 필요한가
+
+    이 스크립트는 **게이트만** 잰다. 그런데 게이트는 `item_search` 와
+    `price_forecast` 에만 걸려 있다 — `faq_smalltalk` 로 가는 질의는 게이트를
+    아예 지나지 않고, `_DEFAULT_FAQ` 가 범위를 밝히며 거절한다(LLM 0회).
+
+    그래서 **`미검출 N/M` 은 게이트 성적이지 파이프라인 성적이 아니다.** 배포본
+    실측(2026-08-07)에서 사각지대 8건 중 4건이 FAQ 로 가 이미 올바르게 거절됐다.
+    분기를 안 찍으면 이 수치가 "사용자에게 그대로 새어나간 비율" 로 읽힌다.
+
+    ## 그런데 분모에서 빼지는 않는다
+
+    처음엔 "게이트에 안 닿는 건 빼자" 고 했는데 **틀렸다.** 같은 8건을 로컬과
+    배포본에서 라우팅해보니 **6/8 만 일치했고, 어긋난 2건은 둘 다 분류기 판정**
+    이다(룰 판정은 정규식이라 완전히 재현됐다). `세트 효과 조건이 뭐야` 는 로컬
+    `compound`, 배포본 `price_forecast` 였다.
+
+    **"게이트에 닿는가" 는 질의의 안정된 속성이 아니다.** 학습마다 가중치가 달라
+    오늘 FAQ 로 가는 질의가 내일 시세로 간다. 그래서 이 값은 분모를 고치는 근거가
+    아니라 **읽는 사람에게 주는 단서**다.
+
+    같은 이유로 ADR-0039 의 커버리지 논증(`search+forecast 22 + agent 7 + FAQ 9
+    = 38/38`)도 **질의별이 아니라 분기별로 읽어야 한다** — 어느 분기로 가든
+    게이트·안내문·FAQ 중 하나가 받는다는 것이 실제 보장이고, 특정 질의가 특정
+    분기로 간다는 것은 보장이 아니다.
+    """
+    from app.services.router.router import route
+
+    decision = route(query)
+    return decision["intent"].value, decision["decided_by"]
+
+
 def _answered(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [row for row in rows if row["error"] is None]
 
@@ -572,11 +607,17 @@ def score(payload: dict[str, Any]) -> None:
         print("\n" + "=" * 78)
         print(f"[{name}] 걸린 것 전부")
         print("=" * 78)
+        print("  * 미검출은 **게이트 성적이지 파이프라인 성적이 아니다** —")
+        print("    faq_smalltalk 로 가는 질의는 게이트를 지나지 않고 _DEFAULT_FAQ 가")
+        print("    이미 거절한다. 분기를 같이 찍되 분모에서 빼지는 않는다")
+        print("    (라우팅은 분류기 판정일 때 실행마다 달라진다 — 실측 6/8 일치).")
         if s["missed"]:
             print(f"  미검출 부류: "
                   f"{dict(Counter(ood_groups.get(r['query'], '?') for r in s['missed']))}")
             for row in s["missed"]:
-                print(f"    통과 [{ood_groups.get(row['query'], '?')}] {row['query']}")
+                branch, decided = _branch_of(row["query"])
+                print(f"    통과 [{ood_groups.get(row['query'], '?')}] {row['query']}"
+                      f"   -> {branch} ({decided})")
         for row in s["rejected"][:15]:
             print(f"    거절 [{sources.get(row['query'], '?')}] {row['query']}")
         if len(s["rejected"]) > 15:
