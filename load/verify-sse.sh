@@ -33,11 +33,40 @@ if [ -z "${DEMO_PASSWORD:-}" ]; then
   exit 1
 fi
 
-TOKEN="$(curl -s --max-time 10 -X POST "$WEB/api/backend/auth/login" \
+# **본문을 파싱하기 전에 상태 코드를 본다.** 첫 판본은 curl 을 바로 python 에
+# 물려서 실패하면 `로그인 실패 — 토큰을 못 받았습니다` 한 줄만 냈다. 그 한 줄은
+# nginx 가 아직 재시작 중인 것 / 비밀번호가 틀린 것 / IP 한도에 걸린 것을
+# **구분해주지 않는다** — 실제로 그 상태로 사람을 막았다. 옆의
+# `verify-deploy.sh` 는 이미 코드별로 진단을 내놓는다.
+LOGIN_BODY="$(mktemp)"
+CODE="$(curl -s -o "$LOGIN_BODY" -w '%{http_code}' --max-time 10 \
+  -X POST "$WEB/api/backend/auth/login" \
   -H 'Content-Type: application/json' \
-  -d "{\"tenantCode\":\"${TENANT_CODE:-nexon}\",\"username\":\"buyer_lee\",\"password\":\"${DEMO_PASSWORD}\"}" \
-  | python3 -c 'import sys,json; print(json.load(sys.stdin).get("token",""))' 2>/dev/null)"
-[ -n "$TOKEN" ] || { echo "로그인 실패 — 토큰을 못 받았습니다."; exit 1; }
+  -d "{\"tenantCode\":\"${TENANT_CODE:-nexon}\",\"username\":\"buyer_lee\",\"password\":\"${DEMO_PASSWORD}\"}")"
+
+case "$CODE" in
+  200) ;;
+  000) echo "연결 자체가 안 됐다 ($WEB) — nginx 가 아직 재시작 중인지, 주소가 맞는지 볼 것"
+       echo "  대기: until curl -sf $WEB/ >/dev/null; do sleep 2; done"
+       exit 1 ;;
+  401) echo "로그인 401 — DEMO_PASSWORD 가 틀렸다. **서버의 .env 값**을 쓸 것:"
+       echo "  export DEMO_PASSWORD=\$(grep '^DEMO_PASSWORD=' .env | cut -d= -f2)"
+       echo "  (기동 후 'restart backend' 을 안 했으면 db-seed 가 비밀번호를 덮었을 수도 있다 — ADR-0031)"
+       exit 1 ;;
+  400) echo "로그인 400 — 요청이 불완전하다. tenantCode 가 빠졌는가 (ADR-0034)" ; exit 1 ;;
+  429) echo "로그인 429 — IP 단위 30회/분에 걸렸다. **1분 기다렸다 다시** 돌릴 것"
+       echo "  (verify-auth.sh 를 방금 돌렸으면 그게 40회를 썼다)"
+       exit 1 ;;
+  502|503|504) echo "로그인 $CODE — nginx 가 백엔드 옛 IP 를 물고 있다. '\$DC restart web' 이 필요하다"
+       exit 1 ;;
+  *)   echo "로그인이 $CODE"; echo "본문: $(head -c 300 "$LOGIN_BODY")"; exit 1 ;;
+esac
+
+TOKEN="$(python3 -c 'import sys,json; print(json.load(sys.stdin).get("token",""))' \
+  < "$LOGIN_BODY" 2>/dev/null)"
+rm -f "$LOGIN_BODY"
+# 200 인데 토큰이 없는 경우 — 응답 모양이 바뀐 것이다. 위와 다른 진단이다.
+[ -n "$TOKEN" ] || { echo "로그인 200 인데 응답에 token 이 없다 — 응답 형태가 바뀌었는가"; exit 1; }
 
 # **복합 질의를 쓴다.** 도구를 여러 번 부르므로 이벤트 사이에 실제 간격이 생긴다.
 # FAQ 로 재면 서버가 즉답해서 버퍼링돼 있어도 "빨리 왔다"로 보인다 — 그건 검사가
