@@ -140,10 +140,20 @@ fails, passes = [], []
 def check(cond, good, bad):
     (passes if cond else fails).append(good if cond else bad)
 
-# 1. 버퍼링 해제 헤더가 **최종 응답에** 남아 있는가.
-check("x-accel-buffering: no" in headers,
-      "X-Accel-Buffering: no 가 응답에 있다",
-      "X-Accel-Buffering 헤더가 없다 — 프록시가 지웠거나 앱이 안 붙였다")
+# 1. 버퍼링 해제 헤더 — **판정이 아니라 참고다.**
+#
+# 첫 판본은 이걸 FAIL 로 걸었고 **틀렸다.** nginx 는 `Date`·`Server`·`X-Pad`·
+# `X-Accel-*` 를 업스트림 응답에서 클라이언트로 넘기지 않는다 — 즉 **존중하면서
+# 동시에 지운다.** 프록시 뒤에서 이 헤더가 없는 것은 정상이고, 그 검사는
+# **참이 될 수 없는 것을 단언**하고 있었다.
+#
+# 앱이 헤더를 붙이는지는 `ai/tests/test_assistant_stream.py` 가 소스로 고정한다.
+# 여기서 판정할 것은 아래 4번 하나다 — **실제로 나눠서 도착하는가.**
+if "x-accel-buffering" in headers:
+    print("참고: X-Accel-Buffering 이 응답에 남아 있다 "
+          "(proxy_pass_header 로 앞단까지 넘기는 중)")
+else:
+    print("참고: X-Accel-Buffering 이 응답에 없다 — nginx 의 기본 숨김이라 정상이다")
 
 # 2. 이벤트가 여러 건 왔는가.
 check(len(rows) >= 3,
