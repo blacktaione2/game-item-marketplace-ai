@@ -163,13 +163,13 @@ async def main() -> None:
     import os
 
     print("=" * 78)
-    print("CPU 단계 측정 — 배포 대상 재검증 (ADR-0028 · ADR-0032)")
+    print("CPU 단계 측정 - 배포 대상 재검증 (ADR-0028 · ADR-0032)")
     print("=" * 78)
     print(f"  플랫폼   {platform.machine()} / {platform.system()}")
     print(f"  CPU 수   {os.cpu_count()}")
     print()
 
-    print("[워밍업] 모델을 미리 올린다 — 첫 호출은 지연 로딩을 포함한다")
+    print("[워밍업] 모델을 미리 올린다 - 첫 호출은 지연 로딩을 포함한다")
     started = time.perf_counter()
     do_encode()
     encode_load = (time.perf_counter() - started) * 1000
@@ -181,20 +181,20 @@ async def main() -> None:
     print("  (이 둘은 지연 로딩 비용이다. 아래 수치와 섞어 읽지 말 것)")
     print()
 
-    print("[1] 잡음 바닥 — 부하 0에서의 이벤트 루프 지연")
+    print("[1] 잡음 바닥 - 부하 0에서의 이벤트 루프 지연")
     print("    판정선을 세우기 전에 이걸 먼저 본다. 이 값보다 작은 차이는")
     print("    측정할 수 없다.")
     floor = await idle_floor()
     print(describe("idle ticker", floor))
     print()
 
-    print("[2] 격리 지연 — 한 번에 하나씩, 동시성 없음")
+    print("[2] 격리 지연 - 한 번에 하나씩, 동시성 없음")
     print("    비교 기준: 개발기 실측 encode_one 15.77ms / rerank 103~189ms")
     print(describe("encode_one", isolated(do_encode)))
     print(describe("rerank (20건)", isolated(do_rerank)))
     print()
 
-    print("[3] 워커 수 스윕 — 같은 작업 8건")
+    print("[3] 워커 수 스윕 - 같은 작업 8건")
     print("    **총 소요가 줄기를 기대하지 않는다.** 스레드풀은 CPU 작업을")
     print("    빠르게 하지 않는다. 봐야 할 것은 티커 지연이다.")
     for label, job in (("encode_one (torch)", do_encode), ("rerank (ONNX RT)", do_rerank)):

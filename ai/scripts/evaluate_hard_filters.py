@@ -99,7 +99,7 @@ def print_run(rows: list[dict]) -> None:
         print(f"\n  {query.query}{tag}{held}")
         print(f"    필터  {row['filters']}")
         print(f"    재작성 \"{row['rewritten']}\"")
-        print(f"    결과 {len(row['documents'])}건 — 적합 {row['fit']} / 부적합 {row['unfit']}")
+        print(f"    결과 {len(row['documents'])}건 - 적합 {row['fit']} / 부적합 {row['unfit']}")
 
         if not row["documents"]:
             verdict = "정상 (조건 만족 아이템 없음)" if query.expect_none_fit else "**예상 못한 0건**"
@@ -157,7 +157,7 @@ def print_comparison(before: list[dict], after: list[dict]) -> None:
     if b_unfit:
         print(f"  부적합 {b_unfit - a_unfit}건 제거 ({(b_unfit - a_unfit) / b_unfit:.0%})")
     if fit_losses:
-        print(f"  ! **적합 손실 {sum(l for _, l in fit_losses)}건** — {fit_losses}")
+        print(f"  ! **적합 손실 {sum(l for _, l in fit_losses)}건** - {fit_losses}")
     else:
         print("  적합 손실 0건")
 
@@ -191,7 +191,7 @@ async def main() -> None:
 
         if args.repeat > 1:
             none_fit = [q for q in FLOOR_QUERIES if q.expect_none_fit]
-            print(f"\n{'=' * 72}\n0건 재현성 — 정답 0건 질의 {len(none_fit)}건 × {args.repeat}회\n{'=' * 72}")
+            print(f"\n{'=' * 72}\n0건 재현성 - 정답 0건 질의 {len(none_fit)}건 × {args.repeat}회\n{'=' * 72}")
             for query in none_fit:
                 counts: Counter[int] = Counter()
                 filters_seen: set[str] = set()

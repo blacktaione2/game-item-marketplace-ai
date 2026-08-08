@@ -9,7 +9,17 @@ class Settings(BaseSettings):
     service_name: str = "ai-server"
 
     openai_api_key: str = ""
-    openai_model: str = "gpt-4o-mini"
+    # **`temperature=0` 을 받는 가장 최신 세대다** (ADR-0045).
+    #
+    # 더 새 모델을 안 쓰는 이유가 취향이 아니라 측정이다 — GPT-5.5 와 5.6 계열
+    # (sol · terra · luna) 은 전부 `temperature` 를 거부한다:
+    #   `Unsupported value: 'temperature' does not support 0 with this model.`
+    # 그걸 쓰면 ADR-0017 이 세운 결정성(토큰집합 일치 0.990)이 통째로 무너진다.
+    #
+    # **날짜를 고정한다.** `gpt-4o-mini` 는 부동 별칭이라, 같은 코드가 다른 답을
+    # 낼 때 모델이 바뀐 것인지 우리가 바꾼 것인지 구분할 수 없었다 — ADR-0043 이
+    # RAGAS 변동을 읽을 때 실제로 그 한계에 부딪혔다.
+    openai_model: str = "gpt-5.4-mini-2026-03-17"
     # **0이 기본값이다.** 안 넘기면 OpenAI가 1.0을 쓰는데, 그 상태로 오래
     # 돌아서 측정이 반복적으로 깨졌다 — 같은 질의의 재작성이 실행마다 달라져
     # 리랭커 하한 캘리브레이션이 불가능했고(ADR-0014), 0건 판정도 캐시할 수
@@ -24,7 +34,11 @@ class Settings(BaseSettings):
     # `.env` 는 docker-compose 용이라 앱이 읽지 않는다** — 실제로 이 라운드가
     # 그 상태에서 시작했다(루트에만 있어서 아무 일도 안 일어났다).
     anthropic_api_key: str = ""
-    anthropic_model: str = "claude-sonnet-4-5"
+    # 주 모델과 **같은 제약**으로 고른다 (ADR-0045). Claude 쪽도 최신은
+    # `temperature` 를 폐기했다 — `claude-sonnet-5` · `opus-4-7` · `opus-4-8` 은
+    # `` `temperature` is deprecated for this model. `` 을 낸다. 폴백이 흔들리면
+    # **이미 망가진 상황에서 답이 더 나빠진다**(ADR-0042).
+    anthropic_model: str = "claude-sonnet-4-6"
     # 연속 실패가 이만큼 쌓이면 1차를 건너뛴다. 예외만 잡아 넘기면 장애 동안
     # 모든 요청이 1차 타임아웃을 먼저 문다 — fail-open 의 지연 축이다.
     llm_failure_threshold: int = 3

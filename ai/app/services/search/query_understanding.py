@@ -68,14 +68,28 @@ def fill_missing_element(query: str, element: str | None) -> str | None:
     실패 방향도 한쪽이다: 질의에 표현이 없으면 아무 일도 안 일어난다. `"검 찾아줘"`
     에 무속성이 끼는 사고는 **구조적으로 불가능**하다.
     """
+    negated = _NEGATED.search(query) is not None
+
     if element is not None:
+        # **채우기만 하던 함수가 지우기도 하게 됐다** (ADR-0045). 모델을
+        # `gpt-5.4-mini` 로 올리니 `무속성` 미채움은 사라졌는데(69% -> 100%)
+        # 대신 **부정형에 스스로 `무속성` 을 채우는** 새 결함이 생겼다 —
+        # `"무속성 빼고 보여줘"` 에 `element="무속성"`. 채우기만 해서는 그걸
+        # 못 막는다.
+        #
+        # **`무속성` 일 때만 지운다.** 다른 속성은 손대지 않으므로 아래 문단의
+        # "지금 잘 되는 것에 닿을 수 없다" 는 성질이 유지된다.
+        if element == "무속성" and negated:
+            logger.debug("무속성 부정형인데 채워져 있다 - 필터를 지운다: %s", query)
+            return None
         return element
+
     if not _NO_ELEMENT.search(query):
         return None
-    if _NEGATED.search(query):
+    if negated:
         # 부정형은 필터 없음으로 남긴다 — 표현할 수 없는 것을 반대로 표현하느니
         # 안 거는 게 낫다. 알려진 한계이고 평가셋이 별도 무리로 집계한다.
-        logger.debug("무속성 부정형 — 필터를 채우지 않는다: %s", query)
+        logger.debug("무속성 부정형 - 필터를 채우지 않는다: %s", query)
         return None
     return "무속성"
 

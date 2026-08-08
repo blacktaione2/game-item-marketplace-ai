@@ -310,7 +310,7 @@ async def collect(tag: str, names: list[str]) -> dict[str, Any]:
           f"{len(in_domain) - labeled})")
     print(f"       도메인 밖 {len(ood)}건 (v1 {len(ood) - len(OOD_V1_EXCLUDED)}), "
           f"경계 {len(boundary)}건 (v1 {len(BOUNDARY_V1)})")
-    print(f"       held-out {len(hold_in)}+{len(hold_out)}건 — **채택 판정 전용, "
+    print(f"       held-out {len(hold_in)}+{len(hold_out)}건 - **채택 판정 전용, "
           f"한 번만 쓴다**")
     print(f"       변형 {names} × {per_variant}건 = **LLM {per_variant * len(names)}회**, "
           f"동시 {CONCURRENCY}")
@@ -563,19 +563,19 @@ def score(payload: dict[str, Any]) -> None:
 
     # --- 2. 표본이 작다는 것을 숫자로 --------------------------------------
     print("\n" + "=" * 78)
-    print("경계 거절 — 95% 구간 (Clopper-Pearson). **한 건 차이의 무게를 본다**")
+    print("경계 거절 - 95% 구간 (Clopper-Pearson). **한 건 차이의 무게를 본다**")
     print("=" * 78)
     for name, s in stats.items():
         low, high = _clopper_pearson(len(s["boundary_rejected"]), s["boundary_n"])
         rate = len(s["boundary_rejected"]) / s["boundary_n"] if s["boundary_n"] else 0
         print(f"  {name:<10}{len(s['boundary_rejected'])}/{s['boundary_n']} = "
               f"{rate:.1%}   95% CI [{low:.1%}, {high:.1%}]")
-    print("\n  구간이 겹치면 '개선' 이라고 부르지 않는다 — 두 번째 실행을 본다.")
+    print("\n  구간이 겹치면 '개선' 이라고 부르지 않는다 - 두 번째 실행을 본다.")
 
     # --- 2-b. held-out ------------------------------------------------------
     if any(s["has_holdout"] for s in stats.values()):
         print("\n" + "=" * 78)
-        print("held-out — **한 번도 안 쓴 세트. 채택은 여기서 정한다**")
+        print("held-out - **한 번도 안 쓴 세트. 채택은 여기서 정한다**")
         print("=" * 78)
         for name, s in stats.items():
             if not s["has_holdout"]:
@@ -599,7 +599,7 @@ def score(payload: dict[str, Any]) -> None:
         control_stat = stats.get("control")
         if control_stat is not None and control_stat["has_holdout"]:
             reproduced = len(control_stat["hold_budget_rejected"])
-            print(f"\n  [전제] 대조군이 held-out 예산형을 {reproduced}건 자름 — "
+            print(f"\n  [전제] 대조군이 held-out 예산형을 {reproduced}건 자름 - "
                   f"{'현상 재현됨, 일반화 기준 적용' if reproduced else '**재현 안 됨: 일반화는 확인 불가**'}")
 
     # --- 3. 변형별 상세 ----------------------------------------------------
@@ -607,10 +607,10 @@ def score(payload: dict[str, Any]) -> None:
         print("\n" + "=" * 78)
         print(f"[{name}] 걸린 것 전부")
         print("=" * 78)
-        print("  * 미검출은 **게이트 성적이지 파이프라인 성적이 아니다** —")
+        print("  * 미검출은 **게이트 성적이지 파이프라인 성적이 아니다** -")
         print("    faq_smalltalk 로 가는 질의는 게이트를 지나지 않고 _DEFAULT_FAQ 가")
         print("    이미 거절한다. 분기를 같이 찍되 분모에서 빼지는 않는다")
-        print("    (라우팅은 분류기 판정일 때 실행마다 달라진다 — 실측 6/8 일치).")
+        print("    (라우팅은 분류기 판정일 때 실행마다 달라진다 - 실측 6/8 일치).")
         if s["missed"]:
             print(f"  미검출 부류: "
                   f"{dict(Counter(ood_groups.get(r['query'], '?') for r in s['missed']))}")
@@ -629,7 +629,7 @@ def score(payload: dict[str, Any]) -> None:
     # --- 4. 사전 등록 기준 --------------------------------------------------
     control = stats.get("control")
     print("\n" + "=" * 78)
-    print("사전 등록 기준 — 결과를 보고 고쳐 쓰지 않는다")
+    print("사전 등록 기준 - 결과를 보고 고쳐 쓰지 않는다")
     print("=" * 78)
     for name, s in stats.items():
         bars = [
@@ -681,7 +681,7 @@ def score(payload: dict[str, Any]) -> None:
         for label, ok in bars:
             print(f"    {'PASS' if ok else 'FAIL'}  {label}")
         print(f"    => {'채택 가능' if all(ok for _, ok in bars) else '기준 미달'}")
-    print("\n  (필터 회귀 항목은 없어진 게 아니라 **구조적으로 0**이다 — 추출")
+    print("\n  (필터 회귀 항목은 없어진 게 아니라 **구조적으로 0**이다 - 추출")
     print("   프롬프트를 건드리지 않는다. test_domain_gate.py 가 고정한다)")
 
 
@@ -703,7 +703,7 @@ async def main() -> None:
         if not path.exists():
             raise SystemExit(f"저장된 답변이 없습니다: {path}")
         payload = json.loads(io.open(path, encoding="utf-8").read())
-        print(f"[채점만] {path.name} 재채점 — API 호출 없음")
+        print(f"[채점만] {path.name} 재채점 - API 호출 없음")
         score(payload)
         return
     score(await collect(tag, names))

@@ -126,7 +126,10 @@ def report(rows: list[dict], runs: int, temperature: float) -> None:
           f"문자열 {len(unstable_exact)}/{len(rows)}")
 
     if unstable_filters:
-        print("\n  필터가 흔들린 질의 — 0건 판정이 뒤집힐 수 있는 쪽:")
+        # **em dash 를 쓰지 않는다.** cp949 콘솔에서 `UnicodeEncodeError` 로
+        # **스크립트가 죽는다** — 표는 이미 다 나온 뒤라 결과를 잃지는 않지만
+        # exit 1 이 되어 자동화가 실패로 읽는다. 이 파일은 Windows 에서 돈다.
+        print("\n  필터가 흔들린 질의 - 0건 판정이 뒤집힐 수 있는 쪽:")
         for row in rows:
             if len(set(row["filters"])) > 1:
                 print(f"    {row['query']}")
@@ -134,7 +137,7 @@ def report(rows: list[dict], runs: int, temperature: float) -> None:
                     print(f"      {count}회  {value}")
 
     if unstable_tokens:
-        print("\n  토큰 집합이 흔들린 질의 — 순위가 흔들리는 쪽:")
+        print("\n  토큰 집합이 흔들린 질의 - 순위가 흔들리는 쪽:")
         for row in rows:
             if len(set(row["tokens"])) > 1:
                 print(f"    {row['query']}")

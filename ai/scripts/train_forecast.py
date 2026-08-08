@@ -109,7 +109,7 @@ def main() -> None:
         f"(예측 편차 std {val_pred.std():.4f} vs 실제 {val_y.std():.4f})"
     )
     if correlation < 0.1:
-        print("   ! 상관이 0에 가깝습니다 — 모델이 상수로 붕괴했을 가능성이 큽니다.")
+        print("   ! 상관이 0에 가깝습니다 - 모델이 상수로 붕괴했을 가능성이 큽니다.")
 
     print("\n예측 시점(horizon)별 MAPE")
     for step in range(horizon):

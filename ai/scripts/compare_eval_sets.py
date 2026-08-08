@@ -75,7 +75,7 @@ def main() -> None:
         results[label] = (rows, before, after, rank_before, rank_after, gold)
 
         print(f"\n{'='*52}")
-        print(f"{label} 질의셋 — {len(queries)}건")
+        print(f"{label} 질의셋 - {len(queries)}건")
         print_set(label, before, after)
 
     # 스타일별 세부 (수동셋만 style 태그가 있다)
@@ -109,7 +109,7 @@ def main() -> None:
             "질의 스타일 적응만으로는 설명되지 않음"
         )
     elif man_delta <= 0 < llm_delta:
-        print("수동셋에서 개선이 사라짐 — 질의 스타일 과적합 의심")
+        print("수동셋에서 개선이 사라짐 - 질의 스타일 과적합 의심")
     else:
         print("해석 주의: 두 셋의 방향이 엇갈림")
 

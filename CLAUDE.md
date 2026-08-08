@@ -575,7 +575,7 @@ flow are still curl-verified only; see the roadmap's 기술 부채 section.
   *derivation* of `check_ir_gate`'s thresholds (delete it and the numbers become
   unverifiable), the second is a per-run output that CI ships as an artifact.
 
-- `tests/` — `python -m pytest` from `ai/` (**292 tests**, no `pytest-asyncio` — the
+- `tests/` — `python -m pytest` from `ai/` (**296 tests**, no `pytest-asyncio` — the
   few async cases use `asyncio.run`). Deliberately limited to
   deterministic units: RRF fusion, router rules, cache keys/tenant isolation,
   per-intent TTL + the no-result storage veto, id-space guards, filter→DSL
@@ -1047,6 +1047,28 @@ Postgres and ES drift apart and search results stop resolving to real rows.
   alone would have shipped it. Corollary: **probe a cache with an intent whose
   uncached cost is nonzero** (`faq_smalltalk` answers without an LLM, so
   `llm_calls == 0` proves nothing there).
+- **The model IDs are a decision now, and the reason is `temperature`** (ADR-0045).
+  `gpt-5.4-mini-2026-03-17` and `claude-sonnet-4-6` are **not the newest models** —
+  they are the newest that still accept `temperature=0`. Everything above them
+  refuses it (`gpt-5.5`, all three `gpt-5.6-*`, `claude-sonnet-5`, `opus-4-7/4-8`):
+  `Unsupported value: 'temperature' does not support 0 with this model` /
+  `` `temperature` is deprecated for this model ``. Adopting one would undo
+  ADR-0017 outright. Before ADR-0045 the names had **no recorded rationale at
+  all** — ADR-0004 picks *providers*, not models. Three more things:
+  - **Get model IDs from the API, never from marketing names.** "GPT-5.6 Sol" is
+    not an ID; guessing 404s every call.
+  - **The date is pinned on purpose.** `gpt-4o-mini` was a floating alias, and
+    that is exactly what stopped ADR-0043 from telling model drift from our own
+    changes. A pinned id means a behaviour change is ours.
+  - **`ai/.env` overrides the code default**, so swapping the model in code is
+    not enough — the local *and deployed* `.env` must change too, or the old
+    model keeps running. This bit during ADR-0045 itself: `anthropic_model`
+    changed and `openai_model` did not, because only the latter was in `.env`.
+- **A prompt tuned against one model does not transfer.** ADR-0039 spent five
+  iterations getting the domain gate to 0.59% false rejection *on gpt-4o-mini*;
+  on `gpt-5.4-mini` the same prompt rejects 2.55%. Swapping models means
+  re-running the harnesses, not just editing a string — and the harnesses exist
+  precisely so that costs a few dollars instead of a guess.
 - **`settings.openai_temperature` is 0 and `chat()` always sends it explicitly.**
   Omitting the parameter is not "use a sane default" — OpenAI's default is **1.0**,
   and this project ran that way for six phases while treating the resulting

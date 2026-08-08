@@ -106,7 +106,7 @@ async def run_ragas(
     # 검색된 컨텍스트마다 1회씩 순차 호출하므로, 질의 수만 보고 어림하면 3배
     # 틀린다(실측: 질의 54 · top-k 5 에서 약 648회, 119분).
     n_calls = len(queries) * (len(contexts_before[0]) + 1) * 2
-    print(f"\nRAGAS 평가 중 — LLM 심판 약 {n_calls}회 (순차). 수십 분 걸린다...")
+    print(f"\nRAGAS 평가 중 - LLM 심판 약 {n_calls}회 (순차). 수십 분 걸린다...")
     before = await score(contexts_before)
     after = await score(contexts_after)
 
