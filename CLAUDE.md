@@ -244,7 +244,7 @@ Four things about it are load-bearing:
   (ADR-0043). Deterministic Recall@k/MRR carry pass/fail (no LLM calls, free); RAGAS
   is a `workflow_dispatch` report, because its judge variance was never characterised
   and a threshold on unmeasured noise is the mistake ADR-0028 and ADR-0040 already
-  made twice. It also bills 216 calls per run. **ADR-0021's recorded blocker for this
+  made twice. It also bills ~648 calls / **119 minutes** per run (measured). **ADR-0021's recorded blocker for this
   ("a model-artifact distribution strategy must come first") turned out to be two
   independent problems written as one** — retraining is ~20 steps so there is nothing
   to distribute, and the billing half vanishes once RAGAS is demoted. *A deferral
@@ -540,7 +540,7 @@ flow are still curl-verified only; see the roadmap's 기술 부채 section.
   *derivation* of `check_ir_gate`'s thresholds (delete it and the numbers become
   unverifiable), the second is a per-run output that CI ships as an artifact.
 
-- `tests/` — `python -m pytest` from `ai/` (**267 tests**, no `pytest-asyncio` — the
+- `tests/` — `python -m pytest` from `ai/` (**270 tests**, no `pytest-asyncio` — the
   few async cases use `asyncio.run`). Deliberately limited to
   deterministic units: RRF fusion, router rules, cache keys/tenant isolation,
   per-intent TTL + the no-result storage veto, id-space guards, filter→DSL

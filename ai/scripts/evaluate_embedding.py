@@ -24,7 +24,9 @@ import argparse
 import asyncio
 import io
 import json
+import os
 from pathlib import Path
+from typing import Any
 
 from app.corpus import ALL_ITEMS
 from app.core.config import get_settings
@@ -47,12 +49,18 @@ def print_table(before: dict, after: dict) -> None:
         )
 
 
+# 채점 실패가 이 비율을 넘으면 **점수를 내지 않는다.** 실패한 호출은 답이 아니라
+# 결측이고, 성공분만 평균 내면 표본 절반이 사라진 채 그럴듯한 숫자가 남는다
+# (사례집 19). `evaluate_element_extraction.py` 가 쓰는 것과 같은 장치다.
+RAGAS_MAX_ERROR_RATE = 0.10
+
+
 async def run_ragas(
     queries: list[str],
     gold_texts: list[str],
     contexts_before: list[list[str]],
     contexts_after: list[list[str]],
-) -> None:
+) -> dict[str, Any]:
     from ragas.llms import llm_factory
     from ragas.metrics.collections import ContextPrecisionWithReference, ContextRecall
 
@@ -94,7 +102,11 @@ async def run_ragas(
             "n_recall": len(r_scores),
         }
 
-    print("\nRAGAS 평가 중 (LLM 심판, 질의당 2회 호출 x 2모델)...")
+    # **호출 수와 소요를 미리 밝힌다.** `ContextPrecisionWithReference` 는
+    # 검색된 컨텍스트마다 1회씩 순차 호출하므로, 질의 수만 보고 어림하면 3배
+    # 틀린다(실측: 질의 54 · top-k 5 에서 약 648회, 119분).
+    n_calls = len(queries) * (len(contexts_before[0]) + 1) * 2
+    print(f"\nRAGAS 평가 중 — LLM 심판 약 {n_calls}회 (순차). 수십 분 걸린다...")
     before = await score(contexts_before)
     after = await score(contexts_after)
 
@@ -104,6 +116,24 @@ async def run_ragas(
         delta = after[key] - before[key]
         print(f"{key:<20} {before[key]:>10.4f} {after[key]:>10.4f} {delta:>+10.4f}")
     print(f"(채점 성공 표본: 전 {before['n_precision']}/{len(queries)}, 후 {after['n_precision']}/{len(queries)})")
+
+    # **실패율이 높으면 점수를 신뢰하지 않는다.** 성공분만 평균 내면 표본이
+    # 절반 사라진 채로 그럴듯한 숫자가 남는다.
+    worst = min(before["n_precision"], after["n_precision"],
+                before["n_recall"], after["n_recall"])
+    error_rate = 1 - worst / len(queries)
+    trustworthy = error_rate <= RAGAS_MAX_ERROR_RATE
+    if not trustworthy:
+        print(f"\n[경고] 채점 실패율 {error_rate:.1%} > {RAGAS_MAX_ERROR_RATE:.0%} "
+              "— 위 점수를 근거로 쓰지 말 것")
+
+    return {
+        "before": before,
+        "after": after,
+        "n_calls_estimated": n_calls,
+        "error_rate": round(error_rate, 4),
+        "trustworthy": trustworthy,
+    }
 
 
 def main() -> None:
@@ -152,24 +182,18 @@ def main() -> None:
 
     print_table(before, after)
 
-    if args.json:
-        Path(args.json).write_text(
-            json.dumps(
-                {
-                    "n_queries": len(queries),
-                    "n_corpus": len(corpus_texts),
-                    "base_model": settings.embedding_base_model,
-                    "tuned_path": str(tuned_path),
-                    "before": before,
-                    "after": after,
-                },
-                ensure_ascii=False,
-                indent=2,
-            ),
-            encoding="utf-8",
-        )
-        print(f"\n지표 저장: {args.json}")
+    payload: dict[str, Any] = {
+        "n_queries": len(queries),
+        "n_corpus": len(corpus_texts),
+        "base_model": settings.embedding_base_model,
+        "tuned_path": str(tuned_path),
+        "before": before,
+        "after": after,
+    }
 
+    # **RAGAS 를 JSON 저장보다 먼저 돌린다.** 순서를 반대로 두면 두 시간짜리
+    # 채점 결과가 로그에만 남는다 — CI 로그는 공개 저장소여도 토큰이 있어야
+    # 읽히므로, 사실상 아무도 못 본다. 리포트가 안 읽히면 리포트가 아니다.
     if args.ragas:
         contexts_before = [
             [corpus_texts[i] for i in row[: args.top_k]] for row in rank_before
@@ -178,7 +202,44 @@ def main() -> None:
             [corpus_texts[i] for i in row[: args.top_k]] for row in rank_after
         ]
         gold_texts = [corpus_texts[g] for g in gold_indices]
-        asyncio.run(run_ragas(queries, gold_texts, contexts_before, contexts_after))
+        payload["ragas"] = asyncio.run(
+            run_ragas(queries, gold_texts, contexts_before, contexts_after)
+        )
+        _write_step_summary(payload["ragas"])
+
+    if args.json:
+        Path(args.json).write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+        print(f"\n지표 저장: {args.json}")
+
+
+def _write_step_summary(ragas: dict[str, Any]) -> None:
+    """GitHub Actions 실행 요약에 RAGAS 표를 붙인다 (설정돼 있을 때만).
+
+    게이트 쪽(`check_ir_gate.py`)이 여유폭 표를 붙이는 것과 같은 이유다 —
+    **아티팩트도 로그도 토큰 없이는 못 읽는다.**
+    """
+    path = os.environ.get("GITHUB_STEP_SUMMARY")
+    if not path:
+        return
+    b, a = ragas["before"], ragas["after"]
+    lines = [
+        "### RAGAS 리포트 (게이트 아님)",
+        "",
+        f"LLM 심판 약 {ragas['n_calls_estimated']}회 · 채점 실패율 "
+        f"{ragas['error_rate']:.1%}"
+        + ("" if ragas["trustworthy"] else "  **← 실패율이 높아 신뢰할 수 없다**"),
+        "",
+        "| 지표 | 파인튜닝 전 | 후 | 변화 |",
+        "|---|---|---|---|",
+    ]
+    for key in ("context_precision", "context_recall"):
+        lines.append(f"| `{key}` | {b[key]:.4f} | **{a[key]:.4f}** | {a[key] - b[key]:+.4f} |")
+    lines.append("")
+    lines.append("판정에는 쓰지 않는다 — 심판 변동폭이 특성화되지 않았다 (ADR-0043).")
+    with open(path, "a", encoding="utf-8") as fh:
+        fh.write("\n".join(lines) + "\n")
 
 
 if __name__ == "__main__":

@@ -4,12 +4,17 @@ name: ai-quality
 #
 # **`ai.yml` 과 분리한 이유는 무게가 아니라 `paths` 다.** 이 저장소는 워크플로를
 # 파일별로 쪼개 각자 `paths` 필터를 갖게 하는 규칙을 이미 쓴다(문서 커밋은
-# 아무것도 안 돈다). 게이트는 학습이 필요해 5분쯤 걸리는데, 라우터 한 줄을
-# 고쳤다고 그 비용을 낼 이유가 없다. 그래서 **임베딩 품질에 실제로 영향을 주는
-# 경로만** 아래에 적는다.
+# 아무것도 안 돈다). 게이트는 학습이 필요해 **2.1분**(실측) 걸리는데, 라우터 한
+# 줄을 고쳤다고 그 비용을 낼 이유가 없다. 그래서 **임베딩 품질에 실제로 영향을
+# 주는 경로만** 아래에 적는다.
 #
-# **RAGAS 는 게이트가 아니다.** 아래 `ragas-report` 잡을 볼 것 — 수동 실행이고
-# 판정하지 않는다. 이유는 그 잡의 주석에 있다.
+# **RAGAS 는 게이트가 아니다** — 마지막 스텝 하나로, `workflow_dispatch` 에서
+# 체크했을 때만 돌고 판정하지 않는다. 이유는 그 스텝의 주석에 있다.
+#
+# **"IR 게이트" 라고 줄이지 않는다.** IR 은 Information Retrieval(정보검색)
+# 학문 분야의 약어인데, "게이트" 와 붙여 쓰면 런타임에 검색 여부를 결정하는
+# 장치처럼 읽힌다 — 이 저장소에 그런 게 실제로 따로 있다(시맨틱 캐시 · 도메인
+# 게이트 · Intent Router). 여기서 재는 것은 **빌드 시점의 검색 품질**이다.
 
 # **YAML 앵커(`&`/`*`)를 쓰지 않는다.** GitHub Actions 의 파서는 앵커를
 # 지원하지 않아서, 중복을 줄이려다 워크플로가 통째로 파싱 단계에서 깨진다.
@@ -42,16 +47,27 @@ on:
   workflow_dispatch:
     inputs:
       ragas:
-        description: 'RAGAS 리포트까지 실행 (OpenAI 호출 216회 발생)'
+        description: 'RAGAS 리포트까지 실행 (OpenAI 호출 약 648회 · 약 2시간)'
         type: boolean
         default: false
 
+# **`github.event_name` 을 그룹 키에 넣는다.** 안 넣으면 수동 RAGAS 실행과
+# push 실행이 같은 그룹이 되고(`workflow_dispatch` 도 ref 는 `refs/heads/main`
+# 이다), `cancel-in-progress` 가 **2시간짜리 유료 실행을 상관없는 커밋 하나로
+# 죽인다.** 실제로 첫 RAGAS 실행 중에 이 파일을 고치다 그럴 뻔했다 — 게다가
+# 이 파일은 자기 자신의 `paths` 에 들어 있어서 더 잘 걸린다.
+# push 끼리, dispatch 끼리 취소되는 것은 그대로 둔다 — 그건 원하는 동작이다.
 concurrency:
-  group: ai-quality-${{ github.ref }}
+  group: ai-quality-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
 
 jobs:
-  ir-gate:
+  # **이름을 `ir-gate` 에서 바꿨다.** "IR" 은 Information Retrieval(정보검색)
+  # 학문 분야의 약어이고 "게이트" 는 CI 통과 검사인데, 붙여 쓰면 **런타임에
+  # 검색 여부를 결정하는 장치**처럼 읽힌다(이 저장소에 그런 게 실제로 있다 —
+  # 시맨틱 캐시 / 도메인 게이트 / Intent Router. 전부 요청 시점이고 이건 빌드
+  # 시점이다). 저자가 헷갈리게 줄인 이름은 읽는 사람도 헷갈린다.
+  search-quality-gate:
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -87,11 +103,11 @@ jobs:
         run: python -m scripts.finetune_embedding
 
       # 수집. 판정하지 않는다.
-      - name: IR 지표 측정
+      - name: 검색 품질 측정 (Recall@k · MRR)
         run: python -m scripts.evaluate_embedding --json ../ir_metrics.json
 
       # 판정. 문턱은 스크립트 안에 있고 그 근거도 같이 있다.
-      - name: IR 게이트
+      - name: 검색 품질 게이트 판정
         run: python -m scripts.check_ir_gate ../ir_metrics.json
 
       # -----------------------------------------------------------------------
@@ -105,8 +121,16 @@ jobs:
       #    (ADR-0028, ADR-0040). 위 IR 문턱은 재학습 변동을 7회 측정해서 잡았는데,
       #    RAGAS 에 같은 걸 하려면 같은 데이터를 여러 번 채점해야 하고 그 자체가
       #    호출 비용이다. **재기 전에는 문턱을 걸지 않는다.**
-      # 2. **매 커밋 OpenAI 요금이 나간다.** 질의 54건 x 지표 2종 x 모델 2개
-      #    = 216회. 부하 테스트를 CI 에 넣지 않은 것과 같은 판단이다.
+      # 2. **매 커밋 OpenAI 요금이 나간다.** 약 **648회 · 119분**(실측).
+      #    부하 테스트를 CI 에 넣지 않은 것과 같은 판단이다.
+      #
+      #    처음에 216 이라고 적었는데 **3배 틀렸다.** "질의 54 x 지표 2종 x
+      #    모델 2개" 로 곱해 **지표당 1회**를 가정했지만, ragas 의
+      #    `ContextPrecisionWithReference` 는 **검색된 컨텍스트마다 1회씩
+      #    순차 호출**한다(`for context in retrieved_contexts: await`). top-k=5
+      #    이므로 precision 만 54x5x2=540, recall 54x1x2=108 이다.
+      #    **입력 개수로 곱해 만든 비용 추정은, 라이브러리가 호출당 무엇을
+      #    하는지 확인하기 전에는 추측이다.**
       #
       # **별도 잡으로 두지 않은 이유**: 잡을 나누면 셋업과 학습을 통째로 두 번
       # 하게 되고, 게이트가 판정한 모델과 RAGAS 가 채점한 모델이 **다른 실행에서
@@ -116,7 +140,7 @@ jobs:
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: |
-          # 키가 없으면 216회를 시도한 뒤 전부 실패하고, 그 실패는 "품질이
+          # 키가 없으면 648회를 시도한 뒤 전부 실패하고, 그 실패는 "품질이
           # 나쁘다"처럼 보인다. **실패한 호출은 답이 아니라 결측이다**(사례집 19).
           test -n "$OPENAI_API_KEY" || {
             echo "OPENAI_API_KEY 시크릿이 없습니다 — RAGAS 를 돌릴 수 없습니다."
