@@ -806,7 +806,7 @@ default"; a short key is broken in every profile.
   should stay that way — a display exists for humans and its rules will change
   again. This is the third of four times a check here was itself wrong; the
   pattern and its checklist are in
-  `docs/05-Troubleshooting/검사-자체가-틀린-사례들.md` — **26 cases now**, and
+  `docs/05-Troubleshooting/검사-자체가-틀린-사례들.md` — **27 cases now**, and
   seven of them came from a single day of building new measurement tools. Two
   share one cause worth naming: **Korean draws its distinctions in the verb
   ending, but regexes are easiest to write against nouns**, so `이상 거래` also
