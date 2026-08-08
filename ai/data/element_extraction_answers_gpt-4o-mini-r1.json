@@ -1,0 +1,1059 @@
+{
+ "tag": "gpt-4o-mini-r1",
+ "repeats": 3,
+ "rows": [
+  {
+   "element": null,
+   "rewritten": "무속성 검 소드 대검 단검",
+   "error": null,
+   "query": "무속성 검 찾아줘",
+   "expected": "무속성",
+   "group": "무속성",
+   "run": 0
+  },
+  {
+   "element": "무속성",
+   "rewritten": "무속성 활 장궁 단궁",
+   "error": null,
+   "query": "무속성 활 있어?",
+   "expected": "무속성",
+   "group": "무속성",
+   "run": 0
+  },
+  {
+   "element": "무속성",
+   "rewritten": "속성 없는 갑옷 방어구",
+   "error": null,
+   "query": "속성 없는 갑옷 보여줘",
+   "expected": "무속성",
+   "group": "무속성",
+   "run": 0
+  },
+  {
+   "element": "무속성",
+   "rewritten": "속성 없는 지팡이 마법봉",
+   "error": null,
+   "query": "속성없는 지팡이 추천",
+   "expected": "무속성",
+   "group": "무속성",
+   "run": 0
+  },
+  {
+   "element": "무속성",
+   "rewritten": "속성 없는 무기 저렴한",
+   "error": null,
+   "query": "무속성 무기 중에 싼 거",
+   "expected": "무속성",
+   "group": "무속성",
+   "run": 0
+  },
+  {
+   "element": null,
+   "rewritten": "속성 없는 반지",
+   "error": null,
+   "query": "무속성인 반지 있나",
+   "expected": "무속성",
+   "group": "무속성",
+   "run": 0
+  },
+  {
+   "element": null,
+   "rewritten": "속성 없는 방패 실드",
+   "error": null,
+   "query": "무속성 방패 5만원 이하",
+   "expected": "무속성",
+   "group": "무속성",
+   "run": 0
+  },
+  {
+   "element": "무속성",
+   "rewritten": "속성 없는 장비",
+   "error": null,
+   "query": "속성 없는 장비 목록",
+   "expected": "무속성",
+   "group": "무속성",
+   "run": 0
+  },
+  {
+   "element": "무속성",
+   "rewritten": "속성 없는 목걸이",
+   "error": null,
+   "query": "무속성 목걸이 얼마야",
+   "expected": "무속성",
+   "group": "무속성",
+   "run": 0
+  },
+  {
+   "element": null,
+   "rewritten": "속성 없는 물약 포션",
+   "error": null,
+   "query": "무속성 물약 뭐 있어",
+   "expected": "무속성",
+   "group": "무속성",
+   "run": 0
+  },
+  {
+   "element": "무속성",
+   "rewritten": "무속성 대검 검 소드",
+   "error": null,
+   "query": "무속성의 대검 찾습니다",
+   "expected": "무속성",
+   "group": "무속성",
+   "run": 0
+  },
+  {
+   "element": null,
+   "rewritten": "각반 무속성",
+   "error": null,
+   "query": "무속성 각반 추천해줘",
+   "expected": "무속성",
+   "group": "무속성",
+   "run": 0
+  },
+  {
+   "element": "무속성",
+   "rewritten": "무속성 둔기",
+   "error": null,
+   "query": "무속성 둔기 시세",
+   "expected": "무속성",
+   "group": "무속성",
+   "run": 0
+  },
+  {
+   "element": null,
+   "rewritten": "신발 장화 부츠",
+   "error": null,
+   "query": "속성 안 붙은 신발",
+   "expected": "무속성",
+   "group": "무속성",
+   "run": 0
+  },
+  {
+   "element": "화염",
+   "rewritten": "불꽃 화염 검 소드",
+   "error": null,
+   "query": "화염 속성 검 찾아줘",
+   "expected": "화염",
+   "group": "타속성",
+   "run": 0
+  },
+  {
+   "element": "화염",
+   "rewritten": "불꽃 화염 대검 검",
+   "error": null,
+   "query": "불속성 대검",
+   "expected": "화염",
+   "group": "타속성",
+   "run": 0
+  },
+  {
+   "element": "냉기",
+   "rewritten": "얼음 냉기 지팡이 마법봉",
+   "error": null,
+   "query": "얼음 속성 지팡이",
+   "expected": "냉기",
+   "group": "타속성",
+   "run": 0
+  },
+  {
+   "element": "냉기",
+   "rewritten": "얼음 냉기 활 장궁 단궁",
+   "error": null,
+   "query": "냉기 활 있어?",
+   "expected": "냉기",
+   "group": "타속성",
+   "run": 0
+  },
+  {
+   "element": "번개",
+   "rewritten": "번개 속성 창 랜스",
+   "error": null,
+   "query": "번개 속성 창",
+   "expected": "번개",
+   "group": "타속성",
+   "run": 0
+  },
+  {
+   "element": null,
+   "rewritten": "암흑 어둠 로브 갑옷 방어구",
+   "error": null,
+   "query": "어둠 속성 로브",
+   "expected": "암흑",
+   "group": "타속성",
+   "run": 0
+  },
+  {
+   "element": "신성",
+   "rewritten": "빛 성속성 방패 실드",
+   "error": null,
+   "query": "신성 속성 방패",
+   "expected": "신성",
+   "group": "타속성",
+   "run": 0
+  },
+  {
+   "element": "신성",
+   "rewritten": "신성 빛 목걸이",
+   "error": null,
+   "query": "빛 속성 목걸이",
+   "expected": "신성",
+   "group": "타속성",
+   "run": 0
+  },
+  {
+   "element": null,
+   "rewritten": "검 소드 대검 단검",
+   "error": null,
+   "query": "검 찾아줘",
+   "expected": null,
+   "group": "미언급",
+   "run": 0
+  },
+  {
+   "element": null,
+   "rewritten": "갑옷 방어구",
+   "error": null,
+   "query": "3만원 이하 갑옷",
+   "expected": null,
+   "group": "미언급",
+   "run": 0
+  },
+  {
+   "element": null,
+   "rewritten": "+9 강화 검 소드",
+   "error": null,
+   "query": "+9 강화 롱소드 시세",
+   "expected": null,
+   "group": "미언급",
+   "run": 0
+  },
+  {
+   "element": null,
+   "rewritten": "활 장궁 단궁",
+   "error": null,
+   "query": "100렙 이상 활",
+   "expected": null,
+   "group": "미언급",
+   "run": 0
+  },
+  {
+   "element": null,
+   "rewritten": "저렴한 아이템",
+   "error": null,
+   "query": "싼 아이템 추천",
+   "expected": null,
+   "group": "미언급",
+   "run": 0
+  },
+  {
+   "element": null,
+   "rewritten": "우수한 속성 무기",
+   "error": null,
+   "query": "속성 좋은 무기",
+   "expected": null,
+   "group": "미언급",
+   "run": 0
+  },
+  {
+   "element": null,
+   "rewritten": "공격력 높은 검 소드 대검 단검",
+   "error": null,
+   "query": "공격력 높은 검",
+   "expected": null,
+   "group": "미언급",
+   "run": 0
+  },
+  {
+   "element": null,
+   "rewritten": "방어구 갑옷",
+   "error": null,
+   "query": "방어구 목록 보여줘",
+   "expected": null,
+   "group": "미언급",
+   "run": 0
+  },
+  {
+   "element": null,
+   "rewritten": "경매 반지",
+   "error": null,
+   "query": "경매로 나온 반지",
+   "expected": null,
+   "group": "미언급",
+   "run": 0
+  },
+  {
+   "element": null,
+   "rewritten": "강화 수치 높은 지팡이 마법봉",
+   "error": null,
+   "query": "강화 수치 높은 지팡이",
+   "expected": null,
+   "group": "미언급",
+   "run": 0
+  },
+  {
+   "element": null,
+   "rewritten": "화염 저항 방어구",
+   "error": null,
+   "query": "화염 저항 방어구",
+   "expected": null,
+   "group": "저항",
+   "run": 0
+  },
+  {
+   "element": null,
+   "rewritten": "냉기 저항 로브 방어구",
+   "error": null,
+   "query": "냉기 저항 로브 있어?",
+   "expected": null,
+   "group": "저항",
+   "run": 0
+  },
+  {
+   "element": null,
+   "rewritten": "암흑 저항 목걸이",
+   "error": null,
+   "query": "암흑 저항 목걸이",
+   "expected": null,
+   "group": "저항",
+   "run": 0
+  },
+  {
+   "element": null,
+   "rewritten": "속성 저항 높은 갑옷 방어구",
+   "error": null,
+   "query": "속성 저항 높은 갑옷",
+   "expected": null,
+   "group": "저항",
+   "run": 0
+  },
+  {
+   "element": null,
+   "rewritten": "검 소드 대검 단검",
+   "error": null,
+   "query": "무속성 아닌 검",
+   "expected": null,
+   "group": "부정형",
+   "run": 0
+  },
+  {
+   "element": null,
+   "rewritten": "속성 있는 아이템",
+   "error": null,
+   "query": "무속성 말고 다른 거",
+   "expected": null,
+   "group": "부정형",
+   "run": 0
+  },
+  {
+   "element": null,
+   "rewritten": "무속성 아이템",
+   "error": null,
+   "query": "무속성 빼고 보여줘",
+   "expected": null,
+   "group": "부정형",
+   "run": 0
+  },
+  {
+   "element": null,
+   "rewritten": "무속성 검 소드 대검 단검",
+   "error": null,
+   "query": "무속성 검 찾아줘",
+   "expected": "무속성",
+   "group": "무속성",
+   "run": 1
+  },
+  {
+   "element": "무속성",
+   "rewritten": "무속성 활 장궁 단궁",
+   "error": null,
+   "query": "무속성 활 있어?",
+   "expected": "무속성",
+   "group": "무속성",
+   "run": 1
+  },
+  {
+   "element": "무속성",
+   "rewritten": "속성 없는 갑옷 방어구",
+   "error": null,
+   "query": "속성 없는 갑옷 보여줘",
+   "expected": "무속성",
+   "group": "무속성",
+   "run": 1
+  },
+  {
+   "element": "무속성",
+   "rewritten": "속성 없는 지팡이 마법봉",
+   "error": null,
+   "query": "속성없는 지팡이 추천",
+   "expected": "무속성",
+   "group": "무속성",
+   "run": 1
+  },
+  {
+   "element": "무속성",
+   "rewritten": "속성 없는 무기 저렴한",
+   "error": null,
+   "query": "무속성 무기 중에 싼 거",
+   "expected": "무속성",
+   "group": "무속성",
+   "run": 1
+  },
+  {
+   "element": null,
+   "rewritten": "속성 없는 반지",
+   "error": null,
+   "query": "무속성인 반지 있나",
+   "expected": "무속성",
+   "group": "무속성",
+   "run": 1
+  },
+  {
+   "element": "무속성",
+   "rewritten": "속성 없는 방패 실드",
+   "error": null,
+   "query": "무속성 방패 5만원 이하",
+   "expected": "무속성",
+   "group": "무속성",
+   "run": 1
+  },
+  {
+   "element": "무속성",
+   "rewritten": "속성 없는 장비",
+   "error": null,
+   "query": "속성 없는 장비 목록",
+   "expected": "무속성",
+   "group": "무속성",
+   "run": 1
+  },
+  {
+   "element": "무속성",
+   "rewritten": "속성 없는 목걸이",
+   "error": null,
+   "query": "무속성 목걸이 얼마야",
+   "expected": "무속성",
+   "group": "무속성",
+   "run": 1
+  },
+  {
+   "element": "무속성",
+   "rewritten": "속성 없는 물약 포션",
+   "error": null,
+   "query": "무속성 물약 뭐 있어",
+   "expected": "무속성",
+   "group": "무속성",
+   "run": 1
+  },
+  {
+   "element": "무속성",
+   "rewritten": "무속성 대검 대검 소드",
+   "error": null,
+   "query": "무속성의 대검 찾습니다",
+   "expected": "무속성",
+   "group": "무속성",
+   "run": 1
+  },
+  {
+   "element": null,
+   "rewritten": "각반 무속성",
+   "error": null,
+   "query": "무속성 각반 추천해줘",
+   "expected": "무속성",
+   "group": "무속성",
+   "run": 1
+  },
+  {
+   "element": "무속성",
+   "rewritten": "무속성 둔기",
+   "error": null,
+   "query": "무속성 둔기 시세",
+   "expected": "무속성",
+   "group": "무속성",
+   "run": 1
+  },
+  {
+   "element": null,
+   "rewritten": "신발 장화 부츠",
+   "error": null,
+   "query": "속성 안 붙은 신발",
+   "expected": "무속성",
+   "group": "무속성",
+   "run": 1
+  },
+  {
+   "element": "화염",
+   "rewritten": "불꽃 화염 검 소드",
+   "error": null,
+   "query": "화염 속성 검 찾아줘",
+   "expected": "화염",
+   "group": "타속성",
+   "run": 1
+  },
+  {
+   "element": "화염",
+   "rewritten": "불꽃 화염 대검 검",
+   "error": null,
+   "query": "불속성 대검",
+   "expected": "화염",
+   "group": "타속성",
+   "run": 1
+  },
+  {
+   "element": "냉기",
+   "rewritten": "얼음 냉기 지팡이 마법봉",
+   "error": null,
+   "query": "얼음 속성 지팡이",
+   "expected": "냉기",
+   "group": "타속성",
+   "run": 1
+  },
+  {
+   "element": "냉기",
+   "rewritten": "얼음 냉기 활 장궁 단궁",
+   "error": null,
+   "query": "냉기 활 있어?",
+   "expected": "냉기",
+   "group": "타속성",
+   "run": 1
+  },
+  {
+   "element": "번개",
+   "rewritten": "번개 속성 창 랜스",
+   "error": null,
+   "query": "번개 속성 창",
+   "expected": "번개",
+   "group": "타속성",
+   "run": 1
+  },
+  {
+   "element": null,
+   "rewritten": "암흑 어둠 로브 갑옷 방어구",
+   "error": null,
+   "query": "어둠 속성 로브",
+   "expected": "암흑",
+   "group": "타속성",
+   "run": 1
+  },
+  {
+   "element": "신성",
+   "rewritten": "빛 성속성 방패 실드",
+   "error": null,
+   "query": "신성 속성 방패",
+   "expected": "신성",
+   "group": "타속성",
+   "run": 1
+  },
+  {
+   "element": "신성",
+   "rewritten": "빛 성속성 목걸이",
+   "error": null,
+   "query": "빛 속성 목걸이",
+   "expected": "신성",
+   "group": "타속성",
+   "run": 1
+  },
+  {
+   "element": null,
+   "rewritten": "검 소드 대검 단검",
+   "error": null,
+   "query": "검 찾아줘",
+   "expected": null,
+   "group": "미언급",
+   "run": 1
+  },
+  {
+   "element": null,
+   "rewritten": "갑옷 방어구",
+   "error": null,
+   "query": "3만원 이하 갑옷",
+   "expected": null,
+   "group": "미언급",
+   "run": 1
+  },
+  {
+   "element": null,
+   "rewritten": "강화된 롱소드 소드",
+   "error": null,
+   "query": "+9 강화 롱소드 시세",
+   "expected": null,
+   "group": "미언급",
+   "run": 1
+  },
+  {
+   "element": null,
+   "rewritten": "활 장궁 단궁",
+   "error": null,
+   "query": "100렙 이상 활",
+   "expected": null,
+   "group": "미언급",
+   "run": 1
+  },
+  {
+   "element": null,
+   "rewritten": "저렴한 아이템",
+   "error": null,
+   "query": "싼 아이템 추천",
+   "expected": null,
+   "group": "미언급",
+   "run": 1
+  },
+  {
+   "element": null,
+   "rewritten": "우수한 속성 무기",
+   "error": null,
+   "query": "속성 좋은 무기",
+   "expected": null,
+   "group": "미언급",
+   "run": 1
+  },
+  {
+   "element": null,
+   "rewritten": "공격력 높은 검 소드 대검 단검",
+   "error": null,
+   "query": "공격력 높은 검",
+   "expected": null,
+   "group": "미언급",
+   "run": 1
+  },
+  {
+   "element": null,
+   "rewritten": "방어구 갑옷",
+   "error": null,
+   "query": "방어구 목록 보여줘",
+   "expected": null,
+   "group": "미언급",
+   "run": 1
+  },
+  {
+   "element": null,
+   "rewritten": "경매 반지",
+   "error": null,
+   "query": "경매로 나온 반지",
+   "expected": null,
+   "group": "미언급",
+   "run": 1
+  },
+  {
+   "element": null,
+   "rewritten": "강화 수치 높은 지팡이 마법봉",
+   "error": null,
+   "query": "강화 수치 높은 지팡이",
+   "expected": null,
+   "group": "미언급",
+   "run": 1
+  },
+  {
+   "element": null,
+   "rewritten": "화염 저항 방어구",
+   "error": null,
+   "query": "화염 저항 방어구",
+   "expected": null,
+   "group": "저항",
+   "run": 1
+  },
+  {
+   "element": null,
+   "rewritten": "냉기 저항 로브 방어구",
+   "error": null,
+   "query": "냉기 저항 로브 있어?",
+   "expected": null,
+   "group": "저항",
+   "run": 1
+  },
+  {
+   "element": null,
+   "rewritten": "암흑 저항 목걸이",
+   "error": null,
+   "query": "암흑 저항 목걸이",
+   "expected": null,
+   "group": "저항",
+   "run": 1
+  },
+  {
+   "element": null,
+   "rewritten": "속성 저항 높은 갑옷 방어구",
+   "error": null,
+   "query": "속성 저항 높은 갑옷",
+   "expected": null,
+   "group": "저항",
+   "run": 1
+  },
+  {
+   "element": null,
+   "rewritten": "검 소드 대검 단검",
+   "error": null,
+   "query": "무속성 아닌 검",
+   "expected": null,
+   "group": "부정형",
+   "run": 1
+  },
+  {
+   "element": null,
+   "rewritten": "속성 있는 아이템",
+   "error": null,
+   "query": "무속성 말고 다른 거",
+   "expected": null,
+   "group": "부정형",
+   "run": 1
+  },
+  {
+   "element": null,
+   "rewritten": "무속성 아이템",
+   "error": null,
+   "query": "무속성 빼고 보여줘",
+   "expected": null,
+   "group": "부정형",
+   "run": 1
+  },
+  {
+   "element": null,
+   "rewritten": "무속성 검 소드 대검 단검",
+   "error": null,
+   "query": "무속성 검 찾아줘",
+   "expected": "무속성",
+   "group": "무속성",
+   "run": 2
+  },
+  {
+   "element": "무속성",
+   "rewritten": "무속성 활 장궁 단궁",
+   "error": null,
+   "query": "무속성 활 있어?",
+   "expected": "무속성",
+   "group": "무속성",
+   "run": 2
+  },
+  {
+   "element": "무속성",
+   "rewritten": "속성 없는 갑옷 방어구",
+   "error": null,
+   "query": "속성 없는 갑옷 보여줘",
+   "expected": "무속성",
+   "group": "무속성",
+   "run": 2
+  },
+  {
+   "element": "무속성",
+   "rewritten": "속성 없는 지팡이 마법봉",
+   "error": null,
+   "query": "속성없는 지팡이 추천",
+   "expected": "무속성",
+   "group": "무속성",
+   "run": 2
+  },
+  {
+   "element": "무속성",
+   "rewritten": "속성 없는 무기 저렴한",
+   "error": null,
+   "query": "무속성 무기 중에 싼 거",
+   "expected": "무속성",
+   "group": "무속성",
+   "run": 2
+  },
+  {
+   "element": "무속성",
+   "rewritten": "속성 없는 반지",
+   "error": null,
+   "query": "무속성인 반지 있나",
+   "expected": "무속성",
+   "group": "무속성",
+   "run": 2
+  },
+  {
+   "element": "무속성",
+   "rewritten": "속성 없는 방패 실드",
+   "error": null,
+   "query": "무속성 방패 5만원 이하",
+   "expected": "무속성",
+   "group": "무속성",
+   "run": 2
+  },
+  {
+   "element": "무속성",
+   "rewritten": "속성 없는 장비",
+   "error": null,
+   "query": "속성 없는 장비 목록",
+   "expected": "무속성",
+   "group": "무속성",
+   "run": 2
+  },
+  {
+   "element": "무속성",
+   "rewritten": "속성 없는 목걸이",
+   "error": null,
+   "query": "무속성 목걸이 얼마야",
+   "expected": "무속성",
+   "group": "무속성",
+   "run": 2
+  },
+  {
+   "element": "무속성",
+   "rewritten": "속성 없는 물약 포션",
+   "error": null,
+   "query": "무속성 물약 뭐 있어",
+   "expected": "무속성",
+   "group": "무속성",
+   "run": 2
+  },
+  {
+   "element": "무속성",
+   "rewritten": "무속성 대검 검 소드",
+   "error": null,
+   "query": "무속성의 대검 찾습니다",
+   "expected": "무속성",
+   "group": "무속성",
+   "run": 2
+  },
+  {
+   "element": null,
+   "rewritten": "각반 무속성",
+   "error": null,
+   "query": "무속성 각반 추천해줘",
+   "expected": "무속성",
+   "group": "무속성",
+   "run": 2
+  },
+  {
+   "element": "무속성",
+   "rewritten": "무속성 둔기",
+   "error": null,
+   "query": "무속성 둔기 시세",
+   "expected": "무속성",
+   "group": "무속성",
+   "run": 2
+  },
+  {
+   "element": null,
+   "rewritten": "신발 장화 부츠",
+   "error": null,
+   "query": "속성 안 붙은 신발",
+   "expected": "무속성",
+   "group": "무속성",
+   "run": 2
+  },
+  {
+   "element": "화염",
+   "rewritten": "불꽃 화염 검 소드",
+   "error": null,
+   "query": "화염 속성 검 찾아줘",
+   "expected": "화염",
+   "group": "타속성",
+   "run": 2
+  },
+  {
+   "element": "화염",
+   "rewritten": "불꽃 화염 대검 검",
+   "error": null,
+   "query": "불속성 대검",
+   "expected": "화염",
+   "group": "타속성",
+   "run": 2
+  },
+  {
+   "element": "냉기",
+   "rewritten": "얼음 냉기 지팡이 마법봉",
+   "error": null,
+   "query": "얼음 속성 지팡이",
+   "expected": "냉기",
+   "group": "타속성",
+   "run": 2
+  },
+  {
+   "element": "냉기",
+   "rewritten": "얼음 냉기 활 장궁 단궁",
+   "error": null,
+   "query": "냉기 활 있어?",
+   "expected": "냉기",
+   "group": "타속성",
+   "run": 2
+  },
+  {
+   "element": "번개",
+   "rewritten": "번개 속성 창 랜스",
+   "error": null,
+   "query": "번개 속성 창",
+   "expected": "번개",
+   "group": "타속성",
+   "run": 2
+  },
+  {
+   "element": null,
+   "rewritten": "암흑 어둠 로브 갑옷 방어구",
+   "error": null,
+   "query": "어둠 속성 로브",
+   "expected": "암흑",
+   "group": "타속성",
+   "run": 2
+  },
+  {
+   "element": "신성",
+   "rewritten": "빛 성속성 방패 실드",
+   "error": null,
+   "query": "신성 속성 방패",
+   "expected": "신성",
+   "group": "타속성",
+   "run": 2
+  },
+  {
+   "element": "신성",
+   "rewritten": "빛 성속성 목걸이",
+   "error": null,
+   "query": "빛 속성 목걸이",
+   "expected": "신성",
+   "group": "타속성",
+   "run": 2
+  },
+  {
+   "element": null,
+   "rewritten": "검 소드 대검 단검",
+   "error": null,
+   "query": "검 찾아줘",
+   "expected": null,
+   "group": "미언급",
+   "run": 2
+  },
+  {
+   "element": null,
+   "rewritten": "갑옷 방어구",
+   "error": null,
+   "query": "3만원 이하 갑옷",
+   "expected": null,
+   "group": "미언급",
+   "run": 2
+  },
+  {
+   "element": null,
+   "rewritten": "강화된 검 소드 롱소드",
+   "error": null,
+   "query": "+9 강화 롱소드 시세",
+   "expected": null,
+   "group": "미언급",
+   "run": 2
+  },
+  {
+   "element": null,
+   "rewritten": "활 장궁 단궁",
+   "error": null,
+   "query": "100렙 이상 활",
+   "expected": null,
+   "group": "미언급",
+   "run": 2
+  },
+  {
+   "element": null,
+   "rewritten": "저렴한 아이템",
+   "error": null,
+   "query": "싼 아이템 추천",
+   "expected": null,
+   "group": "미언급",
+   "run": 2
+  },
+  {
+   "element": null,
+   "rewritten": "우수한 속성 무기",
+   "error": null,
+   "query": "속성 좋은 무기",
+   "expected": null,
+   "group": "미언급",
+   "run": 2
+  },
+  {
+   "element": null,
+   "rewritten": "공격력 높은 검 소드 대검 단검",
+   "error": null,
+   "query": "공격력 높은 검",
+   "expected": null,
+   "group": "미언급",
+   "run": 2
+  },
+  {
+   "element": null,
+   "rewritten": "방어구 목록",
+   "error": null,
+   "query": "방어구 목록 보여줘",
+   "expected": null,
+   "group": "미언급",
+   "run": 2
+  },
+  {
+   "element": null,
+   "rewritten": "경매 반지",
+   "error": null,
+   "query": "경매로 나온 반지",
+   "expected": null,
+   "group": "미언급",
+   "run": 2
+  },
+  {
+   "element": null,
+   "rewritten": "강화 수치 높은 지팡이 마법봉",
+   "error": null,
+   "query": "강화 수치 높은 지팡이",
+   "expected": null,
+   "group": "미언급",
+   "run": 2
+  },
+  {
+   "element": null,
+   "rewritten": "화염 저항 방어구",
+   "error": null,
+   "query": "화염 저항 방어구",
+   "expected": null,
+   "group": "저항",
+   "run": 2
+  },
+  {
+   "element": null,
+   "rewritten": "냉기 저항 로브 방어구",
+   "error": null,
+   "query": "냉기 저항 로브 있어?",
+   "expected": null,
+   "group": "저항",
+   "run": 2
+  },
+  {
+   "element": null,
+   "rewritten": "암흑 저항 목걸이",
+   "error": null,
+   "query": "암흑 저항 목걸이",
+   "expected": null,
+   "group": "저항",
+   "run": 2
+  },
+  {
+   "element": null,
+   "rewritten": "속성 저항 높은 갑옷 방어구",
+   "error": null,
+   "query": "속성 저항 높은 갑옷",
+   "expected": null,
+   "group": "저항",
+   "run": 2
+  },
+  {
+   "element": null,
+   "rewritten": "검 소드 대검 단검",
+   "error": null,
+   "query": "무속성 아닌 검",
+   "expected": null,
+   "group": "부정형",
+   "run": 2
+  },
+  {
+   "element": null,
+   "rewritten": "속성 없는 말고 다른 것",
+   "error": null,
+   "query": "무속성 말고 다른 거",
+   "expected": null,
+   "group": "부정형",
+   "run": 2
+  },
+  {
+   "element": null,
+   "rewritten": "무속성 아이템",
+   "error": null,
+   "query": "무속성 빼고 보여줘",
+   "expected": null,
+   "group": "부정형",
+   "run": 2
+  }
+ ]
+}

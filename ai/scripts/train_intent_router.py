@@ -195,7 +195,7 @@ def _report(model, tokenizer, threshold: float) -> None:
     print(f"{'룰 단독 (기준선)':<28}{rules_ok / total:>9.1%}")
     print(f"{'분류기 단독':<28}{classifier_ok / total:>9.1%}")
     print(f"{'2단 라우터 (배포)':<28}{router_ok / total:>9.1%}")
-    print(f"\n룰 기권 {rules_abstained}건 — 분류기가 담당하는 구간")
+    print(f"\n룰 기권 {rules_abstained}건 - 분류기가 담당하는 구간")
 
     if router_ok > rules_ok:
         print(f"=> 2단 라우터가 룰 기준선을 {router_ok - rules_ok}건 앞선다")
@@ -236,7 +236,7 @@ def _report(model, tokenizer, threshold: float) -> None:
             escalated += 1
         breakdown[f"{INTENT_LABELS[final]} ({decided})"] += 1
 
-    print(f"\n{'=' * 62}\n경계 발화 {len(BOUNDARY_UTTERANCES)}건 — 에이전트로 빠져야 정상")
+    print(f"\n{'=' * 62}\n경계 발화 {len(BOUNDARY_UTTERANCES)}건 - 에이전트로 빠져야 정상")
     print(f"{'=' * 62}")
     print(f"COMPOUND로 에스컬레이션: {escalated}/{len(BOUNDARY_UTTERANCES)}")
     for key, value in breakdown.most_common():

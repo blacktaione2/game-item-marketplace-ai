@@ -266,7 +266,7 @@ def report_spread(runs: list[list[dict]]) -> None:
     spreads = [(k, max(v) - min(v)) for k, v in scores.items() if len(v) == n]
     missing = [k for k, v in scores.items() if len(v) != n]
 
-    print(f"\n{'=' * 72}\n(a) 점수 산포 — {n}회 반복\n{'=' * 72}")
+    print(f"\n{'=' * 72}\n(a) 점수 산포 - {n}회 반복\n{'=' * 72}")
     if spreads:
         values = np.array([s for _, s in spreads])
         print(
@@ -280,7 +280,7 @@ def report_spread(runs: list[list[dict]]) -> None:
         if values.max() == 0:
             print("    => 모든 아이템의 점수가 실행마다 완전히 동일했다.")
     if missing:
-        print(f"\n  일부 실행에만 등장한 (질의,아이템) {len(missing)}건 — 이것도 불안정이다:")
+        print(f"\n  일부 실행에만 등장한 (질의,아이템) {len(missing)}건 - 이것도 불안정이다:")
         for query, name in missing[:8]:
             print(f"    {len(scores[(query, name)])}/{n}회  {query} / {name}")
 
@@ -318,7 +318,7 @@ def report_spread(runs: list[list[dict]]) -> None:
                 f"{min(margins):.2f}): {verdict}"
             )
 
-    print(f"\n{'=' * 72}\n(d) 순위 역전 — 부적합이 적합보다 위에 있는가\n{'=' * 72}")
+    print(f"\n{'=' * 72}\n(d) 순위 역전 - 부적합이 적합보다 위에 있는가\n{'=' * 72}")
     if not inversions:
         print("  없음. 질의별로 적합이 전부 부적합보다 위에 있다.")
     else:
@@ -330,7 +330,7 @@ def report_spread(runs: list[list[dict]]) -> None:
 
 def report_reproducibility(results: list[dict]) -> None:
     """(b) 결론이 실행마다 같은가 — 지난번 깨진 지점."""
-    print(f"\n{'=' * 72}\n(b) 재현성 — 실행별 임계값 산정 결과\n{'=' * 72}")
+    print(f"\n{'=' * 72}\n(b) 재현성 - 실행별 임계값 산정 결과\n{'=' * 72}")
     print(
         f"{'실행':<6}{'방식':<10}{'임계값':>9}{'튜닝 적합잘림':>13}"
         f"{'튜닝 부적합잘림':>15}{'홀드 적합잘림':>13}{'홀드 부적합잘림':>15}"
@@ -388,7 +388,7 @@ def report_split_stability(runs: list[list[dict]], margin: float) -> None:
     **결과 0건 질의는 행을 남기지 않으므로 열거에서 빠진다.** 지금은
     `"3만원 이하 불속성 검"` 한 건이라 9질의를 4/5로 나눈다.
     """
-    print(f"\n{'=' * 72}\n분할 안정성 — 튜닝/홀드아웃 분할 전수 열거\n{'=' * 72}")
+    print(f"\n{'=' * 72}\n분할 안정성 - 튜닝/홀드아웃 분할 전수 열거\n{'=' * 72}")
 
     for run_index, rows in enumerate(runs, start=1):
         fit_by_query: dict[str, list[float]] = {}
@@ -467,7 +467,7 @@ def report_split_stability(runs: list[list[dict]], margin: float) -> None:
                 f"\n  실제 분할: Δ {actual['delta']:+.2f}  T {actual['threshold']:.2f}  "
                 f"적합잘림 {actual['fit_cut']}  부적합잘림 {actual['unfit_cut']}"
             )
-            print(f"    Δ 백분위 **{percentile:.0f}%** — 100%에 가까울수록 운이 좋았던 것")
+            print(f"    Δ 백분위 **{percentile:.0f}%** - 100%에 가까울수록 운이 좋았던 것")
 
         worst = sorted(records, key=lambda r: r["delta"])[:3]
         print("\n  Δ가 가장 나쁜 분할 3가지 (튜닝셋에 들어간 질의):")
@@ -546,7 +546,7 @@ async def main() -> None:
         report_split_stability(runs, args.margin)
 
     # 훑기는 참고용으로 1회차만. 결론은 위 마진 기반 산정이 낸다.
-    print("\n[1회차 임계값 훑기 — 참고]")
+    print("\n[1회차 임계값 훑기 - 참고]")
     sweep(tune, "absolute")
     sweep(tune, "relative")
 

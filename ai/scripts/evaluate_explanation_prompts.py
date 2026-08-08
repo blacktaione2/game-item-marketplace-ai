@@ -446,7 +446,7 @@ async def collect() -> list[dict[str, Any]]:
     # (kind, query, result, 답변에 나오면 안 되는 주어)
     cases: list[tuple[str, str, dict[str, Any], str]] = []
     forecasts: dict[int, dict[str, Any]] = {}
-    print("[준비] 도구 결과를 케이스당 한 번만 계산한다 — 네 안이 같은 입력을 본다")
+    print("[준비] 도구 결과를 케이스당 한 번만 계산한다 - 네 안이 같은 입력을 본다")
     for item_id in {*FORECAST_ITEMS, *(i for i, _, _ in OOD_FORECAST_CASES)}:
         try:
             forecasts[item_id] = await forecast_price(
@@ -578,7 +578,7 @@ def score(rows: list[dict[str, Any]]) -> None:
         samples.setdefault(f"{variant}|{kind}", answer)
 
     print("\n" + "=" * 78)
-    print("결과 — 낮을수록 좋다 (n = 답변 수)")
+    print("결과 - 낮을수록 좋다 (n = 답변 수)")
     print("=" * 78)
     print(f"  {'안':<14}{'n':>4}{'누출':>7}{'미완결':>8}{'면책누락':>9}{'모순':>7}"
           f"{'권유':>7}{'주어채택':>10}{'대상명누락':>12}")
@@ -591,14 +591,14 @@ def score(rows: list[dict[str, Any]]) -> None:
             f"{row['면책누락']:>9}{row['모순']:>7}{row['권유']:>7}"
             f"{adopted:>10}{row['대상명누락']:>12}"
         )
-    print("\n  · 주어채택의 분모는 **도메인 밖 케이스만**이다 — 나머지 열과 다르다.")
+    print("\n  · 주어채택의 분모는 **도메인 밖 케이스만**이다 - 나머지 열과 다르다.")
     print("  · 주어채택은 게이트가 뚫렸다고 가정했을 때의 2차 방어선을 잰다.")
 
     # **걸린 것을 반드시 보여준다.** 지표가 스스로 틀릴 수 있다 — 실제로 첫
     # 판본의 모순 지표는 부정문을 못 읽어 세 안 모두 9를 냈고, 사람이 답변을
     # 봤기 때문에 드러났다. 숫자만 내는 검사는 자기 오류를 숨긴다.
     print("\n" + "=" * 78)
-    print("걸린 답변 — 지표가 맞게 잡았는지 눈으로 확인할 것")
+    print("걸린 답변 - 지표가 맞게 잡았는지 눈으로 확인할 것")
     print("=" * 78)
     for label in ("누출", "미완결", "면책누락", "모순", "권유", "주어채택", "대상명누락"):
         hits = flagged[label]
@@ -633,7 +633,7 @@ async def main() -> None:
         if not ANSWERS.exists():
             raise SystemExit(f"저장된 답변이 없습니다: {ANSWERS}")
         rows = json.loads(io.open(ANSWERS, encoding="utf-8").read())
-        print(f"[채점만] 저장된 답변 {len(rows)}건 — API 호출 없음")
+        print(f"[채점만] 저장된 답변 {len(rows)}건 - API 호출 없음")
         score(rows)
         return
     score(await collect())

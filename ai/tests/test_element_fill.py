@@ -196,3 +196,43 @@ class TestAgainstTheLabelledSet:
         assert len(filled) == len(group) - 1
         missed = set(group) - set(filled)
         assert missed == {"속성 안 붙은 신발"}
+
+
+class TestClearsAWronglyFilledNegation:
+    """**채우기만 하던 함수가 지우기도 한다** (ADR-0045).
+
+    모델을 `gpt-5.4-mini` 로 올리니 `무속성` 미채움이 사라졌는데(69% -> 100%)
+    대신 **부정형에 스스로 `무속성` 을 채우는** 새 결함이 생겼다. 채우기만 해서는
+    막을 수 없다 — 이미 값이 있으니 옛 코드는 그대로 통과시켰다.
+
+    이건 ADR-0040 이 "안 하는 것보다 훨씬 나쁘다" 고 적은 오류다: 사용자가
+    **제외해달라고 한 것만** 돌려준다.
+    """
+
+    def test_부정형에_채워진_무속성을_지운다(self):
+        assert fill_missing_element("무속성 빼고 보여줘", "무속성") is None
+        assert fill_missing_element("무속성 아닌 검", "무속성") is None
+        assert fill_missing_element("무속성 말고 다른 거", "무속성") is None
+
+    def test_부정형이_아니면_그대로_둔다(self):
+        assert fill_missing_element("무속성 검 찾아줘", "무속성") == "무속성"
+
+    def test_다른_속성은_부정형이어도_손대지_않는다(self):
+        """**이 검사가 확장의 안전선이다.**
+
+        ADR-0040 이 "채우기만 해서 지금 잘 되는 것에 닿을 수 없다" 를 성질로
+        내세웠는데, 지우기를 더하면 그 성질이 깨질 수 있다. `무속성` 일 때만
+        지우므로 다른 속성은 여전히 불가침이다.
+        """
+        assert fill_missing_element("무속성 말고", "화염") == "화염"
+        assert fill_missing_element("무속성 빼고 보여줘", "암흑") == "암흑"
+
+    def test_평가셋의_부정형_그룹이_전부_None_이_된다(self):
+        """모델이 채워 보내든 안 보내든 결과가 같아야 한다.
+
+        `None` 을 넣은 경우는 기존 검사가 이미 보고 있고, 여기서는 **모델이
+        `무속성` 을 채워 보낸 경우**를 같은 기준으로 본다.
+        """
+        negations = [q for q, want, g in ELEMENT_QUERIES if g == "부정형"]
+        assert negations, "부정형 그룹이 비었다 - 이 검사가 공허해진다"
+        assert all(fill_missing_element(q, "무속성") is None for q in negations)

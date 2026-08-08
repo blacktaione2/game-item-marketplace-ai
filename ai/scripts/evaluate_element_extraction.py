@@ -243,7 +243,7 @@ def score(payload: dict[str, Any]) -> None:
          after["부정형"]["무속성오채움"] <= MAX_BUJEONG_FALSE),
     ]
     print("\n" + "=" * 78)
-    print("사전 등록 기준 — 결과를 보고 고쳐 쓰지 않는다")
+    print("사전 등록 기준 - 결과를 보고 고쳐 쓰지 않는다")
     print("=" * 78)
     for label, ok in bars:
         print(f"  {'PASS' if ok else 'FAIL'}  {label}")
@@ -263,7 +263,7 @@ async def main() -> None:
         path = _answers_path(tag)
         if not path.exists():
             raise SystemExit(f"저장된 답변이 없습니다: {path}")
-        print(f"[채점만] {path.name} 재채점 — API 호출 없음")
+        print(f"[채점만] {path.name} 재채점 - API 호출 없음")
         score(json.loads(io.open(path, encoding="utf-8").read()))
         return
     score(await collect(tag))
