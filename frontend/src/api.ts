@@ -240,9 +240,12 @@ export class ApiError extends Error {
 }
 
 /**
- * 발급받은 JWT. 모듈 변수로 두는 이유는 `request()`가 컴포넌트 밖이기 때문이고,
- * 새로고침하면 사라지는 게 맞다 — 데모 토큰이라 다시 받으면 그만이다.
- * localStorage에 두면 XSS 표면만 늘고 얻는 게 없다.
+ * 발급받은 JWT. 모듈 변수로 두는 이유는 `request()`가 컴포넌트 밖이기 때문이다.
+ *
+ * **여기 있는 값은 새로고침하면 사라지지만 세션은 안 사라진다** — `App` 이
+ * `sessionStorage` 에서 복원해 다시 넣는다(ADR-0036). 예전 주석은 "새로고침하면
+ * 사라지는 게 맞다"고 단언했는데, 그건 ADR-0036 이전 이야기다. `localStorage` 를
+ * 안 쓰는 이유는 그대로다 — 탭을 닫아도 남고 탭 사이에 공유된다.
  */
 let accessToken: string | null = null;
 
@@ -290,15 +293,18 @@ function normalizeErrorMessage(body: unknown): string | null {
   return null;
 }
 
-async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+function jsonHeaders(init: RequestInit = {}): Headers {
   const headers = new Headers(init.headers);
   headers.set("Content-Type", "application/json; charset=utf-8");
   // **두 서버가 같은 토큰을 쓴다.** 예전에는 백엔드만 헤더로 행위자를 식별하고
   // AI 서버는 본문의 tenant_code를 봤는데, 그 tenant_code는 프론트가 자칭하는
   // 값이었다. 이제 테넌트도 토큰 클레임에서 온다 (ADR-0023).
   if (accessToken) headers.set("Authorization", `Bearer ${accessToken}`);
+  return headers;
+}
 
-  const response = await fetch(path, { ...init, headers });
+async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const response = await fetch(path, { ...init, headers: jsonHeaders(init) });
   if (!response.ok) {
     // **토큰을 들고 갔는데 401이면 세션이 죽은 것이다.** 토큰이 없는 상태의 401은
     // 로그인 실패이므로 건드리지 않는다 — 둘을 안 가르면 비밀번호를 틀릴 때마다
@@ -327,6 +333,107 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     throw new ApiError(response.status, message);
   }
   return response.json() as Promise<T>;
+}
+
+// --- 스트리밍 ---------------------------------------------------------------
+
+/** 서버가 흘리는 단계. 화면 문구는 이쪽이 정한다 — 서버는 사실만 준다. */
+export type ProgressStage = "cache" | "routing" | "branch" | "thinking" | "tool";
+
+export interface ProgressEvent {
+  type: "progress";
+  stage: ProgressStage;
+  /** `cache` */ hit?: boolean;
+  /** `routing`·`branch` */ intent?: string;
+  /** `routing` */ decided_by?: string;
+  /** `tool` */ tool?: string;
+  /** `tool`·`thinking` */ step?: number;
+  /** `tool` */ failed?: boolean;
+}
+
+export type AssistantStreamEvent =
+  | ProgressEvent
+  | { type: "done"; result: AssistantResponse }
+  | { type: "error"; message: string };
+
+/**
+ * 진행 상황을 받으며 묻는다 (`POST /api/ai/assistant/stream`).
+ *
+ * **`EventSource` 를 못 쓴다.** 그건 GET 전용인 데다 `Authorization` 헤더를
+ * 붙일 수 없다. 토큰을 쿼리 파라미터로 옮기면 되긴 하지만 **그러면 nginx 접근
+ * 로그에 토큰이 남는다.** 그래서 `fetch` + `ReadableStream` 으로 직접 읽는다.
+ *
+ * **최종 응답은 `api.ask()` 와 똑같은 `AssistantResponse` 다.** 캐시 적중도
+ * 서버가 스트림으로 감싸 보내므로(`cache` → `done` 즉시), 호출부에 분기가
+ * 생기지 않는다 — 그게 이 설계의 요점이다.
+ */
+export async function askStream(
+  query: string,
+  onEvent: (event: AssistantStreamEvent) => void,
+  options: { useCache?: boolean; signal?: AbortSignal } = {},
+): Promise<AssistantResponse> {
+  const response = await fetch("/api/ai/assistant/stream", {
+    method: "POST",
+    headers: jsonHeaders(),
+    body: JSON.stringify({ query, use_cache: options.useCache ?? true }),
+    signal: options.signal,
+  });
+
+  // **스트림이 열리기 전의 실패는 여전히 상태 코드다** — 401·429·422 가 여기로
+  // 온다. 열린 뒤의 실패만 `error` 이벤트가 된다.
+  if (!response.ok || !response.body) {
+    if (response.status === 401 && accessToken) {
+      setAccessToken(null);
+      onSessionExpired?.();
+    }
+    let message = `요청 실패 (HTTP ${response.status})`;
+    try {
+      message = normalizeErrorMessage(await response.json()) ?? message;
+    } catch {
+      /* 본문이 JSON이 아니면 기본 메시지 */
+    }
+    throw new ApiError(response.status, message);
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let result: AssistantResponse | null = null;
+
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      // **`stream: true` 가 없으면 멀티바이트 문자가 청크 경계에서 깨진다.**
+      // 한글은 UTF-8 로 3바이트라 경계에 걸릴 확률이 낮지 않다.
+      buffer += decoder.decode(value, { stream: true });
+
+      // 이벤트 경계는 빈 줄이다. **마지막 조각은 불완전할 수 있으니 남긴다** —
+      // 이걸 빠뜨리면 청크가 쪼개진 순간 JSON 파싱이 터진다.
+      const chunks = buffer.split("\n\n");
+      buffer = chunks.pop() ?? "";
+
+      for (const chunk of chunks) {
+        const line = chunk.split("\n").find((l) => l.startsWith("data: "));
+        if (!line) continue;
+        const event = JSON.parse(line.slice(6)) as AssistantStreamEvent;
+        onEvent(event);
+        if (event.type === "done") result = event.result;
+        // 스트림이 열린 뒤의 실패는 페이로드로 온다. 상태 코드를 바꿀 수 없어서다.
+        if (event.type === "error") throw new ApiError(500, event.message);
+      }
+    }
+  } finally {
+    // 중간에 던지거나 취소되면 리더를 놔줘야 서버 쪽 태스크도 취소된다.
+    reader.cancel().catch(() => {});
+  }
+
+  if (!result) {
+    // 스트림이 `done` 없이 끝났다 — 프록시가 끊었거나 서버가 죽었다.
+    // **조용히 빈 화면을 그리지 않는다.**
+    throw new ApiError(500, "응답이 완료되지 않았습니다.");
+  }
+  return result;
 }
 
 export interface DemoToken {

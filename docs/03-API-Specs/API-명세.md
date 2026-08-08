@@ -51,10 +51,15 @@ updated: 2026-07-31
 
 | 경로 | 한도 | 키 |
 |---|---|---|
-| `POST /api/assistant` | 20회 / 분 | tenant + user |
+| `POST /api/assistant`, `/api/assistant/stream` | 20회 / 분 | tenant + user |
 | `POST /api/items/{id}/purchase`, `/bids` | 10회 / 초 | user |
 | `POST /api/auth/login` | 30회 / 분 | **IP** |
-| `POST /api/assistant` (일일) | **50회 / 일** | tenant + user |
+| `POST /api/assistant`, `/api/assistant/stream` (일일) | **50회 / 일** | tenant + user |
+
+> **스트리밍 경로도 같은 한도를 탄다.** 안 걸면 하루 50회 상한을 **우회하는
+> 경로**가 되는데, 로컬에서는 한도에 안 닿으니 티가 안 난다.
+> `ai/tests/test_assistant_stream.py` 가 두 경로 모두 `limit_assistant` 를
+> 의존하는지 확인한다(ADR-0044).
 
 > `login`만 IP를 쓴다 — 인증 이전이라 신원이 없기 때문이다. **NAT·회사망 뒤에서는
 > 여러 사용자가 한 IP를 공유하므로 정상 사용자가 막힐 수 있다.**
@@ -330,6 +335,58 @@ R --scan --pattern 'ratelimit:assistant*' | xargs -r docker exec gimp-redis \
 > `tests/test_error_detail_leak.py` 가 소스를 훑어 고정한다.
 
 `stop_reason`은 `max_steps`(설정 `agent_max_steps`, 기본 5)에 걸렸는지를 알려준다.
+
+---
+
+## `POST /api/assistant/stream` — 같은 일을, 진행 상황과 함께 (ADR-0044)
+
+`POST /api/assistant` 와 **요청 본문·인증·한도가 모두 같다.** 다른 것은 응답이
+`text/event-stream` 이고, 끝날 때까지 기다리는 대신 단계를 흘린다는 점뿐이다.
+최종 결과는 `done` 이벤트 안에 **위 응답과 완전히 같은 형태**로 들어 있다.
+
+**흘리는 것은 토큰이 아니라 단계다.** 복합 질의의 7~25초는 대부분 도구 호출이고,
+토큰만 흘리면 마지막 1~2초만 빨라 보인다.
+
+**이벤트** — 한 건은 `data: {json}` 한 줄 + 빈 줄.
+
+| `type` | `stage` | 같이 오는 필드 | 언제 |
+|---|---|---|---|
+| `progress` | `cache` | `hit` | 캐시 조회 끝남 (`use_cache=false` 면 안 옴) |
+| `progress` | `routing` | `intent`, `decided_by` | 의도 판별 끝남 |
+| `progress` | `branch` | `intent` | 분기 실행 시작 |
+| `progress` | `thinking` | `step` | 에이전트가 다음 도구를 **고르는 중** |
+| `progress` | `tool` | `tool`, `step`, `failed?` | 도구 호출 **시작**. 실패하면 `failed:true` 로 한 번 더 |
+| `done` | — | `result` | 완료. `result` 는 `/api/assistant` 응답과 동일 |
+| `error` | — | `message` | 스트림이 열린 뒤의 실패 |
+
+> **`tool` 은 끝난 게 아니라 시작한 것이다.** 화면이 마지막 줄을 "지금 하는 일"로
+> 그리기 때문이고, 실측 근거도 있다 — 도구 실행이 11초를 넘기도 해서, 끝날 때만
+> 알리면 그동안 "도구를 정하는 중"이라는 **틀린 라벨**이 떠 있었다.
+
+**캐시 적중도 스트림으로 온다** — `cache`(hit:true) 다음 `done` 이 즉시. 적중일 때만
+일반 응답을 주면 클라이언트에 코드 경로가 둘 생기고, 아끼는 것은 25.9ms 다.
+
+**오류는 두 종류로 갈린다. 경계는 "스트림이 열렸는가"다.**
+
+| 시점 | 형태 |
+|---|---|
+| 열리기 **전** | 평소대로 상태 코드 — 401 · 422 · **429** |
+| 열린 **후** | `{"type":"error","message":...}` |
+
+헤더가 이미 나간 뒤에는 상태 코드를 바꿀 수 없다. **예외 문자열은 싣지 않는다**
+(ADR-0041과 같은 자세).
+
+**응답 헤더에 `X-Accel-Buffering: no` 가 있다.** 없으면 nginx 가 응답을 버퍼링해서
+전부 끝난 뒤 한꺼번에 내보낸다 — **로컬 dev 프록시에는 버퍼가 없어 개발 중에는
+멀쩡해 보인다.** `load/verify-sse.sh` 가 배포에서 실제로 흐르는지 잰다.
+
+**클라이언트 쪽 주의**
+
+- **`EventSource` 를 못 쓴다** — GET 전용이고 `Authorization` 헤더를 못 붙인다.
+  토큰을 쿼리로 옮기면 nginx 접근 로그에 남는다. `fetch` + `ReadableStream` 을 쓸 것.
+- `TextDecoder` 에 `{ stream: true }` 를 줄 것 — 없으면 **한글이 청크 경계에서
+  깨진다**(UTF-8 3바이트).
+- 이벤트 경계는 빈 줄이고, **마지막 조각은 불완전할 수 있으니 버퍼에 남길 것.**
 
 ---
 

@@ -374,3 +374,22 @@ th {
   padding: 0;
   text-decoration: underline;
 }
+
+/* 진행 상황 (SSE). 끝난 단계는 흐리게, 지금 하는 것만 또렷하게 — 목록이
+   길어져도 눈이 마지막 줄로 간다. */
+.progress {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-size: 0.9rem;
+  line-height: 1.7;
+}
+.progress li::before {
+  content: "· ";
+}
+.progress-done {
+  color: var(--text-muted);
+}
+.progress-now {
+  color: inherit;
+}

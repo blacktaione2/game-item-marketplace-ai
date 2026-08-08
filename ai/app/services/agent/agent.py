@@ -28,6 +28,7 @@ import time
 from typing import Any
 
 from app.core.config import get_settings
+from app.core.progress import STAGE_THINKING, STAGE_TOOL, ProgressFn, noop, safe_emit
 from app.services.llm.base import LLMClient
 from app.services.mcp.session import (
     call_tool_text,
@@ -67,6 +68,9 @@ async def run_agent(
     tenant_code: str,
     query: str,
     max_steps: int | None = None,
+    # **도구 호출마다 알린다.** 복합 질의가 7~25초 걸리는 이유가 여기이고,
+    # 사용자가 그동안 알고 싶은 것은 "지금 뭘 하고 있는가"다.
+    on_progress: ProgressFn = noop,
 ) -> dict[str, Any]:
     settings = get_settings()
     max_steps = max_steps or settings.agent_max_steps
@@ -102,6 +106,9 @@ async def run_agent(
         tool_ms = 0.0
 
         for step in range(1, max_steps + 1):
+            # **호출 전에 알린다.** 이 호출이 6~7초라, 끝난 뒤에만 알리면 그
+            # 구간이 통째로 무음이 된다(실측).
+            await safe_emit(on_progress, STAGE_THINKING, step=step)
             call_started = time.perf_counter()
             result = await llm_client.chat(messages, tools=tools)
             llm_ms += (time.perf_counter() - call_started) * 1000
@@ -112,6 +119,11 @@ async def run_agent(
 
             messages.append(_assistant_message(result))
             for call in result.tool_calls:
+                # **끝났을 때가 아니라 시작할 때 알린다.** 화면은 마지막 줄을
+                # "지금 하는 일"로 그리므로 의미가 그래야 맞다. 실측으로 드러난
+                # 문제이기도 하다 — 도구 실행이 11초대라, 끝날 때만 알리면 그
+                # 시간 내내 "도구를 정하는 중"이라는 **틀린 라벨**이 떠 있었다.
+                await safe_emit(on_progress, STAGE_TOOL, tool=call.name, step=step)
                 tool_started = time.perf_counter()
                 text, failed = await call_tool_text(
                     client, call.name, call.arguments, timeout
@@ -125,6 +137,13 @@ async def run_agent(
                         "failed": failed,
                     }
                 )
+                # 실패만 한 번 더 알린다. 성공은 다음 줄이 뜨는 것으로 이미
+                # 드러나지만, **실패는 말하지 않으면 안 보인다.**
+                if failed:
+                    await safe_emit(
+                        on_progress, STAGE_TOOL,
+                        tool=call.name, step=step, failed=True,
+                    )
                 if not failed:
                     _remember_item(call, text, seen_items)
                     if call.name == "forecast_item_price":

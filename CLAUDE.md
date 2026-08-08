@@ -449,7 +449,27 @@ flow are still curl-verified only; see the roadmap's 기술 부채 section.
 ### ai/ (FastAPI, Python 3.11)
 - `app/routers/` — health, llm, search, forecast, anomaly, **assistant**
   (`POST /api/assistant` is the unified entry point; the per-capability
-  endpoints stay because the MCP tools wrap them)
+  endpoints stay because the MCP tools wrap them). **`POST /api/assistant/stream`
+  is the same work with progress events** (ADR-0044) — the non-streaming route
+  stays because `load/k6/ai-search.js` and `verify-container.sh` are wired to it.
+  Three things about it are load-bearing:
+  - **It streams stages, not tokens.** A compound query's 7-25s is mostly tool
+    calls, so token streaming would only make the last 1-2s look faster. And it
+    would mean replacing `LLMClient.chat()` with a streaming API, i.e. rewriting
+    both provider translations (ADR-0042); a stage callback is one line at each
+    existing timing point.
+  - **A `tool` event fires when the call *starts*, not when it finishes**, and
+    that was a measured correction: emitting only on completion left the biggest
+    wait mislabelled — 11.1s of tool execution displayed as "choosing a tool".
+    The response's own `agent_tool_ms` said so. Progress means "what is happening
+    now", and **which stage dominates flips with warmth** (cold: tools 11.1s;
+    warm: LLM 3.6s).
+  - **A cache hit is wrapped in the stream too**, emitting `cache` then `done`
+    immediately. Returning a plain response on hits would give the client two
+    code paths to save 25.9ms.
+  `app/core/progress.py` holds the callback type — it is in `core/` and not
+  `assistant/` because `agent` uses it too, and `assistant/` would make
+  `pipeline → agent → assistant` a cycle.
 - `app/services/llm/` — `LLMClient` ABC + `OpenAIClient`. `chat(messages,
   tools)` is the abstract method; `complete(prompt)` is a concrete wrapper on
   top of it, so tool-calling was added without touching any existing caller.
@@ -540,7 +560,7 @@ flow are still curl-verified only; see the roadmap's 기술 부채 section.
   *derivation* of `check_ir_gate`'s thresholds (delete it and the numbers become
   unverifiable), the second is a per-run output that CI ships as an artifact.
 
-- `tests/` — `python -m pytest` from `ai/` (**270 tests**, no `pytest-asyncio` — the
+- `tests/` — `python -m pytest` from `ai/` (**281 tests**, no `pytest-asyncio` — the
   few async cases use `asyncio.run`). Deliberately limited to
   deterministic units: RRF fusion, router rules, cache keys/tenant isolation,
   per-intent TTL + the no-result storage veto, id-space guards, filter→DSL
