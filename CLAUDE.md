@@ -300,8 +300,8 @@ Load-test facts worth carrying (`load/`, k6):
   finally verified under real concurrency. `load/run.sh` asserts
   `stock delta == 201 responses + 1 warmup` on every run; keep that assertion
   if you touch the harness.
-- **The bottleneck moves with the load shape.** One contended item: 106 req/s,
-  lock *wait* 0.178s vs *hold* 0.007s (queuing). Spread over 20 items: 430
+- **The bottleneck moves with the load shape.** One contended item: 107 req/s,
+  lock *wait* 0.178s vs *hold* 0.007s (queuing). Spread over 20 items: 429
   req/s, wait ~0, but hold rises 5× (the DB becomes the constraint). Measuring
   only the contended profile would have stopped at "the lock is the bottleneck".
 - **LLM is 97% of AI search latency** (live p95 4.45s; ES + reranker + embedding
@@ -1562,8 +1562,17 @@ resource usage, startup behavior, and always-on services/daemons.
 
 This project keeps an Obsidian vault at `docs/` alongside the code, with these
 folders: `00-Architecture`, `01-Decisions` (ADRs), `02-AI-Pipeline`,
-`03-API-Specs`, `04-DevLog`, `05-Troubleshooting`, `06-발표`. Keep it up to date
-as work happens, without being asked each time:
+`03-API-Specs`, `04-DevLog`, `05-Troubleshooting`, `06-발표`, `07-배포`. Keep it
+up to date as work happens, without being asked each time:
+
+**`docs/SCHEMA.md` is the vault's own rule document and `docs/INDEX.md` is its
+entry point** — the vault is organised as an LLM-Wiki (Raw Sources → Wiki →
+Schema), where the **code and `게임아이템_통합거래플랫폼_최종기획.md` are the
+read-only raw sources**. Read `SCHEMA.md` before creating or restructuring a
+doc; it carries the frontmatter contract, the fixed-vs-derived rule (ADRs get a
+correction block, never a rewrite), the "link at least two, and both ways"
+rule, and the round-closing checklist. The bullets below are the trigger list;
+`SCHEMA.md` is the format.
 
 - **Architecture/technology decision finalized** (e.g. choosing a library,
   picking an algorithm, changing a prior choice): propose creating or updating

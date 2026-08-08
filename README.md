@@ -364,16 +364,18 @@ recall@5 0.48 / MRR 0.47)은 **재학습 변동을 7회 측정해서** 잡았다
 ## 문서
 
 `docs/`는 Obsidian 볼트다. **결정의 근거와 정정 이력이 여기 있다.**
+입구는 **[docs/INDEX.md](docs/INDEX.md)**, 문서를 쓰거나 고치는 규칙은
+**[docs/SCHEMA.md](docs/SCHEMA.md)** 에 있다.
 
 | 폴더 | 내용 |
 |---|---|
-| [00-Architecture](docs/00-Architecture/) | 기획서, 개발 로드맵 |
-| [01-Decisions](docs/01-Decisions/) | **ADR 42건.** 상태/배경/결정/고려한 대안/영향 |
+| [00-Architecture](docs/00-Architecture/) | 기획서(**원천 자료 — 고치지 않는다**), 개발 로드맵 |
+| [01-Decisions](docs/01-Decisions/) | **ADR 45건.** 상태/배경/결정/고려한 대안/영향 |
 | [02-AI-Pipeline](docs/02-AI-Pipeline/요청-타입별-파이프라인.md) | 요청 유형별 실행 흐름 종합 |
 | [03-API-Specs](docs/03-API-Specs/API-명세.md) | 두 서버의 엔드포인트·상태 코드 |
 | [04-DevLog](docs/04-DevLog/) | 날짜별 경과 |
-| [05-Troubleshooting](docs/05-Troubleshooting/) | 재발 조건이 실재하는 진단 패턴 15건 |
-| [06-발표](docs/06-발표/발표자료.html) | 발표 슬라이드 14장(자체 완결 HTML) + 발표 노트 |
+| [05-Troubleshooting](docs/05-Troubleshooting/) | 재발 조건이 실재하는 진단 패턴 **16편** (그중 「검사 자체가 틀린 사례들」 한 편에 **27건**) |
+| [06-발표](docs/06-발표/발표자료.html) | 발표 슬라이드 14장(자체 완결 HTML) + [발표 스크립트](docs/06-발표/발표-스크립트.md) + 진행 노트 |
 
 읽을 것을 하나만 고른다면 [ADR-0018](docs/01-Decisions/0018-리랭커-하한-재측정.md)
 — 하나의 결정이 기각되고, 원인이 밝혀져 되살아났다가, 분할을 전수 열거해

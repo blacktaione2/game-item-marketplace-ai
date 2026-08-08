@@ -1,6 +1,8 @@
 ---
 status: 현행
-updated: 2026-07-31
+created: 2026-07-31
+updated: 2026-08-09
+tags: [api, 파생문서]
 ---
 
 # API 명세
@@ -41,9 +43,18 @@ updated: 2026-07-31
 
 **공통 상태 코드**: **401**(토큰 없음·무효·만료), **403**(권한 부족),
 **429**(한도 초과, `Retry-After` 헤더 동반).
-`/actuator/prometheus`, `/actuator/health`, `/api/health`,
-`/api/auth/demo-token`, AI의 `/health`·`/metrics`는 인증에서 제외된다 —
-부하 하네스와 헬스체크가 읽는 경로다.
+`/actuator/prometheus`, `/actuator/health`, `/api/health`, `/api/auth/login`,
+`/error`, AI의 `/health`·`/metrics`는 인증에서 제외된다 — 부하 하네스와
+헬스체크가 읽는 경로다(백엔드 쪽 목록은 `SecurityConfig.PUBLIC_PATHS`).
+
+> **`/error`가 그 목록에 있는 것이 요점이다**(ADR-0034). Spring Security 6+ 는
+> ERROR 디스패치도 필터링하므로, 빼면 Boot 의 에러 포워드가
+> `anyRequest().authenticated()` 에 다시 걸려 **인증 없는 경로의 모든 400·500 이
+> 401 로 나온다.** 그 한 줄이 실제 결함 둘을 "비밀번호가 틀렸다"로 위장했다.
+>
+> **2026-08-09 정정** — 이 자리에 `/api/auth/demo-token` 이 남아 있었다. 그 경로는
+> ADR-0031 에서 **제거**됐고 이 문서도 아래에서 그렇게 적고 있었으므로, 한 문서
+> 안의 자기모순이었다. 실제 코드에 있는 `/error` 는 반대로 빠져 있었다.
 
 ## 요청 한도 (ADR-0024)
 
@@ -292,12 +303,15 @@ R --scan --pattern 'ratelimit:assistant*' | xargs -r docker exec gimp-redis \
   "no_results": true,
   "conditions": ["검", "화염 속성", "30,000원 이하"],
   "applied_filters": { "category": "무기", "subcategory": "검", "element": "화염", "price_max": 30000.0 },
-  "llm_calls": 1
+  "llm_calls": 2
 }
 ```
 
-> `llm_calls`가 0이 아니라 **1**이다. 질의 이해 호출은 건너뛸 수 없다 —
-> 어떤 필터가 걸렸는지 알아야 0건 판정이 선다.
+> `llm_calls`가 0이 아니라 **2**다. 질의 이해 호출은 건너뛸 수 없고
+> (어떤 필터가 걸렸는지 알아야 0건 판정이 선다) 도메인 판정이 그와 **병렬로**
+> 한 번 더 나간다(ADR-0039). **2026-08-09 정정** — 이 예시와 아래 설명이 ADR-0016
+> 시절의 `1` 로 남아 있었다. 위의 의도별 표는 이미 `2` 였으므로 한 문서 안에서
+> 갈려 있었고, 실제 값은 `pipeline.py` 의 `_no_results()` 가 싣는 **2** 다.
 >
 > **역은 성립하지 않는다.** 예전 판본은 여기에 "`llm_calls == 0`은 캐시 적중을
 > 뜻한다"고 적었는데 틀렸다 — `faq_smalltalk`은 확정 응답이라 **미적중에서도
@@ -520,8 +534,12 @@ MCP 도구가 감싸고 있어 남겨둔 개별 엔드포인트. 라우팅·캐�
 **요청 예시**
 
 ```jsonc
-{ "tenant_code": "nexon", "trade_ref": "syn:3" }
+{ "trade_ref": "syn:3" }
 ```
+
+> **본문은 이 한 필드가 전부다** (`DetectRequest`). 예전 예시에 `tenant_code` 가
+> 같이 적혀 있었는데 ADR-0022·0023 이 본문에서 뺀 필드다 — 지금 보내면 그냥
+> 무시되고, 테넌트는 토큰 클레임에서 온다.
 
 **응답**
 
@@ -769,10 +787,14 @@ Prometheus 텍스트 포맷. **Prometheus를 띄우지 않아도 쓸모가 있�
 
 ## 거래
 
-| 메서드 | 경로 | 헤더 | 성공 |
+| 메서드 | 경로 | 행위자 쓰임 | 성공 |
 |---|---|---|---|
-| POST | `/api/items/{itemId}/purchase` | Tenant, User(구매자) | **201** |
-| POST | `/api/items/{itemId}/bids` | Tenant, User(입찰자) | **201** |
+| POST | `/api/items/{itemId}/purchase` | `sub` = 구매자 | **201** |
+| POST | `/api/items/{itemId}/bids` | `sub` = 입찰자 | **201** |
+
+> **헤더 열이 아니라 클레임 열이다.** 이 표는 `X-Tenant-Id` / `X-User-Id` 를
+> 요구하던 시절의 잔재를 달고 있었는데, 백엔드에 `@RequestHeader` 는 **한 곳도
+> 없다**(ADR-0023). 구매자·입찰자는 `Actor` 를 통해 검증된 토큰에서만 온다.
 
 **요청**: `{"quantity": 1}` (>= 1) / `{"bidPrice": 320000}` (> 0)
 
