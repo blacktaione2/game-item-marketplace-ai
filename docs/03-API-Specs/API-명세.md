@@ -594,7 +594,8 @@ Phase 2의 OpenAI 왕복 확인용이었다. **인증 의존성이 없었다** �
   "status": "ok",
   "service": "ai-server",
   "llm_fallback": true,              // ANTHROPIC_API_KEY 가 구성됐는가 (ADR-0042)
-  "llm_fallback_model": "claude-sonnet-4-5"   // 안 붙었으면 null
+  "llm_model": "gpt-5.4-mini-2026-03-17",     // **지금 실제로 도는 모델**
+  "llm_fallback_model": "claude-sonnet-4-6"   // 안 붙었으면 null
 }
 ```
 
@@ -608,6 +609,18 @@ Phase 2의 OpenAI 왕복 확인용이었다. **인증 의존성이 없었다** �
 >
 > 백엔드의 `AiHealthResponse` 는 `status`·`service` 만 읽는 **부분집합**이다.
 > Boot 의 Jackson 이 모르는 필드를 무시하므로 이쪽이 늘어나도 안 깨진다.
+
+> **`llm_model` 은 코드 기본값이 아니라 지금 도는 값이다** (ADR-0045).
+> `ai/.env` 가 코드 기본값을 **덮으므로**, 모델을 바꾸고 재빌드해도 서버의
+> `.env` 에 옛 값이 남아 있으면 옛 모델이 계속 돈다 — 배포에서 실제로 두 번
+> 그랬다. 배포 후 이 한 줄로 확인한다:
+>
+> ```bash
+> curl -s https://item-exchange.duckdns.org/api/ai/health | grep -o '"llm_model":"[^"]*"'
+> ```
+>
+> **키는 절대 싣지 않는다.** 인증 없이 열린 자리라 실을 수 있는 것은 비밀이 아닌
+> 사실뿐이고, `tests/test_health_payload.py` 가 양방향으로 고정한다.
 
 ## `GET /metrics`
 

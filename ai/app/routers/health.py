@@ -25,6 +25,14 @@ async def health(settings: Settings = Depends(get_settings)) -> dict[str, object
     return {
         "status": "ok",
         "service": settings.service_name,
+        # **지금 실제로 도는 모델** (ADR-0045). 코드 기본값이 아니라
+        # `ai/.env` 가 이긴다는 것이 배포에서 두 번 문제가 됐다 — 모델을 바꾸고
+        # 재빌드했는데 `.env` 에 옛 값이 남아 **옛 모델이 계속 돌았다.**
+        #
+        # `grep` 으로 확인하라고 안내하면 사람이 읽고 판단해야 하고, 그건
+        # 놓친다. 실제로 도는 값을 여기 실으면 **한 줄로 확인된다.**
+        # 모델명은 비밀이 아니다 — 키는 여전히 싣지 않는다.
+        "llm_model": settings.openai_model,
         # 폴백 프로바이더가 붙었는가. 값이 아니라 **구성 여부**다.
         "llm_fallback": bool(settings.anthropic_api_key),
         # 붙었을 때만 어떤 모델인지 밝힌다 — 안 붙었는데 모델명이 보이면

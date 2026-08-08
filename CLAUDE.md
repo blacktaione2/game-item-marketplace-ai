@@ -575,7 +575,7 @@ flow are still curl-verified only; see the roadmap's 기술 부채 section.
   *derivation* of `check_ir_gate`'s thresholds (delete it and the numbers become
   unverifiable), the second is a per-run output that CI ships as an artifact.
 
-- `tests/` — `python -m pytest` from `ai/` (**296 tests**, no `pytest-asyncio` — the
+- `tests/` — `python -m pytest` from `ai/` (**301 tests**, no `pytest-asyncio` — the
   few async cases use `asyncio.run`). Deliberately limited to
   deterministic units: RRF fusion, router rules, cache keys/tenant isolation,
   per-intent TTL + the no-result storage veto, id-space guards, filter→DSL
