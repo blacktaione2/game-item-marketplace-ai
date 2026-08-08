@@ -467,6 +467,21 @@ flow are still curl-verified only; see the roadmap's 기술 부채 section.
   - **A cache hit is wrapped in the stream too**, emitting `cache` then `done`
     immediately. Returning a plain response on hits would give the client two
     code paths to save 25.9ms.
+  - **The deploy has TWO proxies, and `X-Accel-Buffering: no` alone was not
+    enough.** nginx honours that header *and hides it* — `Date`, `Server`,
+    `X-Pad` and `X-Accel-*` are its default hidden list. The public URL is
+    `https://` while `gimp-web` serves plain 80, so a TLS-terminating host nginx
+    sits in front; our nginx consumed the header and the front one never saw it,
+    so it buffered (measured: all 8 events in the last 0.27s of 13.98s).
+    `proxy_pass_header X-Accel-Buffering;` fixes it — honouring and forwarding
+    are separate. **Verified at two points in the chain**: direct to our nginx
+    the header is *present* (ratio 0.01), through the public URL it is *absent*
+    (ratio 0.02) — and the absence is the evidence the front proxy consumed it.
+    *A header a proxy consumes cannot be checked in the response; trace it by
+    where it disappears.* The check that asserted its presence was therefore
+    **unsatisfiable behind a proxy** and is now informational; the ratio carries
+    the verdict. The front proxy's config is outside this repo, so
+    `load/verify-sse.sh` is the only thing that would catch a regression there.
   `app/core/progress.py` holds the callback type — it is in `core/` and not
   `assistant/` because `agent` uses it too, and `assistant/` would make
   `pipeline → agent → assistant` a cycle.
