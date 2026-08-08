@@ -33,6 +33,35 @@ if [ -z "${DEMO_PASSWORD:-}" ]; then
   exit 1
 fi
 
+# **프록시를 거쳐 백엔드가 응답할 때까지 먼저 기다린다.**
+#
+# `curl $WEB/` 로 기다리면 안 된다 — nginx 는 백엔드가 죽어 있어도 **정적 SPA 를
+# 그대로 내주므로** 즉시 통과하고, 그 뒤 로그인이 502 로 죽는다. 실제로 그렇게
+# 막혔다(사례 27). `/api/backend/health` 는 프록시 → 백엔드를 실제로 거친다.
+#
+# **로그인 경로로 폴링하지 않는다** — 그건 IP 단위 30회/분이라 대기가 곧 한도
+# 소진이다. `/api/health` 는 인증도 한도도 없고, AI 가 죽어 있어도 200 을 낸다
+# (본문의 `aiStatus` 로만 표시). 즉 **백엔드 도달 여부만** 보는 신호다.
+READY_PATH="$WEB/api/backend/health"
+WAITED=0; LIMIT="${WAIT_SECONDS:-90}"
+while :; do
+  CODE="$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "$READY_PATH")"
+  [ "$CODE" = "200" ] && break
+  [ "$WAITED" -ge "$LIMIT" ] && break
+  sleep 3; WAITED=$((WAITED + 3))
+done
+if [ "$CODE" != "200" ]; then
+  echo "프록시 경유 백엔드가 ${WAITED}초 동안 200 을 내지 않았다 (마지막 $CODE)"
+  case "$CODE" in
+    000) echo "  연결 자체가 안 된다 — 주소($WEB)와 nginx 기동을 볼 것" ;;
+    502|503|504) echo "  nginx → backend 가 안 붙는다. 둘 중 하나다:"
+                 echo "    (a) 백엔드가 기동 실패 →  docker logs --tail 50 gimp-backend"
+                 echo "    (b) nginx 가 옛 IP 를 물었다 →  \$DC restart web" ;;
+  esac
+  exit 1
+fi
+[ "$WAITED" -gt 0 ] && echo "백엔드 준비됨 (${WAITED}초 대기)"
+
 # **본문을 파싱하기 전에 상태 코드를 본다.** 첫 판본은 curl 을 바로 python 에
 # 물려서 실패하면 `로그인 실패 — 토큰을 못 받았습니다` 한 줄만 냈다. 그 한 줄은
 # nginx 가 아직 재시작 중인 것 / 비밀번호가 틀린 것 / IP 한도에 걸린 것을
