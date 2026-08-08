@@ -73,6 +73,78 @@ async def _hit(key: str, limit: int, window_seconds: int) -> tuple[bool, int]:
     return count <= limit, max(ttl, 1)
 
 
+async def _peek(key: str, limit: int, window_seconds: int) -> tuple[bool, int]:
+    """올리지 **않고** 확인만 한다. (통과 여부, 남은 초).
+
+    `_hit` 과 경계가 하나 다르다. `_hit` 은 올린 뒤라 N번째 요청의 `count` 가 N
+    이므로 `count <= limit`, 이쪽은 올리기 전이라 `count < limit` 이다. 둘 다
+    한도만큼 통과시킨다 — 부호를 맞춰 옮기다 하나씩 어긋나기 쉬운 자리다.
+    """
+    redis = get_redis_client()
+    raw = await redis.get(key)
+    count = int(raw) if raw else 0
+    ttl = await redis.ttl(key)
+    # 키가 아직 없으면 TTL 이 음수다. 그때 `Retry-After` 는 창 전체 길이가 맞다.
+    return count < limit, max(ttl if ttl > 0 else window_seconds, 1)
+
+
+def _daily_key(actor: Actor, kst_now: datetime, daily: int) -> str:
+    """일일 카운터 키.
+
+    **검사(`limit_assistant`)와 증가(`consume_daily`)가 이 함수를 함께 써야
+    한다.** 둘이 다른 키를 만들면 검사는 영원히 0을 읽고 증가는 아무도 안 보는
+    카운터를 올린다 — **한도가 조용히 사라지고 정상 응답만 나온다.** 이 파일이
+    `EXPIRE` 를 창의 첫 요청에만 거는 이유와 같은 종류의 침묵이다.
+
+    **날짜를 키에 넣어 한국시간 자정에 리셋한다** (ADR-0031). Redis 만료에
+    맡기면 창이 "그 사용자의 첫 호출" 기준이라 사람마다 리셋 시각이 다르고
+    예측이 안 된다. 날짜가 키에 있으면 "한국시간 자정"이라고 설명할 수 있다.
+    """
+    return (
+        f"ratelimit:assistant_daily:{daily}/1d:{kst_now:%Y-%m-%d}:"
+        f"{actor.tenant_code}:{actor.user_id}"
+    )
+
+
+def _kst_now() -> datetime:
+    return datetime.now(timezone.utc) + timedelta(hours=9)
+
+
+async def consume_daily(actor: Actor) -> None:
+    """일일 예산을 1 소비한다.
+
+    **일일 한도만 요청 뒤로 옮겼다** (ADR-0044). 분당 한도는 그대로 요청 앞에서
+    올린다 — 목적이 다르기 때문이다.
+
+    | | 목적 | 캐시 적중 |
+    |---|---|---|
+    | 20회/분 | 부하·남용 차단 | **센다.** 적중도 서버 일이고, 안 세면 캐시되는 질의로 무한정 두드릴 수 있다 |
+    | 50회/일 | **LLM 비용** | **안 센다.** 비용 0인 요청이 비용 한도를 깎는 건 앞뒤가 안 맞는다 |
+
+    이론이 아니라 실제로 닿던 경로다. 프론트가 배지를 정직하게 유지하려고
+    `staleTime` 을 안 걸어서(ADR-0037), **아이템 상세에 들어갔다 돌아올 때마다
+    재요청**이 나간다. 서버는 캐시 적중으로 25.9ms 에 답하는데 예산은 깎였다.
+
+    **대가**: 검사와 증가 사이에 동시 요청이 끼면 하루 경계에서 몇 건 샌다.
+    이 파일이 이미 고정 윈도우의 2배 누수를 하루 단위에서 수용하고 있으므로
+    (위 `limit_assistant` 주석) 같은 크기의 대가다.
+
+    실패하면 **통과시킨다** — 리미터는 비용 방어이지 정합성 장치가 아니다.
+    다만 조용히 넘기지 않는다.
+    """
+    settings = get_settings()
+    if not settings.rate_limit_enabled:
+        return
+    kst_now = _kst_now()
+    key = _daily_key(actor, kst_now, settings.rate_limit_assistant_per_day)
+    try:
+        redis = get_redis_client()
+        if await redis.incr(key) == 1:
+            await redis.expire(key, seconds_until_kst_midnight(kst_now))
+    except Exception:
+        logger.warning("일일 한도 증가 실패 — 통과시킨다", exc_info=True)
+
+
 async def limit_assistant(actor: Actor = Depends(require_actor)) -> Actor:
     """`/api/assistant` 한도. 키는 **테넌트 + 사용자**다.
 
@@ -88,31 +160,30 @@ async def limit_assistant(actor: Actor = Depends(require_actor)) -> Actor:
     key = f"ratelimit:assistant:{limit}/60s:{actor.tenant_code}:{actor.user_id}"
 
     daily = settings.rate_limit_assistant_per_day
-    # **날짜를 키에 넣어 한국시간 자정에 리셋한다** (ADR-0031).
-    #
-    # Redis 만료에 맡기면 창이 "그 사용자의 첫 호출" 기준이라 사람마다 리셋 시각이
-    # 다르고 예측이 안 된다. 날짜가 키에 있으면 "한국시간 자정"이라고 설명할 수 있다.
     #
     # 고정 윈도우의 2배 한계를 하루 단위에서도 그대로 받는다 — 자정 전후로 몰리면
     # 짧은 시간에 100회가 가능하다(ADR-0024가 분 단위에서 기록한 그 현상). 수용하는
     # 이유는 **실제 비용 상한이 OpenAI 월 한도**이고 이 계층은 정밀한 적대적 방어가
     # 아니라 평범한 남용을 막는 것이기 때문이다. 정확히 막으려면 슬라이딩 로그가
     # 필요한데 100 vs 50 차이에 새 구조를 들일 값어치가 없다.
-    kst_now = datetime.now(timezone.utc) + timedelta(hours=9)
-    daily_key = (
-        f"ratelimit:assistant_daily:{daily}/1d:{kst_now:%Y-%m-%d}:"
-        f"{actor.tenant_code}:{actor.user_id}"
-    )
+    kst_now = _kst_now()
+    daily_key = _daily_key(actor, kst_now, daily)
 
     try:
         allowed, retry_after = await _hit(key, limit, 60)
         if allowed:
-            # 분당 한도를 통과한 요청만 일일 카운터를 올린다. 먼저 올리면 분당에
-            # 막힌 요청까지 일일 한도를 갉아먹는다.
+            # 분당 한도를 통과한 요청만 일일 예산을 본다. 먼저 보면 분당에 막힌
+            # 요청까지 일일 한도를 갉아먹는다.
+            #
+            # **여기서는 확인만 하고 올리지 않는다** (ADR-0044). 올리는 것은
+            # 응답을 본 뒤 `consume_daily()` 가 하고, **캐시 적중이면 아예
+            # 올리지 않는다** — 일일 한도는 LLM 비용을 막는 계층인데 비용 0인
+            # 요청이 예산을 깎고 있었다. 자세한 근거는 `consume_daily` 에.
+            #
             # **86,400 이 아니라 자정까지 남은 초.** 리셋은 어차피 자정인데
             # TTL 이 `Retry-After` 로 나가므로, 24시간을 걸면 최대 하루 가까이
             # 과장된 대기 시간을 알려주게 된다.
-            allowed, retry_after = await _hit(
+            allowed, retry_after = await _peek(
                 daily_key, daily, seconds_until_kst_midnight(kst_now)
             )
     except Exception:
