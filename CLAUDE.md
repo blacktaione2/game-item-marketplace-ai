@@ -560,7 +560,7 @@ flow are still curl-verified only; see the roadmap's 기술 부채 section.
   *derivation* of `check_ir_gate`'s thresholds (delete it and the numbers become
   unverifiable), the second is a per-run output that CI ships as an artifact.
 
-- `tests/` — `python -m pytest` from `ai/` (**281 tests**, no `pytest-asyncio` — the
+- `tests/` — `python -m pytest` from `ai/` (**292 tests**, no `pytest-asyncio` — the
   few async cases use `asyncio.run`). Deliberately limited to
   deterministic units: RRF fusion, router rules, cache keys/tenant isolation,
   per-intent TTL + the no-result storage veto, id-space guards, filter→DSL
@@ -708,6 +708,27 @@ purchase/bid (10/s per user), and `/api/auth/demo-token` (30/min **per IP** — 
 one place keyed by address, since it runs before identity exists). No new
 dependency: the backend reuses Redisson's `RRateLimiter`, the AI server uses the
 `redis.asyncio` client the semantic cache already opens.
+
+**The two limits count different things, and only one counts cache hits**
+(ADR-0044). The per-minute limit is a *load* limit and runs as a dependency, so it
+counts hits. The daily cap is a *cost* limit and is now consumed **after** the
+response, and **not at all on a cache hit** — a request that cost 0 LLM calls was
+eating the budget whose stated ceiling is the OpenAI monthly cap. This was reachable
+in normal use, not theoretical: ADR-0037 deliberately left `staleTime` off so the
+badges stay honest, so **every back-navigation from an item page refetches** and used
+to spend one of 50. Three things follow:
+- **Both routes must go through `_ask_metered()`.** If the rule forks, the streaming
+  path *is* the bypass; `test_assistant_stream.py` scans that neither handler calls
+  `ask()` directly.
+- **A failed request still consumes.** By then the LLM call may already have gone out,
+  and free failures are their own bypass.
+- **Two places can silently delete the limit**: check and consume must use the *same*
+  `_daily_key()` (otherwise the check reads 0 forever while the counter climbs
+  unwatched), and `_peek` compares `<` where `_hit` compares `<=` because it looks
+  *before* incrementing — copying the operator across raises the cap by one.
+Verified live against Redis with **both arms**: misses drove the counter 0→1→2, hits
+left it at 2. The first attempt measured hits only and read 0 — which is
+indistinguishable from "the increment is broken".
 
 **Since ADR-0031 there is also a daily cap** (50/day per user) on `/api/assistant`,
 keyed with the **KST date inside the key string** so it resets at a time you can

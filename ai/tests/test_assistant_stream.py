@@ -121,3 +121,34 @@ class TestProgressCallback:
 
         asyncio.run(safe_emit(record, STAGE_TOOL, tool="search_items", step=2, failed=False))
         assert seen == [(STAGE_TOOL, {"tool": "search_items", "step": 2, "failed": False})]
+
+
+class TestDailyBudgetRuleDoesNotFork:
+    """두 라우트가 **같은 정산 함수**를 쓰는지 (ADR-0044).
+
+    일일 예산은 이제 응답을 보고 소비한다(캐시 적중이면 안 함). 그 규칙이 두
+    라우트에 각자 적혀 있으면 한쪽만 고쳐지고, **스트리밍 경로가 곧 상한
+    우회로**가 된다. 라우트를 늘릴 때 조용히 빠뜨리기 쉬운 종류라 소스로 박는다.
+    """
+
+    def test_핸들러가_ask_를_직접_부르지_않는다(self):
+        import inspect
+
+        from app.routers import assistant
+
+        for handler in (assistant.assistant, assistant.assistant_stream):
+            src = inspect.getsource(handler)
+            assert "_ask_metered" in src, f"{handler.__name__} 이 정산을 안 거친다"
+            assert "await ask(" not in src, (
+                f"{handler.__name__} 이 ask() 를 직접 불러 정산을 건너뛴다"
+            )
+
+    def test_정산_함수가_적중을_실제로_가른다(self):
+        # 위 검사는 "부르기만 하면" 통과한다. 실제로 갈라주는지는 따로 본다.
+        import inspect
+
+        from app.routers.assistant import _ask_metered
+
+        src = inspect.getsource(_ask_metered)
+        assert "consume_daily" in src
+        assert '"hit"' in src, "캐시 적중 여부를 안 본다"

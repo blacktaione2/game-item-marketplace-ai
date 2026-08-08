@@ -10,8 +10,8 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from app.core.auth import Actor
-from app.core.progress import ProgressFn
-from app.core.rate_limit import limit_assistant
+from app.core.progress import ProgressFn, noop
+from app.core.rate_limit import consume_daily, limit_assistant
 from app.services.anomaly.exceptions import AnomalyModelNotTrainedError
 from app.services.assistant.pipeline import ask
 from app.services.forecast.exceptions import ForecastModelNotTrainedError
@@ -43,6 +43,40 @@ class AssistantRequest(BaseModel):
     use_cache: bool = True
 
 
+async def _ask_metered(
+    actor: Actor,
+    es: AsyncElasticsearch,
+    llm_client: LLMClient,
+    request: AssistantRequest,
+    on_progress: ProgressFn = noop,
+) -> dict[str, Any]:
+    """`ask()` + 일일 예산 정산. **두 라우트가 이 함수만 부른다.**
+
+    한 곳에 둔 이유는 규칙이 갈라지지 않게 하기 위해서다 — 스트리밍 경로가
+    일일 한도를 안 소비하면 그게 곧 상한 우회로다.
+
+    **일일 예산은 캐시 적중이면 소비하지 않는다** (ADR-0044). 분당 한도는
+    의존성이 이미 요청 앞에서 올렸다 — 목적이 달라서다(`consume_daily` 참조).
+    """
+    try:
+        result = await ask(
+            es=es,
+            llm_client=llm_client,
+            tenant_code=actor.tenant_code,
+            query=request.query,
+            use_cache=request.use_cache,
+            on_progress=on_progress,
+        )
+    except Exception:
+        # **실패해도 소비한다.** 여기까지 왔으면 LLM 호출이 이미 나갔을 수
+        # 있고, 실패를 공짜로 만들면 그 자체가 우회로가 된다.
+        await consume_daily(actor)
+        raise
+    if not result.get("cache", {}).get("hit", False):
+        await consume_daily(actor)
+    return result
+
+
 @router.post("")
 async def assistant(
     request: AssistantRequest,
@@ -53,13 +87,7 @@ async def assistant(
     llm_client: LLMClient = Depends(get_llm_client),
 ) -> dict[str, Any]:
     try:
-        return await ask(
-            es=es,
-            llm_client=llm_client,
-            tenant_code=actor.tenant_code,
-            query=request.query,
-            use_cache=request.use_cache,
-        )
+        return await _ask_metered(actor, es, llm_client, request)
     except TenantIndexNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e)) from e
     except (ForecastModelNotTrainedError, AnomalyModelNotTrainedError) as e:
@@ -127,13 +155,10 @@ async def assistant_stream(
 
         async def runner() -> None:
             try:
-                result = await ask(
-                    es=es,
-                    llm_client=llm_client,
-                    tenant_code=actor.tenant_code,
-                    query=request.query,
-                    use_cache=request.use_cache,
-                    on_progress=on_progress,
+                # 비스트리밍 경로와 **같은 함수**를 부른다. 일일 예산 규칙이
+                # 갈라지면 이쪽이 곧 상한 우회로가 된다.
+                result = await _ask_metered(
+                    actor, es, llm_client, request, on_progress
                 )
                 await queue.put({"type": "done", "result": result})
             except (TenantIndexNotFoundError, ForecastModelNotTrainedError,
