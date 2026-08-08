@@ -616,7 +616,7 @@ Phase 2의 OpenAI 왕복 확인용이었다. **인증 의존성이 없었다** �
 > 그랬다. 배포 후 이 한 줄로 확인한다:
 >
 > ```bash
-> curl -s https://item-exchange.duckdns.org/api/ai/health | grep -o '"llm_model":"[^"]*"'
+> docker exec gimp-ai python -c "import urllib.request,json;print(json.load(urllib.request.urlopen('http://localhost:8000/health'))['llm_model'])"
 > ```
 >
 > **키는 절대 싣지 않는다.** 인증 없이 열린 자리라 실을 수 있는 것은 비밀이 아닌
