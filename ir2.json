@@ -1,0 +1,22 @@
+{
+  "n_queries": 54,
+  "n_corpus": 42,
+  "base_model": "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+  "tuned_path": "models\\embedding-finetuned",
+  "before": {
+    "recall@1": 0.1481,
+    "recall@3": 0.3148,
+    "recall@5": 0.4444,
+    "recall@10": 0.6111,
+    "mrr": 0.3005,
+    "mean_rank": 10.72
+  },
+  "after": {
+    "recall@1": 0.3889,
+    "recall@3": 0.537,
+    "recall@5": 0.6111,
+    "recall@10": 0.7778,
+    "mrr": 0.5099,
+    "mean_rank": 7.24
+  }
+}

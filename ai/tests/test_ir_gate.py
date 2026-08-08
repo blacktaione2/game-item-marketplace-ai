@@ -14,6 +14,7 @@ from __future__ import annotations
 import copy
 
 from scripts.check_ir_gate import FLOOR, MIN_QUERIES, evaluate_gate
+from scripts.evaluate_embedding import _write_step_summary
 
 # 2026-08-08 실측을 본뜬 통과 표본.
 PASSING = {
@@ -98,6 +99,44 @@ class TestCatchesRegression:
         failures = evaluate_gate(data, verbose=False)
         assert any("하한" in f for f in failures)
         assert not any("개선되지 않았다" in f for f in failures)
+
+
+class TestRagasSummary:
+    """RAGAS 요약 렌더러 — **한 번 돌리는 데 2시간이 걸려서** 여기서 검증한다.
+
+    실제 실행으로만 확인하려 들면 결과를 못 읽는 결함이 다음 실행까지 안 보인다.
+    """
+
+    RAGAS = {
+        "before": {"context_precision": 0.2935, "context_recall": 0.4630},
+        "after": {"context_precision": 0.5133, "context_recall": 0.6111},
+        "n_calls_estimated": 648,
+        "error_rate": 0.0,
+        "trustworthy": True,
+    }
+
+    def test_요약이_없으면_아무것도_안_쓴다(self, tmp_path, monkeypatch):
+        # 로컬 실행에서 환경변수가 없다 — 그때 죽으면 안 된다.
+        monkeypatch.delenv("GITHUB_STEP_SUMMARY", raising=False)
+        _write_step_summary(self.RAGAS)  # 예외가 안 나면 통과
+
+    def test_점수와_호출수가_요약에_들어간다(self, tmp_path, monkeypatch):
+        out = tmp_path / "summary.md"
+        monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(out))
+        _write_step_summary(self.RAGAS)
+        text = out.read_text(encoding="utf-8")
+        assert "0.5133" in text and "0.6111" in text
+        assert "648" in text
+        # **게이트가 아니라는 것이 요약에 적혀 있어야 한다.** 표만 보면 판정처럼
+        # 읽히고, 이 프로젝트가 RAGAS 를 내린 이유가 통째로 사라진다.
+        assert "게이트" in text
+
+    def test_실패율이_높으면_요약이_경고한다(self, tmp_path, monkeypatch):
+        out = tmp_path / "summary.md"
+        monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(out))
+        _write_step_summary({**self.RAGAS, "error_rate": 0.4, "trustworthy": False})
+        text = out.read_text(encoding="utf-8")
+        assert "신뢰할 수 없다" in text, "실패율이 높은데 표가 그대로 읽히면 안 된다"
 
 
 class TestFloorsAreDerived:
