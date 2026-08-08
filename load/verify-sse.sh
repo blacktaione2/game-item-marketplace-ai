@@ -15,6 +15,10 @@
 # 사용:
 #   DEMO_PASSWORD=... ./load/verify-sse.sh
 #   WEB=https://item-exchange.duckdns.org DEMO_PASSWORD=... ./load/verify-sse.sh
+#
+# **`python3` 이다, `python` 이 아니다.** 우분투에는 `python` 이라는 이름이 없어서,
+# `python` 을 부른 예전 검증 스크립트는 배포 대상에서 아예 못 돌았다 — 증상이
+# "로그인 실패 (HTTP 200)" 이라 원인이 안 보였다. 옆 스크립트가 이미 배운 것이다.
 set -uo pipefail
 WEB="${WEB:-http://localhost}"
 PASS=0; FAIL=0
@@ -32,7 +36,7 @@ fi
 TOKEN="$(curl -s --max-time 10 -X POST "$WEB/api/backend/auth/login" \
   -H 'Content-Type: application/json' \
   -d "{\"tenantCode\":\"${TENANT_CODE:-nexon}\",\"username\":\"buyer_lee\",\"password\":\"${DEMO_PASSWORD}\"}" \
-  | python -c 'import sys,json; print(json.load(sys.stdin).get("token",""))' 2>/dev/null)"
+  | python3 -c 'import sys,json; print(json.load(sys.stdin).get("token",""))' 2>/dev/null)"
 [ -n "$TOKEN" ] || { echo "로그인 실패 — 토큰을 못 받았습니다."; exit 1; }
 
 # **복합 질의를 쓴다.** 도구를 여러 번 부르므로 이벤트 사이에 실제 간격이 생긴다.
@@ -41,7 +45,7 @@ TOKEN="$(curl -s --max-time 10 -X POST "$WEB/api/backend/auth/login" \
 QUERY='불꽃의 대검 찾아서 시세도 알려줘'
 BODY_FILE="$(mktemp)"; TIMING_FILE="$(mktemp)"
 trap 'rm -f "$BODY_FILE" "$TIMING_FILE"' EXIT
-python - "$QUERY" > "$BODY_FILE".req <<'PY'
+python3 - "$QUERY" > "$BODY_FILE".req <<'PY'
 import json, sys
 # 한글을 셸 인자로 넘기면 cp949 경계에서 깨진다. 파일로 쓴다.
 sys.stdout.write(json.dumps({"query": sys.argv[1], "use_cache": False}, ensure_ascii=False))
@@ -51,18 +55,18 @@ echo "== 스트림을 받으며 도착 시각을 잰다 =="
 # 각 줄이 도착한 시각을 붙여 기록한다. `-N` 이 curl 의 출력 버퍼를 끈다 —
 # **이게 없으면 curl 자신이 버퍼링해서 서버가 흘려도 한꺼번에 보인다**(검사가
 # 자기 자신 때문에 틀리는 형태다).
-START="$(python -c 'import time; print(time.time())')"
+START="$(python3 -c 'import time; print(time.time())')"
 curl -sN --max-time 120 -X POST "$WEB/api/ai/assistant/stream" \
   -H "Authorization: Bearer $TOKEN" \
   -H 'Content-Type: application/json' \
   --data-binary "@$BODY_FILE.req" \
   -D "$TIMING_FILE" \
   | while IFS= read -r line; do
-      printf '%s\t%s\n' "$(python -c 'import time; print(time.time())')" "$line"
+      printf '%s\t%s\n' "$(python3 -c 'import time; print(time.time())')" "$line"
     done > "$BODY_FILE"
 rm -f "$BODY_FILE".req
 
-python - "$BODY_FILE" "$TIMING_FILE" "$START" <<'PY'
+python3 - "$BODY_FILE" "$TIMING_FILE" "$START" <<'PY'
 import json, sys
 
 body_path, header_path, start = sys.argv[1], sys.argv[2], float(sys.argv[3])
