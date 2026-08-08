@@ -141,7 +141,7 @@ tbody tr:last-child td{border-bottom:none}
   <div class="eyebrow">한 장 요약</div>
   <h2>무엇을, 어디까지 만들었나</h2>
   <div class="cards">
-    <div class="card"><div class="n">Phase 0–12</div><div class="l">인프라부터 실배포·프로바이더 폴백까지</div></div>
+    <div class="card"><div class="n">Phase 0–13</div><div class="l">인프라부터 실배포·품질 게이트·모델 교체까지</div></div>
     <div class="card"><div class="n">ADR 45건</div><div class="l">결정마다 배경·대안·영향</div></div>
     <div class="card"><div class="n">테스트 358건</div><div class="l">AI 301 · 백엔드 57</div></div>
     <div class="card"><div class="n">LLM 0~6회</div><div class="l">요청 유형에 따라</div></div>
@@ -239,7 +239,8 @@ tbody tr:last-child td{border-bottom:none}
   <table>
     <tbody>
       <tr><td>하드 필터 — 부적합 검색 결과</td><td class="num before">50건</td><td class="num after">14건</td><td style="color:var(--ink-3)">적합 손실 0</td></tr>
-      <tr><td>질의 재작성 결정성 — 모드 일치율</td><td class="num before">0.840</td><td class="num after">0.990</td><td style="color:var(--ink-3)"><code>temperature</code>가 미설정이었다</td></tr>
+      <tr><td>질의 재작성 결정성 — 모드 일치율<br><span style="color:var(--ink-3);font-size:.78rem">모델에 딸린 수치 · 현재 모델은 0.950</span></td><td class="num before">0.840</td><td class="num after">0.990</td><td style="color:var(--ink-3)"><code>temperature</code>가 미설정이었다</td></tr>
+      <tr><td>원소 추출 정확도 — 라벨 117건</td><td class="num before">111</td><td class="num after">117</td><td style="color:var(--ink-3)">사전 등록 기준 5/5 통과</td></tr>
       <tr><td>도메인 밖 질의 — 손으로 쓴 38건 중 통과</td><td class="num before">38건</td><td class="num after">1건</td><td style="color:var(--ink-3)">오거부 0.98%</td></tr>
       <tr><td>이벤트 루프 지연 — p99</td><td class="num before">29.33ms</td><td class="num after">10.65ms</td><td style="color:var(--ink-3)">동기 CPU 호출 분리</td></tr>
     </tbody>
@@ -264,6 +265,9 @@ tbody tr:last-child td{border-bottom:none}
       <tr><td><strong>게이트 프롬프트에 취급 품목 열거</strong></td><td>포함을 넓히려 넣었는데 <strong>배제의 근거로 쓰였다</strong> — 오거부 4.13% → 5.30%</td></tr>
       <tr><td><strong><code>asyncio.to_thread</code></strong></td><td>로드맵에 그 이름으로 등록해뒀는데 <strong>측정이 기각했다</strong> —
         기본 실행기에서 torch가 <span class="warnx">+85% 느려진다</span></td></tr>
+      <tr><td><strong>가장 최신 LLM</strong><br><span style="color:var(--ink-3);font-size:.85rem">gpt-5.6 · gpt-5.5 · claude-sonnet-5</span></td><td><strong><code>temperature</code>를 거부한다</strong> —
+        <code>Only the default (1) value is supported</code>. 쓰면 아래 &ldquo;노이즈를 없앴다&rdquo;가 통째로 무너진다.
+        채택한 건 <em>가장 최신</em>이 아니라 <strong>온도를 받는 가장 최신</strong>이다</td></tr>
     </tbody>
   </table>
   <div class="note">전부 <strong>기록을 다시 쓰지 않고 정정 블록으로</strong> 남겼다. 나중에 그 ADR만 단독으로 읽는 사람이 틀린 결론을 진실로 받아들이지 않도록.</div>
@@ -396,7 +400,8 @@ tbody tr:last-child td{border-bottom:none}
   <table>
     <thead><tr><th>영역</th><th>알려진 한계</th></tr></thead>
     <tbody>
-      <tr><td><code>"무속성"</code> 필터</td><td>추출이 <strong>50회 중 8회</strong> — 모델이 "속성 언급 없음"으로 읽는다. 결정성이 아니라 <strong>정확도</strong> 문제다</td></tr>
+      <tr><td><code>"무속성"</code> 필터</td><td>추출이 <strong>50회 중 8회</strong> — 모델이 "속성 언급 없음"으로 읽는다. 결정성이 아니라 <strong>정확도</strong> 문제다.
+        <span style="color:var(--ink-3)">모델을 올리니 이 결함은 사라지고 <strong>반대 방향</strong>(부정형에 스스로 채움)이 생겼다 — 후처리가 지우기까지 한다</span></td></tr>
       <tr><td>리랭커 점수 하한</td><td><strong>구조적으로 불가.</strong> 질의별 점수 정규화가 먼저 필요하다 (사례 1)</td></tr>
       <tr><td>예측·탐지 데이터</td><td><strong>합성 데이터다.</strong> 그래서 MAPE 단독으로 판단하지 않고 <strong>항상 naive 기준선을 같이 출력</strong>한다</td></tr>
       <tr><td>오토인코더</td><td>신규 계정 거래는 <strong>단순 규칙이 100%, AE는 놓친다.</strong> 상호 보완이지 대체가 아니다</td></tr>

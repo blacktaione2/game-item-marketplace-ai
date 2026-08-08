@@ -145,6 +145,16 @@ forecast. **Only the subject was false.** Three things about it are load-bearing
   that is worth knowing before trusting it. The false-rejection figure is
   **in-sample**: the rules came from reading this eval set's failures. The
   prompt's examples were invented to be absent from all 563 eval sentences.
+  - **Those five iterations were fitted to `gpt-4o-mini`, and they did not
+    transfer** (ADR-0045). On `gpt-5.4-mini-2026-03-17` the same prompt is
+    *more conservative*: missed out-of-domain improves (frozen V1 set **2/38 →
+    0/38**) while false rejection worsens (**0.79% → 2.55%** overall, boundary
+    5/32 → 7/32). Two things keep this from being a regression to panic about —
+    **ordinary in-domain queries are rejected 0/141 on both**, and the boundary
+    difference is not distinguishable at n=32 (CIs [5.3, 32.8] vs [9.3, 40.0]).
+    Re-tuning is a separate round because it **spends the held-out set again**.
+    General rule: **a prompt tuned against one model does not carry over** —
+    changing models means re-running the harnesses, not editing a string.
 - **A third round tried to fix that residual and everything it tried was
   rejected** (ADR-0039's 정정 section). Three things it overturned, all worth
   carrying: the recorded diagnosis was wrong (*"vagueness and off-topic squashed
@@ -323,9 +333,13 @@ scraping during a load test steals CPU from the thing being measured on a shared
 **The search-quality thread is closed for now** — the three
 remaining items had prerequisites. **One is now done**: `"무속성"` extraction
 (ADR-0040) — the prerequisite was a labelled eval set, and the fix turned out not
-to be a prompt change at all. The `rarity` axis still needs a grade taxonomy
-invented, and the reranker floor still needs cross-query score comparability
-(see above). Anything that would have
+to be a prompt change at all. **A second closed itself when the model changed**:
+`"어둠 속성 로브"` returned `null` 6/6 on `gpt-4o-mini` and is correct on
+`gpt-5.4-mini` (ADR-0045) — worth noticing that *"open" can mean "open on this
+model"*, and the way to find out is to re-run the eval set, which costs a few
+dollars because the harness already exists. The `rarity` axis still needs a grade
+taxonomy invented, and the reranker floor still needs cross-query score
+comparability (see above). Anything that would have
 followed floor adoption — notably splitting "no results matched your conditions"
 from "results matched but scored too low" — **is moot**, since nothing cuts on
 relevance now.
@@ -1310,15 +1324,37 @@ Postgres and ES drift apart and search results stop resolving to real rows.
   labelled `compound`) plus label smoothing, not by tuning the threshold.
   Treat `intent_confidence_threshold` as provisional.
 - **`understand_query()` is much steadier since ADR-0017 but not fully
-  deterministic.** It used to be rewritten differently run to run, shifting
-  BM25/kNN order and reranker scores (measured: 1.31 points on one item). With
-  `temperature=0` token-set mode agreement is 0.990 and 1 query in 10 still
-  varies, so measurements that depend on rerank scores should still repeat runs
-  rather than trust a single one. Separately, **filter extraction is ~1% wrong
-  on `"불속성"` (it comes back as `무속성`)** — that is an accuracy bug, not a
-  determinism one, and `"무속성 검"` is worse still (see below).
+  deterministic, and *how* steady depends on the model.** It used to be rewritten
+  differently run to run, shifting BM25/kNN order and reranker scores (measured:
+  1.31 points on one item). ADR-0017's headline (token-set agreement 0.840 →
+  **0.990**, unstable 5/10 → 1/10) was measured **on `gpt-4o-mini`**. On the
+  current `gpt-5.4-mini-2026-03-17` the same harness gives **0.950 / 0.920 with
+  3-in-10 unstable** (two runs), with a same-day `gpt-4o-mini` control at
+  **1.000 / 0-in-10** — so the new model really is less deterministic here
+  (ADR-0045). **Filter extraction is the axis that matters and it is unchanged
+  at 0.990** on both. And the regression cost nothing measurable downstream:
+  `evaluate_hard_filters` gives **fit 20 / unfit 14 on both models**, same
+  zero-result query. *Determinism was never the goal; it was the means of
+  protecting outcomes — if the means wobbles and the outcome doesn't, that is
+  not a price.* Measurements that depend on rerank scores should still repeat
+  runs rather than trust a single one.
 - **The `무속성` direction of the element filter is fixed, and not by touching the
-  prompt** (ADR-0040). `"무속성 검 찾아줘"` used to yield `element="무속성"` only 8
+  prompt** (ADR-0040). **Read this whole bullet as history now** — the numbers in
+  it are `gpt-4o-mini`'s, and on `gpt-5.4-mini-2026-03-17` the model gets 무속성
+  right on its own (**42/42 raw**, so `fill_missing_element`'s *fill* path fires
+  **0 times in 117**). Both items this bullet lists as still-open — the
+  deliberately unhandled `"속성 안 붙은 신발"` and the 6/6-null `"어둠 속성 로브"`
+  — are gone, and **all five of ADR-0040's pre-registered bars now pass**. What
+  replaced the old failure is its mirror image: the new model **fills `무속성` on
+  a negation by itself** (`"무속성 빼고 보여줘"`), which is the error this bullet
+  calls "far worse than not filtering". So the post-check now **clears as well as
+  fills** — only when the value is `무속성` and the query is negated, which keeps
+  the "cannot reach the other elements" property intact (ADR-0045). Element
+  extraction went **111/117 → 117/117**. The *judgment* to put a deterministic
+  stage in front of a stochastic one was not wrong; what it was guarding against
+  was **a property of that model**, and it is kept because the next model may
+  need it again — right now the clearing half is what earns its keep.
+  `"무속성 검 찾아줘"` used to yield `element="무속성"` only 8
   times in 50 — the model reads "무속성" as "no element mentioned" — so a request
   for non-elemental swords still returned 불꽃의 대검, and that matters because
   **35 of the 42 corpus items are 무속성**: losing the filter makes the search
