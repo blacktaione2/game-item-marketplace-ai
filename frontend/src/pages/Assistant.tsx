@@ -3,9 +3,10 @@ import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 
 import {
-  api,
+  askStream,
   formatWon,
   type AssistantResponse,
+  type ProgressEvent,
   type SearchResultItem,
 } from "../api";
 import ItemBrowser from "../components/ItemBrowser";
@@ -48,9 +49,21 @@ export default function Assistant() {
   // 이전 질의인데 입력창은 다른 글자가 남는다.
   useEffect(() => setDraft(submitted), [submitted]);
 
+  // 진행 단계. **응답과 함께 캐시하지 않는다** — 이건 "지금 무슨 일이
+  // 일어나고 있는가"라서, 뒤로가기로 돌아왔을 때 되살아나면 거짓말이 된다.
+  // `staleTime` 을 안 두는 이유(아래)와 같은 계열이다.
+  const [progress, setProgress] = useState<ProgressEvent[]>([]);
+
   const ask = useQuery({
     queryKey: ["assistant", submitted],
-    queryFn: () => api.ask(submitted),
+    queryFn: () => {
+      setProgress([]);
+      return askStream(submitted, (event) => {
+        if (event.type === "progress") {
+          setProgress((prev) => [...prev, event]);
+        }
+      });
+    },
     enabled: submitted.length > 0,
     // **`staleTime` 을 두지 않는다.** 처음엔 5분을 걸었다 — "AI 응답은 비싸니
     // 돌아왔을 때 다시 부르지 말자". 그게 **배지를 거짓말하게 만들었다**: 같은
@@ -124,12 +137,7 @@ export default function Assistant() {
         ))}
       </div>
 
-      {ask.isFetching && (
-        <p className="muted">
-          의도를 분류하고 필요한 도구를 부르는 중입니다. 복합 질의는 도구를 여러 번
-          호출해서 20초 이상 걸릴 수 있습니다.
-        </p>
-      )}
+      {ask.isFetching && <Progress events={progress} />}
 
       {ask.isError && (
         <p className="error">{(ask.error as Error).message}</p>
@@ -143,6 +151,77 @@ export default function Assistant() {
           두 형태이기 때문이다. */}
       {!submitted && <ItemBrowser />}
     </div>
+  );
+}
+
+/** 의도 코드를 사람 말로. 서버는 사실만 주고 문구는 화면이 정한다. */
+const INTENT_LABEL: Record<string, string> = {
+  item_search: "아이템 검색",
+  price_forecast: "시세 예측",
+  anomaly_check: "이상거래 점검",
+  faq_smalltalk: "안내",
+  compound: "복합 질의 — 도구를 여러 번 부릅니다",
+};
+
+/** MCP 도구 이름을 사람 말로. */
+const TOOL_LABEL: Record<string, string> = {
+  search_items: "아이템 검색",
+  forecast_item_price: "시세 조회",
+  check_trade_anomaly: "거래 점검",
+};
+
+function describe(event: ProgressEvent): string {
+  switch (event.stage) {
+    case "cache":
+      return event.hit ? "이전 답변을 찾았습니다" : "캐시 확인";
+    case "routing":
+      return `의도 판별: ${INTENT_LABEL[event.intent ?? ""] ?? event.intent}`;
+    case "branch":
+      return "처리 중";
+    case "thinking":
+      // **이 줄이 가장 긴 대기를 덮는다.** 실측하면 여기서 6~7초가 지나간다 —
+      // 다음에 어떤 도구를 부를지 모델이 정하는 시간이다.
+      return event.step && event.step > 1
+        ? `다음 단계를 정하는 중 (${event.step})`
+        : "필요한 도구를 정하는 중";
+    case "tool":
+      // **`tool` 은 호출이 끝난 게 아니라 시작한 것**이다. 도구 실행이 10초를
+      // 넘기도 해서, 끝날 때만 알리면 그동안 "도구를 정하는 중"이라는 틀린
+      // 라벨이 떠 있었다. `failed` 는 실패했을 때만 한 번 더 온다.
+      return event.failed
+        ? `${TOOL_LABEL[event.tool ?? ""] ?? event.tool} — 실패`
+        : `${TOOL_LABEL[event.tool ?? ""] ?? event.tool} 중`;
+  }
+}
+
+/**
+ * 진행 상황.
+ *
+ * **토큰이 아니라 단계를 흘리기로 한 이유가 여기서 보인다.** 복합 질의의
+ * 7~25초는 대부분 도구 호출이라, 사용자가 기다리는 동안 알고 싶은 것은 글자가
+ * 나오기 시작했는지가 아니라 **지금 뭘 하고 있는가**다.
+ *
+ * 이벤트가 아직 없을 때도 문구를 낸다 — 스트림이 열리기까지의 짧은 순간에
+ * 화면이 비면 눌리지 않은 것처럼 보인다.
+ */
+function Progress({ events }: { events: ProgressEvent[] }) {
+  if (events.length === 0) {
+    return <p className="muted">요청을 보내는 중…</p>;
+  }
+  return (
+    <ul className="progress">
+      {events.map((event, index) => (
+        <li
+          key={index}
+          className={
+            // 마지막 줄만 "진행 중"이고 나머지는 끝난 단계다.
+            index === events.length - 1 ? "progress-now" : "progress-done"
+          }
+        >
+          {describe(event)}
+        </li>
+      ))}
+    </ul>
   );
 }
 

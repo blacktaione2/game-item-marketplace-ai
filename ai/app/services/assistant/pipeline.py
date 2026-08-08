@@ -34,6 +34,14 @@ from app.core.metrics import record_response
 from app.core.threadpool import run_cpu
 from app.services.agent.agent import run_agent
 from app.services.anomaly.pipeline import detect_trade
+from app.core.progress import (
+    STAGE_BRANCH,
+    STAGE_CACHE,
+    STAGE_ROUTING,
+    ProgressFn,
+    noop,
+    safe_emit,
+)
 from app.services.cache.dependencies import get_semantic_cache
 from app.services.cache.policy import is_cacheable, ttl_seconds
 from app.services.forecast.pipeline import forecast_price
@@ -143,6 +151,11 @@ async def ask(
     tenant_code: str,
     query: str,
     use_cache: bool = True,
+    # **기본값이 no-op이라 기존 호출자는 아무것도 바꾸지 않는다.** `/api/assistant`
+    # 는 그대로 두고 스트리밍은 새 경로로 붙인다 — 부하 하네스와 verify-*.sh 가
+    # 기존 엔드포인트에 걸려 있어서, 갈아치우면 이번 변경에 부하·배포 검증이
+    # 통째로 딸려온다.
+    on_progress: ProgressFn = noop,
 ) -> dict[str, Any]:
     settings = get_settings()
     timings: dict[str, float] = {}
@@ -185,6 +198,7 @@ async def ask(
             logger.warning("캐시 조회 실패 — 미적중으로 진행한다", exc_info=True)
             hit = None
         timings["cache_ms"] = _ms(started)
+        await safe_emit(on_progress, STAGE_CACHE, hit=bool(hit))
         if hit:
             cached = {
                 **hit["response"],
@@ -211,10 +225,17 @@ async def ask(
     decision = await run_cpu(route, query)
     timings["routing_ms"] = _ms(started)
     intent: Intent = decision["intent"]
+    await safe_emit(
+        on_progress, STAGE_ROUTING,
+        intent=intent.value, decided_by=decision["decided_by"],
+    )
 
     # --- 3. 분기 실행 ----------------------------------------------------
     started = time.perf_counter()
-    payload, intent = await _execute(es, llm_client, tenant_code, query, intent)
+    await safe_emit(on_progress, STAGE_BRANCH, intent=intent.value)
+    payload, intent = await _execute(
+        es, llm_client, tenant_code, query, intent, on_progress
+    )
     timings["execution_ms"] = _ms(started)
     # **분기 내부 계측을 위로 올린다.** 이게 없으면 통합 진입점에서 execution_ms
     # 하나만 보이고 그 안이 LLM인지 ES인지 리랭커인지 알 수 없다 — 하위
@@ -270,6 +291,7 @@ async def _execute(
     tenant_code: str,
     query: str,
     intent: Intent,
+    on_progress: ProgressFn = noop,
 ) -> tuple[dict[str, Any], Intent]:
     """분기 실행. 실행 불가능하면 COMPOUND로 올리고 바뀐 의도를 같이 반환."""
     if intent is Intent.FAQ_SMALLTALK:
@@ -299,13 +321,13 @@ async def _execute(
 
     if intent is Intent.PRICE_FORECAST:
         if not _has_target(query):
-            return await _agent_branch(llm_client, tenant_code, query)
-        return await _forecast_branch(es, llm_client, tenant_code, query)
+            return await _agent_branch(llm_client, tenant_code, query, on_progress)
+        return await _forecast_branch(es, llm_client, tenant_code, query, on_progress)
 
     if intent is Intent.ANOMALY_CHECK:
         trade_id = _extract_trade_id(query)
         if trade_id is None:
-            return await _agent_branch(llm_client, tenant_code, query)
+            return await _agent_branch(llm_client, tenant_code, query, on_progress)
         # 자연어에서 뽑은 번호가 어느 평면인지 알 길이 없다. 합성 코퍼스로
         # 해석하되 그 사실을 답변에 밝히게 한다 — 사용자가 자기 거래 번호를
         # 말한 것일 수도 있고, 두 id 범위는 겹친다.
@@ -330,7 +352,7 @@ async def _execute(
             intent,
         )
 
-    return await _agent_branch(llm_client, tenant_code, query)
+    return await _agent_branch(llm_client, tenant_code, query, on_progress)
 
 
 async def _forecast_branch(
@@ -338,6 +360,7 @@ async def _forecast_branch(
     llm_client: LLMClient,
     tenant_code: str,
     query: str,
+    on_progress: ProgressFn = noop,
 ) -> tuple[dict[str, Any], Intent]:
     """검색으로 아이템을 특정한 뒤 예측. 못 찾으면 에이전트로 올린다."""
     found = await run_search(
@@ -349,7 +372,7 @@ async def _forecast_branch(
         # 3~5회 더 태워서 다른 문장으로 같은 거짓말을 만든다.
         return {**_out_of_domain(), "timings": found["timings"]}, Intent.PRICE_FORECAST
     if not found["results"]:
-        return await _agent_branch(llm_client, tenant_code, query)
+        return await _agent_branch(llm_client, tenant_code, query, on_progress)
 
     item = found["results"][0]
     result = await forecast_price(
@@ -399,9 +422,14 @@ async def _forecast_branch(
 
 
 async def _agent_branch(
-    llm_client: LLMClient, tenant_code: str, query: str
+    llm_client: LLMClient,
+    tenant_code: str,
+    query: str,
+    on_progress: ProgressFn = noop,
 ) -> tuple[dict[str, Any], Intent]:
-    result = await run_agent(llm_client, tenant_code, query)
+    # **여기가 진행 표시가 실제로 값을 하는 유일한 분기다.** 복합 질의의
+    # 7~25초는 대부분 도구 호출이고, 나머지 분기는 몇 초 안에 끝난다.
+    result = await run_agent(llm_client, tenant_code, query, on_progress=on_progress)
     return (
         {
             "answer": result["answer"],
