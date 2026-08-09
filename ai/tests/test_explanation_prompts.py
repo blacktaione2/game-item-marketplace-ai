@@ -14,18 +14,23 @@ from app.services.assistant.pipeline import _ANOMALY_PROMPT, _FORECAST_PROMPT
 
 
 class TestAnomalyPrompt:
-    def test_the_appended_sentence_is_a_complete_sentence(self):
-        """지시문이 `…라는 점.` 이면 모델은 그 조각을 그대로 옮겨 붙인다.
+    def test_no_longer_dictates_a_sentence_to_append(self):
+        """**덧붙일 문장을 불러주는 지시 자체가 사라졌다.**
 
-        배포 화면에서 문장이 잘린 것처럼 보였던 게 그거다 — **잘린 게 아니라
-        지시문이 그 모양이었다.** 모델은 시킨 대로 했다.
+        ADR-0038 이 고친 결함은 그 지시문이 `…라는 점.` 이라는 **명사형 조각**
+        이어서 모델이 글자 그대로 옮겨 붙인 것이었다(화면에서는 문장이 잘린
+        것처럼 보였지만 잘린 게 아니었다). 지금은 지시가 아예 없으므로 그 결함이
+        **구조적으로 불가능**하다 — ADR-0036 이 검색 설명 LLM 을 없앤 것과 같은
+        방향이다.
+
+        고지가 필요 없어진 게 아니라 **책임지는 층이 바뀌었다.** 화면이 판정 카드
+        아래에 무조건 적고 응답에는 `detection.id_space` 가 실려 간다. 프롬프트의
+        그 줄은 중복이면서 셋 중 유일하게 실패할 수 있는 층이었다.
         """
-        # "덧붙이세요:" 뒤에 오는 내용이 완결 어미로 끝나야 한다.
-        appended = _ANOMALY_PROMPT.split("덧붙이세요**:")[-1]
-        # 프롬프트 뒷부분(결과 자리표시자)은 빼고 지시 문장만 본다.
-        instruction = appended.split("결과:")[0].strip()
-        assert instruction.endswith("다."), instruction
-        assert not re.search(r"라는 점\.$", instruction), "명사형 조각이 되돌아왔다"
+        assert "덧붙이세요" not in _ANOMALY_PROMPT
+        assert "합성 데모" not in _ANOMALY_PROMPT
+        # 조각을 불러주는 형태가 되돌아오면 잡는다.
+        assert not re.search(r"라는 점\.", _ANOMALY_PROMPT), "명사형 조각이 되돌아왔다"
 
     def test_does_not_teach_the_model_a_field_name_as_vocabulary(self):
         """예전 판본은 `contributions는 …기여도입니다` 로 필드명을 가르쳤다.

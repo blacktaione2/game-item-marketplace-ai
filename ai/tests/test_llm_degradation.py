@@ -125,17 +125,37 @@ class TestAnomalySentence:
         assert "이상 징후가 있습니다" not in no
         assert yes != no
 
-    def test_always_discloses_the_synthetic_corpus(self):
-        """프롬프트가 반드시 붙이게 하던 고지다. 빠지면 사용자가 자기 거래
-        번호로 착각한다 — 두 id 공간은 실제로 겹친다."""
+    def test_does_not_repeat_the_disclosure_the_screen_already_makes(self):
+        """합성 코퍼스 고지는 **문장이 아니라 화면과 페이로드**가 책임진다.
+
+        고지 자체가 필요 없어진 게 아니다 — 두 id 공간은 실제로 겹치고(ADR-0022)
+        `23659` 를 자기 거래 번호로 착각할 수 있다. 바뀐 것은 **어디가 그걸
+        보장하는가**다. 화면은 판정 카드 아래에 무조건 적고 응답에는
+        `detection.id_space` 가 실려 간다. 프롬프트의 그 줄은 중복이면서
+        **셋 중 유일하게 실패할 수 있는 층**이었다.
+
+        **프롬프트와 폴백에서 같이 뺐는지**를 여기서 고정한다. 한쪽만 빠지면
+        프로바이더가 죽었을 때만 문장이 하나 더 붙어, 같은 질의가 상황에 따라
+        다른 말을 한다 — ADR-0041 이 막으려던 바로 그 비대칭이다.
+        """
+        import inspect
+
+        from app.services.assistant import pipeline
+
         for flag in (True, False):
-            assert "합성 데모" in _anomaly_answer({**ANOMALY, "is_anomaly": flag})
+            assert "합성 데모" not in _anomaly_answer({**ANOMALY, "is_anomaly": flag})
+        assert "합성 데모" not in pipeline._ANOMALY_PROMPT, (
+            "프롬프트에만 남으면 모델이 살아 있을 때만 고지가 붙는다"
+        )
+        # 폴백이 여전히 **알맹이**는 다 말하는지 — 지우다 같이 지운 게 없어야 한다.
+        src = inspect.getsource(pipeline._anomaly_answer)
+        assert "trade_id" in src and "contributions" in src
 
     def test_survives_an_empty_contribution_list(self):
         """`contributions()` 는 총합이 0이면 빈 목록을 준다 — 폴백이 거기서
         터지면 폴백의 의미가 없다."""
         answer = _anomaly_answer({**ANOMALY, "contributions": []})
-        assert "23659" in answer and "합성 데모" in answer
+        assert "23659" in answer and "이상 징후" in answer
 
 
 class TestObservable:
