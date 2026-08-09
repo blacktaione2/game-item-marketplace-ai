@@ -159,7 +159,23 @@ export default function Assistant() {
         <p className="error">{(ask.error as Error).message}</p>
       )}
 
-      {ask.data && <Result data={ask.data} onOpenItem={(id) => navigate(`/items/${id}`)} />}
+      {/* **재요청 중에는 아래 답변이 "이전 것"이라고 말한다.**
+          TanStack Query 는 재요청 동안 이전 데이터를 그대로 들고 있다(깜빡임 방지).
+          그런데 진행 목록이 그 위에 있어서, 위에서 아래로 읽으면 **스트림이 저 답을
+          뱉은 것처럼** 보인다 — 실제로는 아직 요청 중이다. 이상거래처럼 캐시하지
+          않는 의도에서 특히 두드러진다(다시 물을 때마다 반드시 재실행된다).
+
+          **지우지는 않는다.** 지우면 뒤로가기로 돌아왔을 때 캐시된 결과가
+          깜빡 사라졌다 다시 뜨는데, 그건 ADR-0037 이 `staleTime` 을 0으로 두면서도
+          지키려던 성질이다. 흐리게 하고 한 줄로 말하는 쪽이 둘 다 지킨다. */}
+      {ask.data && ask.isFetching && (
+        <p className="muted">아래는 <strong>이전 답변</strong>입니다 — 다시 확인하는 중입니다.</p>
+      )}
+      {ask.data && (
+        <div className={ask.isFetching ? "superseded" : undefined}>
+          <Result data={ask.data} onOpenItem={(id) => navigate(`/items/${id}`)} />
+        </div>
+      )}
 
       {/* **질의가 없을 때의 화면이 빈 여백이면 안 된다.** 거래소인데 매물을 볼 수가
           없었고, 처음 온 사람은 무엇을 물어야 하는지도 몰랐다. 검색의 "빈 상태"를

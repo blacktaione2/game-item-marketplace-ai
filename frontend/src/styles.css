@@ -456,6 +456,19 @@ th {
   font-variant-numeric: tabular-nums;
 }
 
+/* 재요청 중인 동안의 이전 답변. **숨기지 않고 물린다.**
+   `aria-hidden` 을 걸지 않는 이유: 내용은 여전히 유효하고 읽을 수 있어야 한다.
+   바뀐 것은 "지금 것인가" 뿐이라 그건 바로 위의 문장이 말한다. */
+.superseded {
+  opacity: 0.45;
+  transition: opacity 0.15s ease;
+}
+@media (prefers-reduced-motion: reduce) {
+  .superseded {
+    transition: none;
+  }
+}
+
 /* 결과와 전체 목록 사이의 구분선. */
 .sep {
   border: none;
