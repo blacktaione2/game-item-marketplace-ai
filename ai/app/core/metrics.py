@@ -26,6 +26,8 @@ from typing import Any
 
 from prometheus_client import CollectorRegistry, Counter, Histogram, generate_latest
 
+from app.core.llm_usage import note_call
+
 # 기본 레지스트리를 쓰지 않는다 — 테스트가 서로 오염되지 않게 격리한다.
 REGISTRY = CollectorRegistry()
 
@@ -107,10 +109,17 @@ llm_provider_calls_total = Counter(
 
 
 def record_llm_call(provider: str, ok: bool) -> None:
-    """LLM 호출 1건을 센다. 클라이언트 구현이 직접 부른다."""
+    """LLM 호출 1건을 센다. 클라이언트 구현이 직접 부른다.
+
+    **요청 단위 카운터도 여기서 올린다** — 계측 지점을 늘리지 않기 위해서다.
+    그쪽은 응답의 `llm_calls` 를 상수가 아니라 실측으로 만드는 데 쓴다
+    (`app/core/llm_usage.py`). 위 주석이 말한 교차검증을 실제로 돌려보니
+    복합 분기의 상수가 틀려 있었다.
+    """
     llm_provider_calls_total.labels(
         provider=provider, outcome="ok" if ok else "failed"
     ).inc()
+    note_call()
 
 # `timings` 키 → 메트릭의 stage 라벨. 키에서 `_ms`를 떼는 규칙이 아니라
 # 명시적 표를 쓴다 — 새 키가 생겼을 때 조용히 통과하지 않고 눈에 띄게 하려고.

@@ -198,6 +198,79 @@ class AuthenticationTest {
                 .andExpect(status().isBadRequest());
     }
 
+    // --- 검증기 두 벌이 갈라지지 않는가 -------------------------------------
+
+    /**
+     * {@code Claims} 가 선언한 계약 — <b>"이 파일을 고치면 파이썬 쪽 {@code _REQUIRED_CLAIMS} 도
+     * 같이 고쳐야 한다"</b> — 이 실제로 지켜지는지 본다.
+     *
+     * <p>오래 한쪽만 지키고 있었다. 파이썬은 {@code iss} 와 필수 클레임 6개를 검증하는데,
+     * 여기는 {@code NimbusJwtDecoder} 기본값이라 <b>만료만</b> 봤다. 서명 키가 있어야 하므로
+     * 악용 경로는 없지만, {@code role} 이 빠진 토큰이 파이썬에서는 401 이고 여기서는
+     * {@code UserRole.valueOf(null)} 로 <b>500</b> 이었다.
+     */
+    private String tokenWithoutClaim(String omitted) {
+        Instant now = Instant.now();
+        JwtClaimsSet.Builder claims = JwtClaimsSet.builder()
+                .issuer("gimp-backend")
+                .issuedAt(now)
+                .expiresAt(now.plus(3600, ChronoUnit.SECONDS));
+        if (!"sub".equals(omitted)) {
+            claims.subject(String.valueOf(sellerId));
+        }
+        if (!Claims.TENANT_ID.equals(omitted)) {
+            claims.claim(Claims.TENANT_ID, tenantAId);
+        }
+        if (!Claims.TENANT_CODE.equals(omitted)) {
+            claims.claim(Claims.TENANT_CODE, "test_a");
+        }
+        if (!Claims.ROLE.equals(omitted)) {
+            claims.claim(Claims.ROLE, UserRole.USER.name());
+        }
+        return jwtEncoder
+                .encode(JwtEncoderParameters.from(
+                        JwsHeader.with(MacAlgorithm.HS256).build(), claims.build()))
+                .getTokenValue();
+    }
+
+    @Test
+    void 클레임이_빠진_토큰은_500이_아니라_401이다() throws Exception {
+        // 넷을 다 돈다 — 하나만 보면 나머지 셋이 빠져도 통과한다.
+        for (String omitted : new String[] {"sub", Claims.TENANT_ID, Claims.TENANT_CODE, Claims.ROLE}) {
+            mockMvc.perform(get("/api/items/" + itemInTenantA)
+                            .header("Authorization", "Bearer " + tokenWithoutClaim(omitted)))
+                    .andExpect(status().isUnauthorized());
+        }
+    }
+
+    @Test
+    void 발급자가_다른_토큰은_401이다() throws Exception {
+        Instant now = Instant.now();
+        JwtClaimsSet claims = JwtClaimsSet.builder()
+                .issuer("someone-else")
+                .issuedAt(now)
+                .expiresAt(now.plus(3600, ChronoUnit.SECONDS))
+                .subject(String.valueOf(sellerId))
+                .claim(Claims.TENANT_ID, tenantAId)
+                .claim(Claims.TENANT_CODE, "test_a")
+                .claim(Claims.ROLE, UserRole.USER.name())
+                .build();
+        String token = jwtEncoder
+                .encode(JwtEncoderParameters.from(JwsHeader.with(MacAlgorithm.HS256).build(), claims))
+                .getTokenValue();
+
+        mockMvc.perform(get("/api/items/" + itemInTenantA).header("Authorization", "Bearer " + token))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void 대조_모든_클레임이_있으면_통과한다() throws Exception {
+        // **위 둘의 공허 방지.** 검증기를 "전부 거절"로 만들어도 그 둘은 통과한다.
+        mockMvc.perform(get("/api/items/" + itemInTenantA)
+                        .header("Authorization", "Bearer " + tokenWithoutClaim("(없음)")))
+                .andExpect(status().isOk());
+    }
+
     @Test
     void demo_token_경로는_사라졌다() throws Exception {
         // ADR-0031 이 제거했다. **경로가 없어졌다는 것 자체가 판정**이라 되살아나면 실패한다.

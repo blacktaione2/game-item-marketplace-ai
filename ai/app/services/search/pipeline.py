@@ -57,11 +57,24 @@ async def search(
         return result
 
     understanding: QueryUnderstanding
-    in_domain: bool
-    understanding, in_domain = await asyncio.gather(
+    gate: tuple[bool, bool]
+    understanding, gate = await asyncio.gather(
         _timed(understand_query(llm_client, query), "query_understanding_ms"),
         _timed(judge_in_domain(llm_client, query), "domain_gate_ms"),
     )
+    in_domain, gate_degraded = gate
+
+    # **호출 수를 상수로 적지 않는다.** 상류가 `llm_calls: 2` 를 박아두고 있었는데,
+    # 프로바이더가 죽으면 두 호출은 **성사되지 않고** 각자 폴백한다 — 그래도 2로
+    # 보고했다. 시세(3→2)·이상거래(1→0)는 이미 내려앉은 만큼 빼고 있었으므로
+    # 검색만 규칙이 달랐다.
+    #
+    # 그리고 그때 `degraded` 도 안 섰다. 검색은 필터 없는 검색으로 답을 내므로
+    # **500 도 안 나고 응답도 그럴듯하다** — ADR-0041 이 `degraded` 를 만든 이유가
+    # *"500 이 안 나면 다른 신호가 없다"* 인데, 정작 그 성질이 가장 강한 분기가
+    # 빠져 있었다.
+    degraded = understanding.degraded or gate_degraded
+    llm_calls = 2 - int(understanding.degraded) - int(gate_degraded)
 
     if not in_domain:
         # **도메인 밖이면 검색 자체를 하지 않는다** (ADR-0039). 임베딩·ES·리랭커를
@@ -79,6 +92,8 @@ async def search(
             "reranked": False,
             "timings": timings,
             "results": [],
+            "llm_calls": llm_calls,
+            "degraded": degraded,
         }
 
     started = time.perf_counter()
@@ -114,6 +129,8 @@ async def search(
         "reranked": use_rerank,
         "timings": timings,
         "results": documents[:size],
+        "llm_calls": llm_calls,
+        "degraded": degraded,
     }
 
 

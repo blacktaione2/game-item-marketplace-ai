@@ -66,6 +66,16 @@ class QueryUnderstanding(BaseModel):
     # 그대로였다(-0.234 → -0.248). 스키마가 늘어난 것 자체의 대가다.
     # 판정은 `domain_gate.judge_in_domain()` 이 **별도 호출로 병렬** 수행한다.
 
+    # 이 값이 LLM 이 아니라 **폴백에서 나왔는가** (ADR-0041 의 뒤늦은 짝).
+    #
+    # 프롬프트에 나가는 값이 아니라 **호출 결과에 붙는 꼬리표**라, 위 문단이
+    # 기각한 `in_domain` 과 성격이 다르다 — 스키마가 늘지 않는다.
+    #
+    # 필요한 이유: 시세·이상거래 분기는 설명 LLM 이 죽으면 `degraded` 를 세우는데
+    # 검색 분기만 못 세웠다. 검색은 LLM 이 다 죽어도 **필터 없는 검색**으로 답을
+    # 내므로 500 도 안 나고 응답도 그럴듯하다 — 즉 신호가 아예 없었다.
+    degraded: bool = False
+
 
 def _range(minimum: float | int | None, maximum: float | int | None) -> dict[str, Any]:
     bounds: dict[str, Any] = {}

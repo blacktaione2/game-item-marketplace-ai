@@ -8,6 +8,7 @@
 from app.services.assistant.pipeline import (
     _describe_filters,
     _no_results,
+    _search_cost,
     _search_answer,
 )
 
@@ -30,8 +31,16 @@ class TestNoResultPayload:
 
         바뀌지 않은 건 **검색 분기 전체가 같은 값**이라는 점이다. 그래서
         `llm_calls`로는 0건 여부를 알 수 없고 `no_results`를 봐야 한다.
+
+        **값을 만드는 자리가 옮겨졌다.** 예전에는 `_no_results` 가 상수 2를 적어
+        뒀는데, 프로바이더가 죽으면 두 호출이 성사되지 않으므로 그 상수가 거짓이
+        된다. 지금은 `_search_cost()` 가 `run_search` 의 결과에서 옮긴다 — 그래서
+        여기서도 그쪽을 단언한다.
         """
-        assert _no_results({"subcategory": "검"})["llm_calls"] == 2
+        assert _search_cost(_search_result(llm_calls=2))["llm_calls"] == 2
+        assert "llm_calls" not in _no_results({"subcategory": "검"}), (
+            "0건 헬퍼가 다시 상수를 들고 있다 — 같은 사실의 출처가 둘이 된다"
+        )
 
     def test_exposes_the_filters_it_searched_with(self):
         """0건에는 검증할 결과가 없어서 필터가 유일한 근거다.
@@ -113,3 +122,8 @@ class TestDescribeFilters:
 
     def test_sale_type_is_translated(self):
         assert _describe_filters({"sale_type": "AUCTION"}) == ["경매"]
+
+
+def _search_result(llm_calls: int, degraded: bool = False) -> dict:
+    """`run_search` 가 돌려주는 것 중 `_search_cost` 가 쓰는 만큼만."""
+    return {"llm_calls": llm_calls, "timings": {}, "degraded": degraded}

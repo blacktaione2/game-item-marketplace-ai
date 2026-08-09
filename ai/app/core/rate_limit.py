@@ -54,6 +54,12 @@ def seconds_until_kst_midnight(kst_now: datetime) -> int:
     `cache/policy.py::_until_midnight` 과 같은 계산이다. 그쪽은 시세 예측이
     일별 시리즈라 날짜가 바뀌면 근거가 바뀌기 때문이고, 여기는 키가 날짜로
     갈리기 때문이다 — 이유는 다르지만 "자정에 끝난다"는 성질이 같다.
+
+    > **이 문장은 한동안 거짓이었다.** 그쪽은 `datetime.now()`(프로세스 로컬)를
+    > 쓰고 여기는 명시적 KST 라, 배포 컨테이너(UTC)에서 두 자정이 **9시간
+    > 어긋나** 있었다. 지금은 양쪽 다 KST 다. 같은 계산이라고 **적어두는 것**과
+    > 같은 계산인 것은 별개이고, 시간대는 한쪽만 정해두면 나머지도 그렇겠거니
+    > 읽힌다.
     """
     tomorrow = (kst_now + timedelta(days=1)).replace(
         hour=0, minute=0, second=0, microsecond=0

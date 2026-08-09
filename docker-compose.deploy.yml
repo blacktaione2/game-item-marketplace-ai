@@ -72,3 +72,23 @@ services:
 
   redis:
     ports: !override []
+
+  # **관측성 두 개도 여기 있어야 한다.** 처음 판본은 위 여섯 개만 적었다 —
+  # `--profile observability` 가 opt-in 이라 "배포에서는 안 뜬다"고 읽었기
+  # 때문인데, 그건 **완화 요인이지 방어가 아니다.** 데모 한 번 하려고 프로파일을
+  # 켜는 순간 3000/9090 이 공개 주소에 열린다.
+  #
+  # 하필 이 둘이 자격증명을 가진 쪽이라 대가가 크다:
+  #   - Grafana 는 `GF_AUTH_ANONYMOUS_ENABLED=true` 라 **비밀번호 없이 조회**된다
+  #   - 관리자 비밀번호 기본값이 `gimp_local_pw` 인데, 이건 `SecretGuard` 가
+  #     prod 에서 기동을 거부하는 바로 그 값이다
+  #   - 그런데 `GRAFANA_PASSWORD` 가 `.env.example` 에 없어서 **비밀번호를 새로
+  #     뽑는 배포 절차가 이 키를 건드리지도 못했다** (같이 고쳤다)
+  #
+  # 열거가 샜다는 게 요점이다. 서비스가 늘면 이 목록도 늘어야 하는데 그걸
+  # 알려주는 장치가 없다 — `verify-deploy.sh` 가 대신 센다.
+  prometheus:
+    ports: !override []
+
+  grafana:
+    ports: !override []

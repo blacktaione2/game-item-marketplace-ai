@@ -30,6 +30,7 @@ from elasticsearch import AsyncElasticsearch
 
 from app.core.config import get_settings
 from app.core.ids import IdSpace
+from app.core.llm_usage import count_llm_calls
 from app.core.metrics import record_response
 from app.core.threadpool import run_cpu
 from app.services.agent.agent import run_agent
@@ -302,19 +303,16 @@ async def _execute(
             es=es, llm_client=llm_client, tenant_code=tenant_code, query=query, size=5
         )
         if not result["in_domain"]:
-            return {**_out_of_domain(), "timings": result["timings"]}, intent
+            return {**_out_of_domain(), **_search_cost(result)}, intent
         if not result["results"]:
-            return {**_no_results(result["filters"]), "timings": result["timings"]}, intent
+            return {**_no_results(result["filters"]), **_search_cost(result)}, intent
         # 0건과 **같은 방식**으로 확정 응답을 만든다 (ADR-0036). 예전에는 여기서
         # 설명 LLM 을 한 번 더 불렀는데, 그 호출이 실제로 만든 건 환각이었다.
         return (
             {
                 "answer": _search_answer(result["filters"], len(result["results"])),
                 "results": result["results"],
-                # 질의이해 + 도메인 판정. 둘은 병렬이라 지연은 하나치인데
-                # **비용은 둘이다** — 그래서 이 값은 2다 (ADR-0039).
-                "llm_calls": 2,
-                "timings": result["timings"],
+                **_search_cost(result),
             },
             intent,
         )
@@ -355,6 +353,26 @@ async def _execute(
     return await _agent_branch(llm_client, tenant_code, query, on_progress)
 
 
+def _search_cost(result: dict[str, Any]) -> dict[str, Any]:
+    """`run_search` 가 실제로 쓴 비용과 상태를 응답 필드로 옮긴다.
+
+    **셋 다 상수로 박혀 있었다.** 검색 분기의 세 갈래(찾음·0건·도메인 밖)가 각자
+    `llm_calls: 2` 를 적고 있었는데, 질의이해와 도메인 판정이 폴백하면 그 호출은
+    **성사되지 않는다.** 시세·이상거래는 내려앉은 만큼 이미 빼고 있었으므로
+    검색만 규칙이 달랐다.
+
+    `degraded` 는 값이 있을 때만 싣는다 — 정상 응답에 `false` 를 달면 메트릭의
+    `outcome` 판정(`response.get("degraded")`)은 같지만 화면과 캐시 정책이 보는
+    필드가 늘어난다. 나머지 분기가 쓰는 모양(`**({"degraded": True} if ...)`)과
+    맞춘다.
+    """
+    return {
+        "llm_calls": result["llm_calls"],
+        "timings": result["timings"],
+        **({"degraded": True} if result.get("degraded") else {}),
+    }
+
+
 async def _forecast_branch(
     es: AsyncElasticsearch,
     llm_client: LLMClient,
@@ -370,7 +388,7 @@ async def _forecast_branch(
         # **에이전트로 올리지 않는다.** 다른 실패는 "도구를 더 써보면 풀린다"라서
         # 올릴 값어치가 있지만, 도메인 밖은 도구를 더 써도 밖이다. 올리면 LLM을
         # 3~5회 더 태워서 다른 문장으로 같은 거짓말을 만든다.
-        return {**_out_of_domain(), "timings": found["timings"]}, Intent.PRICE_FORECAST
+        return {**_out_of_domain(), **_search_cost(found)}, Intent.PRICE_FORECAST
     if not found["results"]:
         return await _agent_branch(llm_client, tenant_code, query, on_progress)
 
@@ -407,9 +425,10 @@ async def _forecast_branch(
             # 표시를 만들게 된다 — 같은 아이템이 화면마다 다르게 보인다.
             "resolved_item": item,
             # 아이템 특정용 검색(질의이해 + 도메인 판정, 병렬) + 설명 = 3.
-            # 설명이 실패해 내려앉았으면 그 호출은 **성사되지 않았으므로** 2다.
-            "llm_calls": 2 if degraded else 3,
-            **({"degraded": True} if degraded else {}),
+            # **셋 다 따로 내려앉을 수 있다.** 예전에는 앞의 둘을 2로 박아두고
+            # 설명 하나만 뺐는데, 프로바이더가 죽으면 셋이 같이 죽는다.
+            "llm_calls": found["llm_calls"] + (0 if degraded else 1),
+            **({"degraded": True} if degraded or found.get("degraded") else {}),
             # 아이템 특정용 검색 + 예측 + 설명. 키가 겹치지 않아 병합이 안전하다.
             "timings": {
                 **found["timings"],
@@ -429,7 +448,14 @@ async def _agent_branch(
 ) -> tuple[dict[str, Any], Intent]:
     # **여기가 진행 표시가 실제로 값을 하는 유일한 분기다.** 복합 질의의
     # 7~25초는 대부분 도구 호출이고, 나머지 분기는 몇 초 안에 끝난다.
-    result = await run_agent(llm_client, tenant_code, query, on_progress=on_progress)
+    #
+    # **호출 수는 세어서 낸다.** `len(tool_calls) + 1` 로 유도하던 값이 두 군데서
+    # 틀렸다 — 한 응답이 도구를 둘 이상 부르고(병렬, 실측됨), 무엇보다 `search_items`
+    # 가 내부에서 쓰는 2회를 안 셌다. 실측 3건 × 2회에서 **전부 과소**였다
+    # (보고 4/실제 8, 3/5, 5/7). 근거와 왜 공식을 안 고쳤는지는
+    # `app/core/llm_usage.py`.
+    with count_llm_calls() as usage:
+        result = await run_agent(llm_client, tenant_code, query, on_progress=on_progress)
     return (
         {
             "answer": result["answer"],
@@ -440,7 +466,7 @@ async def _agent_branch(
             "tool_calls": result["tool_calls"],
             "tool_failures": result["tool_failures"],
             "stop_reason": result["stop_reason"],
-            "llm_calls": len(result["tool_calls"]) + 1,
+            "llm_calls": usage.calls,
             "timings": result["timings"],
         },
         Intent.COMPOUND,
@@ -499,6 +525,11 @@ def _no_results(filters: dict[str, Any]) -> dict[str, Any]:
 
     어느 쪽이든 **`llm_calls`로는 0건 여부를 알 수 없다** — 검색 분기 전체가 같은
     값이기 때문이다. `no_results` 플래그를 봐야 한다.
+
+    > **그 숫자를 여기서 만들지는 않는다.** 세 갈래가 각자 `2` 를 적어두고 있었는데,
+    > 프로바이더가 죽으면 두 호출이 성사되지 않으므로 상수가 거짓이 된다. 지금은
+    > `_search_cost()` 가 `run_search` 의 실제 결과에서 옮긴다 — 같은 사실의 출처를
+    > 둘로 두지 않는다는, 이 저장소가 `tenant_code` 에 적용한 규칙 그대로다.
     """
     conditions = _describe_filters(filters)
     if conditions:
@@ -523,7 +554,6 @@ def _no_results(filters: dict[str, Any]) -> dict[str, Any]:
         # 진짜 부재를 구분할 수단이 특히 필요하다.
         "applied_filters": filters,
         "conditions": conditions,
-        "llm_calls": 2,
     }
 
 
@@ -540,7 +570,8 @@ def _out_of_domain() -> dict[str, Any]:
 
     `llm_calls` 가 0이 아니라 **2**인 이유는 `_no_results` 와 같다 — 판정 호출과
     질의이해가 **병렬로 함께 나갔고**, 도메인 밖이라는 걸 알았을 때는 이미 둘 다
-    돈 뒤다. 판정을 먼저 하고 통과할 때만 이해시키면 여기서 1을 아낄 수 있지만,
+    돈 뒤다. (그 값은 `_search_cost()` 가 실제 결과에서 옮긴다. 여기서 상수로
+    적으면 프로바이더 장애 때 거짓이 된다.) 판정을 먼저 하고 통과할 때만 이해시키면 여기서 1을 아낄 수 있지만,
     그 대가는 **모든 요청의 지연**이다(search/pipeline.py 주석 참고).
     """
     return {
@@ -551,7 +582,6 @@ def _out_of_domain() -> dict[str, Any]:
         "results": [],
         # 캐시 정책이 이 플래그로 저장을 막는다(policy.is_cacheable).
         "out_of_domain": True,
-        "llm_calls": 2,
     }
 
 

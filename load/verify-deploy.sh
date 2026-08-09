@@ -109,11 +109,26 @@ fi
 
 echo
 echo "== 판정 9: nginx 만 외부에 노출된다 =="
-for c in gimp-backend gimp-ai gimp-rabbitmq gimp-elasticsearch gimp-postgres gimp-redis; do
-  P="$(published "$c")"
-  [ -z "$P" ] && ok "$c 게시 포트 없음" \
-              || bad "$c 가 호스트에 게시하고 있다: $P — nginx 우회 경로"
-done
+# **목록을 적지 않는다.** 처음 판본은 컨테이너 여섯 개를 손으로 열거했고,
+# `--profile observability` 의 `prometheus`·`grafana` 가 그 목록에서 빠져 있었다 —
+# 하필 그 둘이 익명 조회가 켜진 대시보드와 기본 비밀번호를 가진 쪽이다.
+# **오버레이의 열거가 샜는데 그걸 검사하는 쪽도 같은 열거였으니 못 잡았다.**
+#
+# 그래서 지금 도는 것을 **도커에 묻는다**. 규칙은 하나다 —
+# "`gimp-` 컨테이너 중 게시 포트를 가진 것은 `gimp-web` 뿐이다".
+# 서비스가 늘어도 이 검사는 저절로 따라간다.
+RUNNING="$(docker ps --format '{{.Names}}' --filter 'name=gimp-' 2>/dev/null)"
+if [ -z "$RUNNING" ]; then
+  bad "gimp- 컨테이너가 하나도 안 보인다 — 검사가 대상에 닿지 못했다"
+else
+  for c in $RUNNING; do
+    [ "$c" = "gimp-web" ] && continue
+    P="$(published "$c")"
+    [ -z "$P" ] && ok "$c 게시 포트 없음" \
+                || bad "$c 가 호스트에 게시하고 있다: $P — nginx 우회 경로.
+         docker-compose.deploy.yml 에 '$c' 서비스의 ports: !override [] 가 있는가"
+  done
+fi
 
 echo
 echo "== 대조: web 은 게시돼 있어야 한다 =="

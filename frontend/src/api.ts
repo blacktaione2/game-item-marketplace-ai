@@ -436,13 +436,9 @@ export async function askStream(
   return result;
 }
 
-export interface DemoToken {
-  token: string;
-  expiresIn: number;
-  userId: number;
-  username: string;
-  role: string;
-}
+// `DemoToken` 인터페이스가 여기 남아 있었다. ADR-0031 이 `demo-token` 을 없앨 때
+// 참조만 지우고 타입을 안 지웠다 — 쓰는 곳이 0인데 이름은 살아 있어서, 읽는
+// 사람에게 "아직 그 경로가 있다"고 말한다. 응답 타입은 `LoginResult` 하나다.
 
 export const api = {
   /**

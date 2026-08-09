@@ -145,8 +145,14 @@ class _FakeRedis:
 
     def __init__(self, entries: dict[str, str]):
         self._entries = entries
+        # 정확 일치가 인덱스를 훑지 않는지 보려면 **훑었는지 기록**해야 한다.
+        self.scanned = False
+
+    async def get(self, key: str):
+        return self._entries.get(key)
 
     async def smembers(self, key: str):
+        self.scanned = True
         return {k.encode() for k in self._entries}
 
     async def mget(self, keys: list[str]):
@@ -230,3 +236,39 @@ class TestEmbeddingIsNotComputedOnExactHit:
 
         asyncio.run(cache.lookup("nexon", "롱소드 시세", embed))
         assert len(calls) == 1
+
+    def test_정확_일치는_인덱스를_훑지_않는다(self):
+        """키가 결정적인데 전 엔트리를 끌어와 역직렬화하고 있었다.
+
+        임베딩만 미루고 **스캔은 그대로** 였다 — 독스트링이 "질의 해시 키만
+        쓴다"고 적어둔 것과 실제가 달랐던 자리다. 엔트리 수에 비례해 늘어나는
+        유일한 부분이라 상한(2,000)까지 차면 그만큼 커진다.
+        """
+        import asyncio
+
+        def explode():
+            raise AssertionError("정확 일치인데 임베딩이 계산됐다")
+
+        naming = SemanticCache(None, 0.98, 100, "v1")
+        key = naming.entry_key("nexon", "롱소드 시세")
+        redis = _FakeRedis({key: _stored_payload("롱소드 시세", [0.1] * 384, "item_search")})
+        cache = SemanticCache(redis, 0.98, 100, "v1")
+
+        hit = asyncio.run(cache.lookup("nexon", "롱소드 시세", explode))
+        assert hit is not None and hit["match_type"] == "exact"
+        assert redis.scanned is False, "정확 일치인데 인덱스를 통째로 읽었다"
+
+    def test_대조_미적중은_인덱스를_훑는다(self):
+        """위 검사의 공허 방지 — 아무것도 안 훑는 구현이면 유사도가 죽는다."""
+        import asyncio
+
+        async def embed():
+            return [0.0] * 384
+
+        naming = SemanticCache(None, 0.98, 100, "v1")
+        key = naming.entry_key("nexon", "다른 질의")
+        redis = _FakeRedis({key: _stored_payload("다른 질의", [0.1] * 384, "faq_smalltalk")})
+        cache = SemanticCache(redis, 0.98, 100, "v1")
+
+        asyncio.run(cache.lookup("nexon", "롱소드 시세", embed))
+        assert redis.scanned is True

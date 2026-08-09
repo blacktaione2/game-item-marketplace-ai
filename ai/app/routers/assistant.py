@@ -57,7 +57,25 @@ async def _ask_metered(
 
     **일일 예산은 캐시 적중이면 소비하지 않는다** (ADR-0044). 분당 한도는
     의존성이 이미 요청 앞에서 올렸다 — 목적이 달라서다(`consume_daily` 참조).
+
+    ## 나가는 길이 셋인데 예외 두 개만 막고 있었다
+
+    이 함수는 예전에 `except Exception` 으로 실패 경로를 잡았다. **취소는 그
+    그물을 통과한다** — `asyncio.CancelledError` 는 `Exception` 이 아니라
+    `BaseException` 을 상속하기 때문이다. 그리고 스트리밍 경로는 클라이언트가
+    끊길 때마다 `task.cancel()` 을 부른다(아래 `assistant_stream`).
+
+    결과: **탭을 닫거나 연결이 끊기면 LLM 호출은 이미 나갔는데 하루 예산은 안
+    깎였다.** ADR-0044 가 막은 것(비용 0인 캐시 적중이 예산을 깎던 것)의
+    거울상이고, 같은 계층에 난 반대 방향 구멍이다.
+
+    그래서 **나가는 길을 세는 대신 `finally` 로 옮겼다.** "적중이 아니면
+    소비한다" 한 문장만 남고, 앞으로 어떤 예외 계열이 늘어도 규칙이 새지 않는다.
+    `await` 를 `finally` 에 두는 것이 취소 중에도 도는 이유: 취소는 한 번
+    전달되고, 그 뒤의 `await` 는 정상적으로 스케줄된다. `consume_daily` 자체가
+    Redis 실패를 삼키므로 여기서 두 번 터질 일도 없다.
     """
+    hit = False
     try:
         result = await ask(
             es=es,
@@ -67,14 +85,13 @@ async def _ask_metered(
             use_cache=request.use_cache,
             on_progress=on_progress,
         )
-    except Exception:
-        # **실패해도 소비한다.** 여기까지 왔으면 LLM 호출이 이미 나갔을 수
-        # 있고, 실패를 공짜로 만들면 그 자체가 우회로가 된다.
-        await consume_daily(actor)
-        raise
-    if not result.get("cache", {}).get("hit", False):
-        await consume_daily(actor)
-    return result
+        hit = bool(result.get("cache", {}).get("hit", False))
+        return result
+    finally:
+        # **실패도 취소도 소비한다.** 여기까지 왔으면 LLM 호출이 이미 나갔을 수
+        # 있고, 공짜로 끝나는 경로를 하나라도 남기면 그게 곧 우회로다.
+        if not hit:
+            await consume_daily(actor)
 
 
 @router.post("")

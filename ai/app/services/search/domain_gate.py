@@ -133,14 +133,20 @@ _PROMPT = """다음은 사용자가 게임 아이템 거래소에 입력한 문�
 문장: {query}"""
 
 
-async def judge_in_domain(llm_client: LLMClient, query: str) -> bool:
-    """이 거래소가 다루는 주제인가. 판정이 안 되면 True(통과)."""
+async def judge_in_domain(llm_client: LLMClient, query: str) -> tuple[bool, bool]:
+    """이 거래소가 다루는 주제인가. 판정이 안 되면 True(통과).
+
+    반환은 **(판정, 내려앉았는가)** 두 값이다. 위 「실패는 통과다」 절이 *"게이트가
+    조용히 열린다"* 를 대가로 인정하면서 로그와 메트릭이 맡는다고 적어뒀는데,
+    실제로는 **`out_of_domain` 카운터만 있었다** — 그건 게이트가 *닫힌* 횟수라
+    열린 것은 못 센다. 두 번째 값이 그 자리를 메운다.
+    """
     try:
         raw = await llm_client.complete(_PROMPT.format(query=query))
     except Exception:
         logger.warning("도메인 판정 실패 — 통과로 진행한다", exc_info=True)
-        return True
-    return _parse(raw)
+        return True, True
+    return _parse(raw), False
 
 
 def _parse(raw: str) -> bool:

@@ -56,13 +56,25 @@ export default function Assistant() {
 
   const ask = useQuery({
     queryKey: ["assistant", submitted],
-    queryFn: () => {
+    // **`signal` 을 실제로 넘긴다.** `askStream` 은 처음부터 이 옵션을 받고
+    // 있었는데 **아무도 안 넘겼다.** 그래서 서버의 "클라이언트가 끊으면 하던
+    // 일을 취소한다" 는 방어가 이 앱에서는 한 번도 실행되지 않았다 —
+    // *걷지 않은 경로는 동작한다고 말할 수 없다.*
+    //
+    // TanStack Query 가 이 신호를 관리한다: 관찰자가 사라지거나(화면 이동)
+    // 재요청이 나가면 이전 스트림이 중단된다. 없으면 아이템 상세로 넘어가도
+    // 스트림이 살아남아 **아무도 안 읽는 답변에 LLM 요금이 계속 나간다.**
+    queryFn: ({ signal }) => {
       setProgress([]);
-      return askStream(submitted, (event) => {
-        if (event.type === "progress") {
-          setProgress((prev) => [...prev, event]);
-        }
-      });
+      return askStream(
+        submitted,
+        (event) => {
+          if (event.type === "progress") {
+            setProgress((prev) => [...prev, event]);
+          }
+        },
+        { signal },
+      );
     },
     enabled: submitted.length > 0,
     // **`staleTime` 을 두지 않는다.** 처음엔 5분을 걸었다 — "AI 응답은 비싸니

@@ -92,17 +92,30 @@ class SemanticCache:
         콜러블이 **async**인 이유는 그 다음 라운드다(ADR-0028): 계산이 필요한
         경우에도 이제 전용 스레드로 나가므로 호출자가 `await` 해야 한다.
         미적중 경로의 15ms가 남 대신 자기 스레드에서 소모된다.
+
+        ## 정확 일치는 키 하나만 읽는다
+
+        예전 판본은 **정확 일치도 전 엔트리를 `mget` 으로 끌어와 역직렬화하고
+        벡터를 정규화한 뒤에** 해시를 비교했다. 위 문단이 *"정확 일치는 질의 해시
+        키만 쓰므로"* 라고 적어둔 것과 실제 동작이 달랐다 — 임베딩 계산만 미루고
+        스캔은 그대로였다.
+
+        `entry_key()` 가 (테넌트, 질의)로 결정되므로 **그냥 `GET` 하면 된다.**
+        상한이 2,000건이라 지금 규모에서 아끼는 시간은 작지만, 이 경로는 적중
+        p95 25.9ms 를 만든 자리이고 **엔트리 수에 비례해 늘어나는 유일한 부분**
+        이었다. 만료 엔트리의 지연 정리는 미적중 경로가 계속 맡는다 — 적중만
+        계속되는 동안 인덱스가 안 줄지만, 그건 `_trim` 의 상한이 받는다.
         """
+        exact_key = self.entry_key(tenant_code, query)
+        payload = await self._redis.get(exact_key)
+        if payload is not None:
+            # **여기서 반환하면 embed()는 불리지 않는다.** 그게 이 설계의 요점이고
+            # tests/test_cache.py 가 "부르면 터지는" 콜러블로 고정한다.
+            return _hit(json.loads(payload), exact_key, 1.0, "exact")
+
         entries, keys = await self._load_entries(tenant_code)
         if not entries:
             return None
-
-        exact_key = self.entry_key(tenant_code, query)
-        for entry, key in zip(entries, keys):
-            if key == exact_key:
-                # **여기서 반환하면 embed()는 불리지 않는다.** 그게 이 설계의 요점이고
-                # tests/test_cache.py 가 "부르면 터지는" 콜러블로 고정한다.
-                return _hit(entry, key, 1.0, "exact")
 
         vectors = np.stack([entry["_vector"] for entry in entries])
         query_vector = _normalize(np.asarray(await embed(), dtype=np.float32))

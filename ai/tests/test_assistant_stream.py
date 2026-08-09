@@ -152,3 +152,94 @@ class TestDailyBudgetRuleDoesNotFork:
         src = inspect.getsource(_ask_metered)
         assert "consume_daily" in src
         assert '"hit"' in src, "캐시 적중 여부를 안 본다"
+
+
+class TestEveryExitConsumesTheBudget:
+    """나가는 길이 셋이고 **셋 다** 예산을 소비하는가.
+
+    `except Exception` 으로 실패만 잡던 판본은 **취소를 놓쳤다** —
+    `asyncio.CancelledError` 는 `BaseException` 이라 그 그물을 통과한다. 그리고
+    스트리밍 경로는 클라이언트가 끊길 때마다 `task.cancel()` 을 부른다. 즉
+    "탭을 닫으면 LLM 값은 나가고 하루 예산은 안 깎인다".
+
+    **소스 스캔으로는 못 잡는다.** 위의 `TestDailyBudgetRuleDoesNotFork` 는
+    `consume_daily` 라는 글자가 있는지만 보는데, 그 글자는 예전 판본에도 있었다.
+    그래서 여기서는 실제로 태스크를 취소해 **동작**을 본다.
+    """
+
+    @staticmethod
+    def _patch(monkeypatch, ask_impl):
+        from app.core.auth import Actor
+        from app.routers import assistant
+
+        consumed: list[str] = []
+
+        async def fake_consume(actor):
+            consumed.append(actor.tenant_code)
+
+        monkeypatch.setattr(assistant, "ask", ask_impl)
+        monkeypatch.setattr(assistant, "consume_daily", fake_consume)
+        actor = Actor(user_id=3, tenant_id=1, tenant_code="nexon", role="USER")
+        request = assistant.AssistantRequest(query="검 찾아줘")
+        return consumed, actor, request
+
+    def test_취소돼도_소비한다(self, monkeypatch):
+        async def hangs(**kwargs):
+            await asyncio.sleep(3600)  # 응답을 기다리는 중에 클라이언트가 끊는다
+
+        consumed, actor, request = self._patch(monkeypatch, hangs)
+
+        async def scenario():
+            from app.routers.assistant import _ask_metered
+
+            task = asyncio.create_task(_ask_metered(actor, None, None, request))
+            await asyncio.sleep(0)  # 태스크가 await 지점까지 가게 한다
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+
+        asyncio.run(scenario())
+        assert consumed == ["nexon"], "취소가 예산을 공짜로 만든다 — 상한 우회로다"
+
+    def test_실패해도_소비한다(self, monkeypatch):
+        async def boom(**kwargs):
+            raise RuntimeError("업스트림 장애")
+
+        consumed, actor, request = self._patch(monkeypatch, boom)
+
+        async def scenario():
+            from app.routers.assistant import _ask_metered
+
+            try:
+                await _ask_metered(actor, None, None, request)
+            except RuntimeError:
+                pass
+
+        asyncio.run(scenario())
+        assert consumed == ["nexon"]
+
+    def test_적중이면_소비하지_않는다(self, monkeypatch):
+        # **반대 방향도 같이 본다.** 이게 없으면 "항상 소비한다"로 고쳐도
+        # 위 둘이 통과한다 — ADR-0044 가 막은 쪽이 도로 열린다.
+        async def cached(**kwargs):
+            return {"answer": "…", "cache": {"hit": True}}
+
+        consumed, actor, request = self._patch(monkeypatch, cached)
+        asyncio.run(_ask_metered_once(actor, request))
+        assert consumed == []
+
+    def test_미적중이면_소비한다(self, monkeypatch):
+        async def fresh(**kwargs):
+            return {"answer": "…", "cache": {"hit": False}}
+
+        consumed, actor, request = self._patch(monkeypatch, fresh)
+        asyncio.run(_ask_metered_once(actor, request))
+        assert consumed == ["nexon"]
+
+
+async def _ask_metered_once(actor, request):
+    from app.routers.assistant import _ask_metered
+
+    return await _ask_metered(actor, None, None, request)

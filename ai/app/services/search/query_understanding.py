@@ -176,8 +176,11 @@ async def understand_query(llm_client: LLMClient, query: str) -> QueryUnderstand
         understanding = _parse(await llm_client.complete(_PROMPT.format(query=query)))
     except Exception:
         logger.warning("질의 이해 실패, 원본 질의로 폴백합니다.", exc_info=True)
+        # **폴백했다는 사실을 위로 올린다.** 이 경로는 500 을 내지 않고 그럴듯한
+        # 응답을 만들어내므로, 표시하지 않으면 어디에도 흔적이 안 남는다 —
+        # `ai_requests_total{outcome}` 이 `degraded` 를 셀 수 있게 하는 값이다.
         understanding = QueryUnderstanding(
-            rewritten_query=query, filters=SearchFilters()
+            rewritten_query=query, filters=SearchFilters(), degraded=True
         )
 
     # **폴백 경로에도 적용한다.** 규칙이 "질의에 무속성이 있고 아무도 안 뽑았으면

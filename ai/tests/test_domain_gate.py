@@ -15,7 +15,7 @@ import inspect
 import json
 
 from app.core.metrics import _STAGE_BY_KEY, _outcome
-from app.services.assistant.pipeline import _no_results, _out_of_domain
+from app.services.assistant.pipeline import _no_results, _out_of_domain, _search_cost
 from app.services.cache.policy import is_cacheable
 from app.services.router.intents import Intent
 from app.services.search import domain_gate
@@ -75,7 +75,17 @@ class TestVerdictParsing:
             async def complete(self, prompt: str) -> str:
                 raise RuntimeError("업스트림 장애")
 
-        assert asyncio.run(domain_gate.judge_in_domain(_Broken(), "검 찾아줘")) is True
+        # **두 번째 값이 "게이트가 조용히 열렸다"는 신호다.** 위 모듈 독스트링이
+        # 그 대가를 인정하며 "로그와 메트릭이 맡는다"고 적어뒀는데, 있던 메트릭은
+        # `outcome="out_of_domain"` 뿐이라 게이트가 **닫힌** 횟수만 셌다.
+        assert asyncio.run(domain_gate.judge_in_domain(_Broken(), "검 찾아줘")) == (True, True)
+
+    def test_대조_정상_판정은_내려앉지_않았다고_말한다(self):
+        class _Ok:
+            async def complete(self, prompt: str) -> str:
+                return "YES"
+
+        assert asyncio.run(domain_gate.judge_in_domain(_Ok(), "검 찾아줘")) == (True, False)
 
 
 class TestExtractionPromptStaysClean:
@@ -158,8 +168,25 @@ class TestOutOfDomainPayload:
         도메인 밖이라는 걸 알았을 때는 이미 둘 다 돈 뒤다. 지연은 하나치인데
         비용은 둘이라는 것이 이 설계의 대가이고, 그 대가를 숫자로 남긴다.
         """
-        assert _out_of_domain()["llm_calls"] == 2
-        assert _no_results({"subcategory": "검"})["llm_calls"] == 2
+        cost = _search_cost({"llm_calls": 2, "timings": {}})
+        assert cost["llm_calls"] == 2
+        # **그 값은 이제 여기서 안 만든다.** 두 헬퍼가 각자 상수 2를 적어두면
+        # 장애 때 거짓이 되고, 같은 사실의 출처가 둘이 된다.
+        assert "llm_calls" not in _out_of_domain()
+        assert "llm_calls" not in _no_results({"subcategory": "검"})
+
+    def test_내려앉으면_그만큼_뺀다(self):
+        """프로바이더가 죽으면 두 호출은 **성사되지 않는다.**
+
+        시세(3→2)·이상거래(1→0)는 이미 빼고 있었고 검색만 2로 박혀 있었다.
+        `degraded` 도 같이 서야 한다 — 검색은 500 도 안 나고 응답도 그럴듯해서
+        **다른 신호가 아예 없는** 분기다.
+        """
+        both_down = _search_cost({"llm_calls": 0, "timings": {}, "degraded": True})
+        assert both_down["llm_calls"] == 0
+        assert both_down["degraded"] is True
+        # 정상 응답에는 `degraded` 를 아예 안 싣는다(다른 분기와 같은 모양).
+        assert "degraded" not in _search_cost({"llm_calls": 2, "timings": {}})
 
     def test_cannot_echo_the_query_because_it_never_sees_it(self):
         """**되풀이가 구조적으로 불가능하다.**

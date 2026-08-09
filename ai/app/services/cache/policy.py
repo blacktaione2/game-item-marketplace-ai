@@ -6,12 +6,13 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from app.services.router.intents import Intent
 
 _HOUR = 3600
+_KST = timezone(timedelta(hours=9))
 
 # (캐시 가능 여부, 고정 TTL 초). TTL이 None이면 동적 계산(_dynamic_ttl).
 _POLICY: dict[Intent, tuple[bool, int | None]] = {
@@ -84,6 +85,19 @@ def is_cacheable(intent: Intent, response: dict[str, Any] | None = None) -> bool
     if response is not None and response.get("out_of_domain"):
         return False
 
+    # **설명 LLM 이 죽어 내려앉은 응답도 저장하지 않는다** (ADR-0041 의 뒤늦은 짝).
+    #
+    # 위 둘과 이유가 또 다르다. 여기서는 판정이 비결정적인 것도 아니고 답이 낡는
+    # 것도 아니다 — **답이 맞다.** 다만 그 답의 품질이 *그 순간 프로바이더가
+    # 죽어 있었다*는 일시적 사실로 정해졌다. 시세 분기의 TTL 은 자정까지이므로,
+    # OpenAI 가 5분 뒤 복구돼도 같은 질의는 몇 시간 동안 축약 문장을 받는다.
+    #
+    # **장애를 캐시에 굳히지 않는다**가 이 조항의 전부다. 대가는 장애 중 적중률이
+    # 떨어지는 것인데, 장애 중에 아끼려는 건 애초에 그 프로바이더 호출이라
+    # 잃을 게 없다.
+    if response is not None and response.get("degraded"):
+        return False
+
     return True
 
 
@@ -97,7 +111,25 @@ def ttl_seconds(intent: Intent, now: datetime | None = None) -> int:
         return 0
     if fixed is not None:
         return fixed
-    return _until_midnight(now or datetime.now())
+    return _until_midnight(now or _kst_now())
+
+
+def _kst_now() -> datetime:
+    """한국시간 기준 현재 시각 (naive).
+
+    **`datetime.now()` 를 쓰고 있었다.** 그건 프로세스가 도는 곳의 로컬 시각이라,
+    개발 박스(KST)에서는 맞고 **배포 컨테이너(UTC)에서는 9시간 어긋난다.**
+
+    그리고 `core/rate_limit.py` 의 주석이 *"`cache/policy.py::_until_midnight` 과
+    같은 계산이다"* 라고 단언하고 있었는데 사실이 아니었다 — 그쪽은 처음부터
+    명시적 KST 다. **두 자정이 서로 다른 시각이었다.** 같은 말을 두 곳에서 하되
+    한쪽만 시간대를 정하면, 나중에 읽는 사람은 정한 쪽을 보고 안 정한 쪽도
+    그렇겠거니 한다.
+
+    맞추는 방향을 KST 로 잡은 이유는 그쪽이 **설명 가능한 값**이기 때문이다.
+    시세 시리즈의 날짜 경계도, 사용자에게 말할 "자정"도 하나여야 한다.
+    """
+    return datetime.now(timezone.utc).astimezone(_KST).replace(tzinfo=None)
 
 
 def _until_midnight(now: datetime) -> int:
