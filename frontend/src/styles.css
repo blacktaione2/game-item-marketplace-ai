@@ -456,29 +456,6 @@ th {
   font-variant-numeric: tabular-nums;
 }
 
-/* ── 파이프라인 안내 ────────────────────────────────────────────────
-   응답 배지는 질문을 해야만 나타난다. 그전까지 이 프로젝트의 요점이 화면
-   어디에도 없었다. */
-.hint-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
-  gap: 10px;
-  align-items: stretch;
-}
-.hint-cell {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  align-items: flex-start;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 10px 12px;
-  line-height: 1.45;
-}
-.hint-cell .muted {
-  flex: 1;
-}
-
 /* 결과와 전체 목록 사이의 구분선. */
 .sep {
   border: none;

@@ -161,11 +161,6 @@ export default function Assistant() {
 
       {ask.data && <Result data={ask.data} onOpenItem={(id) => navigate(`/items/${id}`)} />}
 
-      {/* 질의 전에는 **무엇을 물을 수 있는지**를 설명이 대신한다. 배지가 실제
-          응답으로 채워지기 전까지 이 프로젝트의 요점(요청마다 다른 경로)이
-          화면 어디에도 안 보였다. */}
-      {!submitted && !ask.isFetching && <PipelineHint />}
-
       {/* **질의가 없을 때의 화면이 빈 여백이면 안 된다.** 거래소인데 매물을 볼 수가
           없었고, 처음 온 사람은 무엇을 물어야 하는지도 몰랐다. 검색의 "빈 상태"를
           목록으로 채운다 — 별도 라우트를 만들지 않은 이유는 이 둘이 같은 질문의
@@ -177,42 +172,6 @@ export default function Assistant() {
           결과가 있을 때는 제목을 붙여 두 목록을 구분한다. */}
       {submitted && ask.data && <hr className="sep" />}
       <ItemBrowser heading={submitted ? "전체 매물에서 더 보기" : undefined} />
-    </div>
-  );
-}
-
-/**
- * 질의 전 안내 — **이 프로젝트가 무엇을 다르게 하는지**를 화면에 남긴다.
- *
- * 응답의 배지 줄(의도·판정·캐시·LLM 호출 수)이 이 서비스의 요점인데, 그건
- * **질문을 해야만 나타난다.** 처음 온 사람에게는 검색창 하나만 보이고, 그러면
- * 평범한 검색창과 구분되지 않는다.
- *
- * 숫자는 `docs/02-AI-Pipeline/요청-타입별-파이프라인.md` 의 값과 같아야 한다.
- * 복합만 실측 범위(ADR-0046)라 고정 숫자를 안 쓴다.
- */
-function PipelineHint() {
-  return (
-    <div className="card stack hint">
-      <div className="row">
-        <strong>요청을 종류별로 나눠 처리합니다</strong>
-        <span className="muted">— 답이 나올 때 실제 경로가 배지로 표시됩니다</span>
-      </div>
-      <div className="row hint-grid">
-        {[
-          ["아이템 검색", "BM25 + 벡터 → RRF → 재순위", "LLM 2회"],
-          ["시세 예측", "LSTM · 이력이 얕으면 Cold Start", "LLM 3회"],
-          ["이상거래 점검", "오토인코더 + 피처별 기여도", "LLM 1회"],
-          ["안내·인사", "정적 응답", "LLM 0회"],
-          ["복합 질의", "MCP 도구를 여러 번 호출", "LLM 실측"],
-        ].map(([title, how, cost]) => (
-          <div key={title} className="hint-cell">
-            <strong>{title}</strong>
-            <span className="muted">{how}</span>
-            <span className="badge">{cost}</span>
-          </div>
-        ))}
-      </div>
     </div>
   );
 }
