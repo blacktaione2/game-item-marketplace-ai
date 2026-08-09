@@ -86,10 +86,12 @@ export default function Login({ onSuccess }: { onSuccess: (r: LoginResult) => vo
                 <button
                   key={account.username}
                   type="button"
-                  className="chip"
+                  // GM 은 눈에 띄게 둔다 — 이 화면에서 가장 볼 값어치가 있는
+                  // 계정이고, 색 말고도 `warn` 테두리로 구분이 선다.
+                  className={`chip${account.admin ? " warn" : ""}`}
                   onClick={() => {
                     setUsername(account.username);
-                    setPassword(DEMO_PASSWORD);
+                    setPassword(account.admin ? ADMIN_PASSWORD : DEMO_PASSWORD);
                   }}
                   title={account.note}
                 >
@@ -101,8 +103,9 @@ export default function Login({ onSuccess }: { onSuccess: (r: LoginResult) => vo
                 공백으로 바꾸므로, 태그를 다음 줄로 내리면 화면에 `( gm_admin )`
                 처럼 벌어져 보인다. */}
             <span className="muted">
-              비밀번호 <code>{DEMO_PASSWORD}</code> · GM 계정(<code>gm_admin</code>)은
-              이상거래 큐를 볼 수 있어 비밀번호를 공개하지 않습니다
+              일반 계정 <code>{DEMO_PASSWORD}</code> · GM 계정{" "}
+              <code>{ADMIN_PASSWORD}</code> — GM으로 들어가면 <strong>이상거래
+              검토 큐</strong>가 보입니다
             </span>
           </div>
         </section>
@@ -151,18 +154,43 @@ export default function Login({ onSuccess }: { onSuccess: (r: LoginResult) => vo
 }
 
 /**
- * 공개된 데모 계정. **`gm_admin` 은 일부러 뺐다** — 이상거래 큐에 닿을 수 있는
- * 유일한 역할이라 비밀번호가 공개 대상이 아니다(README 와 같은 기준).
+ * 공개된 데모 계정.
  *
- * 비밀번호를 화면에 적는 것이 모순이 아닌 이유는 README 에 적혀 있다: 이 로그인
- * 게이트의 목적은 비밀을 지키는 게 아니라 **크롤러와 우연한 접근을 막고 요청
- * 한도를 신원에 걸기 위한 것**이다.
+ * ## GM 계정도 공개한다 (ADR-0031 정정)
+ *
+ * 처음에는 `gm_admin` 만 뺐다. 근거로 적혀 있던 문장은
+ * *"GM 비밀번호는 공개하지 않는다 — 그게 비밀번호를 둘로 나눈 이유다"* 였는데,
+ * **두 결정이 한 문장에 묶여 있었다.**
+ *
+ * - **둘로 나누는 것**에는 근거가 있다. 값이 하나면 데모 비밀번호를 아는 사람이
+ *   곧 GM 이라 역할 인가가 공허해진다. 그리고 이 성질은 **코드가 강제한다** —
+ *   `SecretGuard` 가 prod 에서 둘이 같으면 기동을 거부하고, `LoginTest` 가
+ *   양방향 교차 로그인을 막는 것을 단언한다.
+ * - **감추는 것**에는 근거가 없다. 값을 공개해도 서버의 역할 검사는 그대로다.
+ *   USER 토큰은 여전히 `/api/anomaly/alerts` 에서 **403** 이다.
+ *
+ * 감춰서 잃던 것은 컸다. 프론트가 ADMIN 이 아니면 `/anomalies` 링크를 숨기므로
+ * **큐 화면이 모든 방문자에게 안 보였다** — 오토인코더를 Isolation Forest 대신
+ * 고른 유일한 이유(피처별 기여도로 근거를 보여줄 수 있다는 것, ADR-0009)를
+ * 화면으로 증명할 방법이 없었다.
+ *
+ * 대상 데이터도 감출 성질이 아니다: 합성 코퍼스이고(`id_space: "synthetic"` 가
+ * 모든 알림에 박혀 나간다), 엔드포인트는 **읽기 전용**이며 LLM 을 부르지 않는다.
+ *
+ * 비밀번호를 화면에 적는 것이 모순이 아닌 이유는 README 에 있다: 이 로그인
+ * 게이트의 목적은 비밀을 지키는 게 아니라 **익명 대량 호출을 막고 요청 한도를
+ * 신원에 걸기 위한 것**이다.
  */
 const DEMO_PASSWORD = "test1234";
 
+/** **`DEMO_PASSWORD` 와 반드시 달라야 한다** — 같아지면 위의 "둘로 나눈다"가 무너지고
+ *  `SecretGuard` 가 prod 기동을 거부한다. */
+const ADMIN_PASSWORD = "gmtest1234";
+
 const DEMO_LOGINS = [
-  { username: "buyer_lee", note: "구매·입찰 이력이 있는 계정" },
-  { username: "seller_kim", note: "판매자 쪽 거래가 섞여 있다" },
-  { username: "trader_park", note: "" },
-  { username: "newbie_choi", note: "" },
+  { username: "buyer_lee", note: "구매·입찰 이력이 있는 계정", admin: false },
+  { username: "seller_kim", note: "판매자 쪽 거래가 섞여 있다", admin: false },
+  { username: "trader_park", note: "", admin: false },
+  { username: "newbie_choi", note: "", admin: false },
+  { username: "gm_admin", note: "GM — 이상거래 검토 큐를 볼 수 있다", admin: true },
 ];

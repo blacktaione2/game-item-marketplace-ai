@@ -142,6 +142,13 @@ button.chip:hover {
   color: var(--text-primary);
 }
 
+/* GM 계정 칩. **색만으로 구분하지 않는다** — 테두리까지 바꿔야 색각 이상과
+   흑백 인쇄에서도 구분이 선다(이 저장소가 표 정렬 표시에 쓴 규칙과 같다). */
+button.chip.warn {
+  border-color: var(--warning);
+  color: var(--warning);
+}
+
 .chip-row {
   gap: 6px;
 }
