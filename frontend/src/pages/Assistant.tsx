@@ -433,19 +433,27 @@ function Result({
           >
             LLM 호출 <strong>{data.llm_calls}회</strong>
           </span>
-          {/* 0건은 LLM을 안 거친 확정 응답이다. 설명 생성 호출이 빠져서 2회가
-              아니라 1회여야 한다 — 2회면 회귀다. */}
+          {/* 0건은 LLM 설명을 안 거친 확정 응답이다.
+              **`llm_calls` 로는 그걸 판정할 수 없다.** 예전 판본은 `> 1` 이면
+              회귀라고 색을 냈는데, 그건 ADR-0036 시절(검색 분기 1회) 값이다.
+              ADR-0039 가 도메인 게이트를 병렬 호출로 추가하면서 **검색 분기
+              전체가 2회**가 됐고 — 찾음·0건·도메인밖이 전부 같은 값이다 —
+              그래서 정상 응답이 매번 빨간 배지로 떴다.
+              판정은 `no_results` 플래그 자체가 한다(이 배지가 뜬다는 것이 곧
+              그 판정이다). 설명 호출이 되살아나는 회귀는 화면이 아니라
+              `tests/test_no_results.py` 가 고정한다. */}
           {data.no_results && (
-            <span className={`badge ${data.llm_calls > 1 ? "fail" : "hit"}`}>
+            <span className="badge hit">
               결과 없음 <strong>LLM 설명 생략</strong>
             </span>
           )}
           {/* **거절도 파이프라인의 동작이다** (ADR-0039). 이게 없으면 화면에는
               안내 문장 하나만 남아서, 게이트가 판단한 것인지 그냥 검색이
               실패한 것인지 구분되지 않는다. `no_results` 와 나란히 두는 이유는
-              둘이 서로 다른 판정이기 때문이다 — 동시에 뜰 일은 없다. */}
+              둘이 서로 다른 판정이기 때문이다 — 동시에 뜰 일은 없다.
+              색을 `llm_calls` 로 정하지 않는 이유는 위 `no_results` 와 같다. */}
           {data.out_of_domain && (
-            <span className={`badge ${data.llm_calls > 1 ? "fail" : "hit"}`}>
+            <span className="badge hit">
               도메인 밖 <strong>검색·설명 생략</strong>
             </span>
           )}

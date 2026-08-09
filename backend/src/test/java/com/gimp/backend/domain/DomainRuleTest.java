@@ -188,6 +188,51 @@ class DomainRuleTest {
                             .content("{\"name\":\"" + "A".repeat(201) + "\",\"price\":1000}"))
                     .andExpect(status().isBadRequest());
         }
+
+        /**
+         * 이름은 묶여 있는데 <b>금액은 안 묶여 있었다</b> — 같은 DTO 안에서.
+         *
+         * <p>{@code price} 컬럼은 {@code numeric(19,2)} 라 절댓값 {@code 10^17} 미만만
+         * 담는다(실측: PostgreSQL {@code numeric field overflow}). {@code @DecimalMax}
+         * 가 없으면 검증을 통과하고 INSERT 에서 터지는데,
+         * {@code DataIntegrityViolationException} 에는 핸들러가 없어 <b>500</b> 이 된다.
+         *
+         * <p>ADR-0035 의 규칙을 그대로 적용한다: <i>한 필드는 묶여 있는데 이웃이 안
+         * 묶여 있으면 그건 결정이 아니라 누락이다.</i>
+         */
+        @Test
+        void 금액이_컬럼_상한을_넘으면_400이다() throws Exception {
+            mockMvc.perform(post("/api/items")
+                            .header("Authorization", bearer(seller))
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"name\":\"천문학적 검\",\"saleType\":\"FIXED_PRICE\","
+                                    + "\"price\":100000000000000000,\"stock\":1}"))
+                    .andExpect(status().isBadRequest());
+        }
+
+        /**
+         * <b>경계로 잰다.</b> "크면 막힌다"만 확인하면 상한을 어긋나게 잡아도 통과한다 —
+         * 이 값이 거절되면 컬럼이 담을 수 있는 것을 DTO 가 막고 있다는 뜻이다.
+         */
+        @Test
+        void 금액이_정확히_상한이면_등록된다() throws Exception {
+            mockMvc.perform(post("/api/items")
+                            .header("Authorization", bearer(seller))
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"name\":\"상한가 검\",\"saleType\":\"FIXED_PRICE\","
+                                    + "\"price\":99999999999999999.99,\"stock\":1}"))
+                    .andExpect(status().isCreated());
+        }
+
+        /** 이름과 같은 이유로 수정 경로도 막는다. */
+        @Test
+        void 수정에서도_금액_상한이_막힌다() throws Exception {
+            mockMvc.perform(put("/api/items/" + fixedPriceItem.getId())
+                            .header("Authorization", bearer(seller))
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"name\":\"검\",\"price\":100000000000000000}"))
+                    .andExpect(status().isBadRequest());
+        }
     }
 
     // --- 구매 ---------------------------------------------------------------
@@ -303,6 +348,19 @@ class DomainRuleTest {
                     .singleElement()
                     .extracting(t -> t.getBuyer().getId())
                     .isEqualTo(buyer.getId());
+        }
+
+        /**
+         * 등록가만 묶고 입찰가를 열어두면 같은 결함이 경로 하나로 남는다 (ADR-0035).
+         *
+         * <p>{@code current_bid_price} 도 {@code numeric(19,2)} 다. 상한이 없으면
+         * 도메인 규칙(현재가 초과)은 통과하고 UPDATE 에서 터져 500 이 된다 —
+         * <b>거절 사유가 "너무 큼"이 아니라 "서버 고장"으로 나온다.</b>
+         */
+        @Test
+        void 입찰가도_컬럼_상한을_넘으면_400이다() throws Exception {
+            mockMvc.perform(bid(auctionItem, buyer, "100000000000000000"))
+                    .andExpect(status().isBadRequest());
         }
     }
 

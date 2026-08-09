@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import json
 
-from app.services.agent.agent import _parse_items, _remember_item
+from app.services.agent.agent import _parse_items, _remember_item, _resolve_item
 
 
 class _Call:
@@ -115,3 +115,49 @@ class TestRememberItem:
             return seen
 
         assert old_implementation(text) == {}, "옛 구현이 통과하면 표본이 잘못됐다"
+
+
+class TestResolveItem:
+    """카드가 뜨기 시작했으니, **무엇을 가리키는지**가 비로소 문제가 된다.
+
+    `_remember_item` 이 고쳐지기 전에는 `resolved_item` 이 늘 `None` 이라 이
+    로직이 한 번도 실행되지 않았다. 이제 실행되므로 여기에 검사가 필요하다.
+    """
+
+    SECOND = {**ITEM, "item_id": 12, "name": "+9 강화 롱소드"}
+
+    def test_예측이_고른_아이템을_돌려준다(self):
+        seen = {24: ITEM, 12: self.SECOND}
+        assert _resolve_item(12, seen)["name"] == "+9 강화 롱소드"
+
+    def test_고른_것이_없으면_검색한_것_중_첫_번째(self):
+        seen = {24: ITEM, 12: self.SECOND}
+        assert _resolve_item(None, seen)["item_id"] == 24
+
+    def test_검색도_예측도_없으면_없음(self):
+        assert _resolve_item(None, {}) is None
+
+    def test_예측이_고른_id_를_못_찾으면_다른_것을_주지_않는다(self):
+        """**이게 이번에 고친 것이다.**
+
+        모델이 검색을 거치지 않은 id 로 예측하면 — 질의에 적힌 번호를 그대로
+        쓰거나 지어낸 경우 — 예전 판본은 "검색한 것 중 첫 번째"로 내려갔다.
+        답변은 99번을 말하는데 카드는 24번을 가리킨다. 사용자가 확인할 방법이
+        없는 채로 그럴듯하므로, **빈 카드가 맞다.**
+        """
+        seen = {24: ITEM, 12: self.SECOND}
+        assert _resolve_item(99, seen) is None
+
+    def test_옛_폴백이라면_엉뚱한_것을_준다(self):
+        """**공허 방지.** 옛 판본을 그대로 돌려 표본이 실제로 구별되는지 본다."""
+        seen = {24: ITEM, 12: self.SECOND}
+
+        def old_implementation(focus_id, seen_items):
+            resolved = seen_items.get(focus_id) if focus_id is not None else None
+            if resolved is None and seen_items:
+                resolved = next(iter(seen_items.values()))
+            return resolved
+
+        assert old_implementation(99, seen)["item_id"] == 24, (
+            "옛 구현이 None 을 주면 표본이 잘못됐다 — 구별할 것이 없다"
+        )

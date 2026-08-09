@@ -54,6 +54,19 @@ public class Item extends BaseTimeEntity {
     @Column(nullable = false, length = 20)
     private SaleType saleType;
 
+    /**
+     * 금액 컬럼이 담을 수 있는 최댓값. <b>DTO 의 {@code @DecimalMax} 가 이 값을 쓴다.</b>
+     *
+     * <p>{@code numeric(19,2)} 는 절댓값이 {@code 10^17} 미만이어야 한다(PostgreSQL:
+     * "A field with precision 19, scale 2 must round to an absolute value less than
+     * 10^17"). 그래서 상한은 소수 둘까지 채운 {@code 99999999999999999.99} 다.
+     *
+     * <p>여기 두는 이유는 <b>숫자가 컬럼 정의 옆에 있어야 하기 때문</b>이다. 세 DTO 에
+     * 같은 리터럴을 적으면 {@code precision} 을 고칠 때 한 곳만 바뀐다 — 이 저장소가
+     * 반복해서 겪은 결함이다.
+     */
+    public static final String MAX_PRICE = "99999999999999999.99";
+
     /** FIXED_PRICE: 구매가. AUCTION: 시작가(입찰 시작 기준가). */
     @Column(nullable = false, precision = 19, scale = 2)
     private BigDecimal price;

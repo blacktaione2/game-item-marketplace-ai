@@ -161,10 +161,7 @@ async def run_agent(
             answer = (await llm_client.chat(messages)).content
             llm_ms += (time.perf_counter() - call_started) * 1000
 
-    # 예측이 고른 아이템이 있으면 그것, 없으면 검색한 것 중 첫 번째.
-    resolved = seen_items.get(focus_id) if focus_id is not None else None
-    if resolved is None and seen_items:
-        resolved = next(iter(seen_items.values()))
+    resolved = _resolve_item(focus_id, seen_items)
 
     return {
         "answer": answer,
@@ -238,6 +235,28 @@ def _parse_items(text: str) -> list[dict[str, Any]]:
         elif isinstance(value, dict):
             items.append(value)
     return items
+
+
+def _resolve_item(
+    focus_id: int | None, seen: dict[int, dict[str, Any]]
+) -> dict[str, Any] | None:
+    """답변이 가리키는 아이템. 예측이 고른 것 우선, 없으면 검색한 것 중 첫 번째.
+
+    **예측이 고른 id 를 못 찾으면 아무것도 주지 않는다.** 예전 판본은 그때도
+    "검색한 것 중 첫 번째"로 내려갔는데, 그건 *다른* 아이템이다 — 모델이 검색을
+    거치지 않은 id 로 예측하면(질의에 적힌 번호를 그대로 쓰거나 지어낸 경우)
+    답변은 A 를 말하는데 카드는 B 를 가리킨다.
+
+    **틀린 카드는 빈 카드보다 나쁘다.** 빈 카드는 사용자가 없다는 걸 알지만,
+    틀린 카드는 확인할 방법이 없는 채로 그럴듯하다. `_remember_item` 이
+    조용히 실패해서 카드가 **안 뜨던** 결함을 고친 직후라 더 그렇다 — 이제
+    뜨기 시작했으니, 뜨는 것이 맞는지가 비로소 문제가 된다.
+
+    폴백은 애초에 고른 것이 없을 때(`focus_id is None`)만 쓴다.
+    """
+    if focus_id is not None:
+        return seen.get(focus_id)
+    return next(iter(seen.values())) if seen else None
 
 
 def _remember_item(call: Any, text: str, seen: dict[int, dict[str, Any]]) -> None:

@@ -23,8 +23,36 @@ case "$SUITE" in
   purchase|ai) ;;
   *) echo "알 수 없는 스위트: '$SUITE' (purchase | ai)" >&2; exit 2 ;;
 esac
-VUS="${3:-20}"
-DURATION="${4:-30s}"
+
+# **모드도 같은 이유로 막는다.** 위 가드는 스위트에만 걸려 있었는데, 아래
+# 분기는 모드를 그대로 k6 에 넘기고 k6 는 모르는 값을 기본값으로 조용히
+# 대체한다(`ai-search.js` 는 `cache-warm`, `purchase-contention.js` 는
+# `contended`). 즉 `ai live-lmm` 같은 오타는 **다른 프로파일을 돌리고도 정상
+# 종료한다** — 스위트 오타로 이미 한 번 겪은 그 일이 한 축 옆에 그대로 남아
+# 있었다. *가드를 한 축에만 걸면 이웃 축은 안 걸린 채로 남는다.*
+case "$SUITE:$MODE" in
+  purchase:contended|purchase:spread|purchase:step) ;;
+  ai:cache-warm|ai:live-llm) ;;
+  *) echo "알 수 없는 모드: '$SUITE $MODE'" >&2
+     echo "  purchase → contended | spread | step" >&2
+     echo "  ai       → cache-warm | live-llm" >&2
+     exit 2 ;;
+esac
+
+# **기본값을 여기서 만들지 않는다.** 예전에는 `VUS="${3:-20}"` 였는데, 그 20이
+# k6 스크립트의 기본값을 덮어썼다. `ai-search.js` 는 `live-llm` 일 때 **3**을
+# 기본으로 두고 있다 — OpenAI 를 20 동시로 때리지 않으려고 일부러 그렇게 둔
+# 값인데, run.sh 를 거치면 그 방어가 죽은 코드가 됐다. 문서화된 호출
+# (`./load/run.sh ai live-llm 3 30s`)은 네 인자를 다 적었을 때만 맞았고,
+# 생략하면 조용히 20이 나갔다.
+#
+# 그래서 **주어졌을 때만 넘긴다.** 기본값은 각 k6 스크립트가 소유한다 —
+# 같은 숫자를 두 곳에 두면 한쪽만 바뀌는 게 이 저장소의 단골 결함이다.
+VUS="${3:-}"
+DURATION="${4:-}"
+K6_ARGS=()
+[ -n "$VUS" ] && K6_ARGS+=(-e "VUS=$VUS")
+[ -n "$DURATION" ] && K6_ARGS+=(-e "DURATION=$DURATION")
 
 # 두 시나리오 모두 setup()에서 로그인한다 (ADR-0031). **여기서 먼저 막는다** —
 # 없이 돌리면 k6 의 setup 예외로 나타나서 원인이 부하 스크립트처럼 보인다.
@@ -72,12 +100,12 @@ if [ "$SUITE" = "purchase" ]; then
     k6 run -e PROFILE=contended -e STAGES=step -e "DEMO_PASSWORD=$DEMO_PASSWORD" \
       "$ROOT/load/k6/purchase-contention.js" 2>&1 | tee "$OUT/$TAG.k6.txt"
   else
-    k6 run -e "PROFILE=$MODE" -e "VUS=$VUS" -e "DURATION=$DURATION" \
+    k6 run -e "PROFILE=$MODE" "${K6_ARGS[@]}" \
       -e "DEMO_PASSWORD=$DEMO_PASSWORD" \
       "$ROOT/load/k6/purchase-contention.js" 2>&1 | tee "$OUT/$TAG.k6.txt"
   fi
 else
-  k6 run -e "MODE=$MODE" -e "VUS=$VUS" -e "DURATION=$DURATION" \
+  k6 run -e "MODE=$MODE" "${K6_ARGS[@]}" \
     -e "DEMO_PASSWORD=$DEMO_PASSWORD" \
     "$ROOT/load/k6/ai-search.js" 2>&1 | tee "$OUT/$TAG.k6.txt"
 fi
