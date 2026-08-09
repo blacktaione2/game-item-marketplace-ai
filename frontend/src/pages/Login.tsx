@@ -13,15 +13,24 @@ import { TENANT } from "../demo";
  * **회원가입 링크가 없는 것은 누락이 아니다.** 계정은 시드로 고정이고, 가입을 열면
  * 이메일 인증·비밀번호 재설정에 더해 공개 배포에서는 스팸 계정 방어까지 따라온다.
  *
- * ## 왜 왼쪽 절반이 생겼나
+ * ## 이 화면은 소개가 아니라 문이다
  *
- * 이 화면은 **처음 온 사람이 3초 안에 "이게 뭔지" 판단하는 유일한 자리**인데,
- * 검은 배경 한가운데 입력칸 두 개가 전부였다. 실제 배포 화면을 브라우저로 열어
- * 확인한 결과이기도 하다. 로그인 폼만 있는 화면은 **자기가 무엇의 문인지 말하지
- * 않는다.**
+ * 한때 왼쪽 절반에 설계 요약 셋을 넣었다. 걷어낸 이유는 **중복**이다 — 같은 내용이
+ * README 에 있고, 파이프라인이 실제로 어떻게 갈리는지는 로그인 뒤 화면이 배지와
+ * 안내 블록으로 보여준다. 문 앞에서 두 번 말할 이유가 없다.
  *
- * 왼쪽에 적은 셋은 홍보 문구가 아니라 이 저장소가 **측정해서 근거를 가진 것**들만
- * 골랐다(요청 타입별 분기 · 하이브리드 검색 + 재순위 · 오버셀 0건).
+ * ## 칩은 바로 로그인시킨다 — 다만 한 줄은 남긴다
+ *
+ * 칩을 누르면 채우고 곧바로 제출한다. 데모에서 아이디·비밀번호를 손으로 옮겨
+ * 적게 할 이유가 없다.
+ *
+ * **그런데 그러면 겉모습이 ADR-0031 이 지운 그 드롭다운과 같아진다** — 이름을
+ * 고르면 들어가지는 화면. 속은 정반대로 `POST /api/auth/login` 에 BCrypt 검증이지만,
+ * 보는 사람은 구분할 수 없다. 그래서 **"실제 비밀번호 인증을 거친다"는 한 줄**을
+ * 남긴다. 홍보 문구가 아니라 **화면이 자기가 무엇인지 잘못 말하는 것을 막는 문장**이다.
+ *
+ * 비밀번호 값 자체는 적지 않는다. 칩이 채워주므로 화면에서 쓸 일이 없고, 값이
+ * 필요한 사람(직접 입력해 보려는 사람)은 README 에서 본다.
  */
 export default function Login({ onSuccess }: { onSuccess: (r: LoginResult) => void }) {
   const [username, setUsername] = useState("");
@@ -29,14 +38,18 @@ export default function Login({ onSuccess }: { onSuccess: (r: LoginResult) => vo
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  async function submit(event: React.FormEvent) {
-    event.preventDefault();
+  /**
+   * 폼 제출과 칩 클릭이 **같은 함수를 쓴다.** 칩 쪽에 따로 로그인 코드를 두면
+   * 오류 처리나 busy 상태가 한쪽에만 붙는 일이 생긴다 — 이 저장소가 두 라우트의
+   * 정산 규칙을 한 함수로 모은 것과 같은 이유다(ADR-0044).
+   */
+  async function doLogin(id: string, pw: string) {
     setBusy(true);
     setError(null);
     try {
       // 테넌트 코드는 상수다 (ADR-0034). 배포에 테넌트가 하나뿐이라 선택 UI 를 두지
       // 않았고, 둘 이상이 되면 여기가 선택기로 바뀌는 자리다.
-      onSuccess(await api.login(TENANT.code, username, password));
+      onSuccess(await api.login(TENANT.code, id, pw));
     } catch {
       // 서버가 아이디와 비밀번호를 구분하지 않으므로 화면도 구분하지 않는다 —
       // 여기서 갈라 말하면 서버가 막아둔 사용자 열거가 화면에서 열린다.
@@ -48,143 +61,99 @@ export default function Login({ onSuccess }: { onSuccess: (r: LoginResult) => vo
 
   return (
     <div className="login-wrap">
-      <div className="login-grid">
-        <section className="login-pitch">
-          <h1>아이템 거래소</h1>
-          <p className="lede">
-            게임 아이템·계정·재화를 사고파는 거래소입니다. 자연어 요청을
-            <strong> 종류별로 다른 파이프라인</strong>에 태워 처리합니다.
-          </p>
+      <form
+        className="card login-card"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void doLogin(username, password);
+        }}
+      >
+        <h1>아이템 거래소</h1>
+        <p className="muted">게임 아이템·계정·재화를 사고파는 거래소 데모입니다.</p>
 
-          <ul className="pitch-list">
-            <li>
-              <strong>요청마다 다르게 씁니다</strong>
-              <span className="muted">
-                검색 · 시세 예측 · 이상거래 점검 · 복합 질의를 라우터가 먼저 가릅니다.
-                안내성 질문은 LLM을 아예 부르지 않습니다
-              </span>
-            </li>
-            <li>
-              <strong>검색은 BM25 + 벡터 하이브리드</strong>
-              <span className="muted">
-                RRF로 융합한 뒤 크로스 인코더로 재순위하고, 종류·속성은 임계값이
-                아니라 하드 필터로 거릅니다
-              </span>
-            </li>
-            <li>
-              <strong>동시 구매 오버셀 0건</strong>
-              <span className="muted">
-                Redis 분산 락 + 낙관적 락. 약 26,600건 동시 구매 부하로 검증했습니다
-              </span>
-            </li>
-          </ul>
+        <label htmlFor="login-username">
+          <span className="muted">아이디</span>
+          {/* **`id`/`name` 이 없으면 비밀번호 관리자가 이 폼을 못 다룬다.**
+              `autoComplete` 만으로는 부족해서 배포본 콘솔이 이슈로 잡고 있었다
+              ("A form field element should have an id or name attribute"). */}
+          <input
+            id="login-username"
+            name="username"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            autoComplete="username"
+            autoFocus
+            required
+          />
+        </label>
 
-          <div className="demo-accounts">
-            <span className="muted">데모 계정 — 눌러서 채우세요</span>
-            <div className="row">
-              {DEMO_LOGINS.map((account) => (
-                <button
-                  key={account.username}
-                  type="button"
-                  // GM 은 눈에 띄게 둔다 — 이 화면에서 가장 볼 값어치가 있는
-                  // 계정이고, 색 말고도 `warn` 테두리로 구분이 선다.
-                  className={`chip${account.admin ? " warn" : ""}`}
-                  onClick={() => {
-                    setUsername(account.username);
-                    setPassword(account.admin ? ADMIN_PASSWORD : DEMO_PASSWORD);
-                  }}
-                  title={account.note}
-                >
-                  {account.username}
-                </button>
-              ))}
-            </div>
-            {/* **괄호와 `<code>` 사이에 공백을 만들지 않는다.** JSX 는 줄바꿈을
-                공백으로 바꾸므로, 태그를 다음 줄로 내리면 화면에 `( gm_admin )`
-                처럼 벌어져 보인다. */}
-            <span className="muted">
-              일반 계정 <code>{DEMO_PASSWORD}</code> · GM 계정{" "}
-              <code>{ADMIN_PASSWORD}</code> — GM으로 들어가면 <strong>이상거래
-              검토 큐</strong>가 보입니다
-            </span>
+        <label htmlFor="login-password">
+          <span className="muted">비밀번호</span>
+          <input
+            id="login-password"
+            name="password"
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            autoComplete="current-password"
+            required
+          />
+        </label>
+
+        {error && <p className="login-error">{error}</p>}
+
+        <button type="submit" disabled={busy || !username || !password}>
+          {busy ? "확인 중…" : "로그인"}
+        </button>
+
+        <div className="demo-accounts">
+          <span className="muted">데모 계정 — 누르면 바로 들어갑니다</span>
+          <div className="row">
+            {DEMO_LOGINS.map((account) => (
+              <button
+                key={account.username}
+                type="button"
+                // GM 은 테두리로도 구분한다 — 색만 쓰면 색각 이상과 흑백에서 사라진다.
+                className={`chip${account.admin ? " warn" : ""}`}
+                disabled={busy}
+                onClick={() => {
+                  const pw = account.admin ? ADMIN_PASSWORD : DEMO_PASSWORD;
+                  // 입력칸에도 반영한다. 실패했을 때 무엇으로 시도했는지 보이고,
+                  // 비밀번호 관리자도 이 값을 집어갈 수 있다.
+                  setUsername(account.username);
+                  setPassword(pw);
+                  void doLogin(account.username, pw);
+                }}
+                title={account.note}
+              >
+                {account.username}
+              </button>
+            ))}
           </div>
-        </section>
-
-        <form className="card login-card" onSubmit={submit}>
-          <h2>로그인</h2>
-
-          <label htmlFor="login-username">
-            <span className="muted">아이디</span>
-            {/* **`id`/`name` 이 없으면 비밀번호 관리자가 이 폼을 못 다룬다.**
-                `autoComplete` 만으로는 부족해서 배포본 콘솔이 이슈로 잡고 있었다
-                ("A form field element should have an id or name attribute"). */}
-            <input
-              id="login-username"
-              name="username"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              autoComplete="username"
-              autoFocus
-              required
-            />
-          </label>
-
-          <label htmlFor="login-password">
-            <span className="muted">비밀번호</span>
-            <input
-              id="login-password"
-              name="password"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              autoComplete="current-password"
-              required
-            />
-          </label>
-
-          {error && <p className="login-error">{error}</p>}
-
-          <button type="submit" disabled={busy || !username || !password}>
-            {busy ? "확인 중…" : "로그인"}
-          </button>
-        </form>
-      </div>
+          {/* **이 한 줄이 화면의 정직함을 지킨다.** 칩이 바로 들어가지므로 겉모습이
+              ADR-0031 이 없앤 `demo-token` 드롭다운과 같아지는데, 그건 비밀번호를
+              확인하지 않는 가짜 인증이었다. */}
+          {/* 엔드포인트 경로는 안 적는다 — API 명세에 있고, 인라인 코드가 한국어
+              조사와 붙으면 여백이 생겨 읽기가 끊긴다. 여기서 할 말은 "가짜가
+              아니다" 한 가지다. */}
+          <span className="muted">
+            칩도 <strong>실제 비밀번호 인증</strong>(BCrypt)을 거칩니다. GM 계정으로
+            들어가면 <strong>이상거래 검토 큐</strong>가 보입니다.
+          </span>
+        </div>
+      </form>
     </div>
   );
 }
 
 /**
- * 공개된 데모 계정.
+ * 공개된 데모 계정. **GM 도 공개한다** — 감추는 데 근거가 없었고, 감추면 큐 화면이
+ * 모든 방문자에게 안 보였다. 경위는 ADR-0031 의 정정 블록.
  *
- * ## GM 계정도 공개한다 (ADR-0031 정정)
- *
- * 처음에는 `gm_admin` 만 뺐다. 근거로 적혀 있던 문장은
- * *"GM 비밀번호는 공개하지 않는다 — 그게 비밀번호를 둘로 나눈 이유다"* 였는데,
- * **두 결정이 한 문장에 묶여 있었다.**
- *
- * - **둘로 나누는 것**에는 근거가 있다. 값이 하나면 데모 비밀번호를 아는 사람이
- *   곧 GM 이라 역할 인가가 공허해진다. 그리고 이 성질은 **코드가 강제한다** —
- *   `SecretGuard` 가 prod 에서 둘이 같으면 기동을 거부하고, `LoginTest` 가
- *   양방향 교차 로그인을 막는 것을 단언한다.
- * - **감추는 것**에는 근거가 없다. 값을 공개해도 서버의 역할 검사는 그대로다.
- *   USER 토큰은 여전히 `/api/anomaly/alerts` 에서 **403** 이다.
- *
- * 감춰서 잃던 것은 컸다. 프론트가 ADMIN 이 아니면 `/anomalies` 링크를 숨기므로
- * **큐 화면이 모든 방문자에게 안 보였다** — 오토인코더를 Isolation Forest 대신
- * 고른 유일한 이유(피처별 기여도로 근거를 보여줄 수 있다는 것, ADR-0009)를
- * 화면으로 증명할 방법이 없었다.
- *
- * 대상 데이터도 감출 성질이 아니다: 합성 코퍼스이고(`id_space: "synthetic"` 가
- * 모든 알림에 박혀 나간다), 엔드포인트는 **읽기 전용**이며 LLM 을 부르지 않는다.
- *
- * 비밀번호를 화면에 적는 것이 모순이 아닌 이유는 README 에 있다: 이 로그인
- * 게이트의 목적은 비밀을 지키는 게 아니라 **익명 대량 호출을 막고 요청 한도를
- * 신원에 걸기 위한 것**이다.
+ * 두 비밀번호는 **서로 달라야 한다.** 같으면 역할 분리가 무의미해지고
+ * `SecretGuard` 가 prod 기동을 거부한다. 값은 화면에 적지 않는다(README 에 있다).
  */
 const DEMO_PASSWORD = "test1234";
-
-/** **`DEMO_PASSWORD` 와 반드시 달라야 한다** — 같아지면 위의 "둘로 나눈다"가 무너지고
- *  `SecretGuard` 가 prod 기동을 거부한다. */
 const ADMIN_PASSWORD = "gmtest1234";
 
 const DEMO_LOGINS = [
