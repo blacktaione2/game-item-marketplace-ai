@@ -45,6 +45,13 @@ body {
   margin: 0;
   background: var(--page);
   color: var(--text-primary);
+  /* **한국어는 어절 중간에서 끊으면 안 된다.** CSS 기본값(`normal`)은 CJK 를
+     글자 단위로 끊을 수 있다고 보기 때문에, 화면에서 `자 / 연어`, `LLM / 을`,
+     `거 / 릅니다` 처럼 갈렸다. `keep-all` 은 공백에서만 끊는다.
+     대가는 안 끊기는 긴 토큰(URL·해시)이 넘치는 것인데, `overflow-wrap` 이
+     "정 안 되면 끊어라"로 받는다 — 둘은 짝이다. */
+  word-break: keep-all;
+  overflow-wrap: anywhere;
 }
 
 a {
@@ -392,4 +399,153 @@ th {
 }
 .progress-now {
   color: inherit;
+}
+
+/* ── 로그인 2단 구성 ────────────────────────────────────────────────
+   폼만 있는 화면은 **자기가 무엇의 문인지 말하지 않는다.** 처음 온 사람이
+   3초 안에 판단하는 유일한 자리라 왼쪽을 설명에 준다. 좁아지면 한 단으로
+   접히고 순서는 설명 → 폼 그대로다(설명을 읽고 로그인하는 순서). */
+.login-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(320px, 0.8fr);
+  gap: 40px;
+  align-items: center;
+  width: 100%;
+  max-width: 960px;
+}
+@media (max-width: 800px) {
+  .login-grid {
+    grid-template-columns: 1fr;
+    gap: 24px;
+  }
+}
+.login-pitch h1 {
+  margin: 0 0 8px;
+  font-size: 30px;
+  letter-spacing: -0.01em;
+}
+.login-pitch .lede {
+  margin: 0 0 20px;
+  color: var(--text-secondary);
+  line-height: 1.6;
+  max-width: 42ch;
+  /* 줄 끝이 고르게 갈리도록 브라우저에 맡긴다. 미지원 브라우저는 그냥 무시한다 —
+     이것 때문에 갈라진 문구를 손으로 맞추면 폰트가 바뀔 때마다 다시 틀어진다. */
+  text-wrap: pretty;
+}
+.pitch-list {
+  list-style: none;
+  margin: 0 0 24px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.pitch-list li {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  /* 색 말고도 구분이 서야 한다 — 왼쪽 규칙선이 그 역할을 한다. */
+  border-left: 2px solid var(--border);
+  padding-left: 12px;
+  line-height: 1.5;
+}
+.demo-accounts {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border-top: 1px solid var(--border);
+  padding-top: 16px;
+}
+.demo-accounts code {
+  font-size: 12px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+}
+.login-card h2 {
+  margin: 0;
+  font-size: 18px;
+}
+
+/* ── 요약 타일 ──────────────────────────────────────────────────────
+   표 위의 빈 줄을 채우면서 정보를 준다. `auto-fit` 이라 좁아지면 저절로
+   줄어든다 — 분기점을 손으로 적지 않는다. */
+.summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px;
+}
+.tile {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 14px;
+}
+.tile strong {
+  font-size: 18px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── 파이프라인 안내 ────────────────────────────────────────────────
+   응답 배지는 질문을 해야만 나타난다. 그전까지 이 프로젝트의 요점이 화면
+   어디에도 없었다. */
+.hint-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 10px;
+  align-items: stretch;
+}
+.hint-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: flex-start;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  line-height: 1.45;
+}
+.hint-cell .muted {
+  flex: 1;
+}
+
+/* 결과와 전체 목록 사이의 구분선. */
+.sep {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 4px 0;
+  width: 100%;
+}
+
+/* ── 스켈레톤 ───────────────────────────────────────────────────────
+   빈 문장 대신 **자리를 미리 차지한다.** 첫 요청이 모델 지연 로딩으로
+   길어질 수 있어서, 그동안 화면이 접혔다 펴지면 눈이 튄다.
+   `prefers-reduced-motion` 이면 반짝임을 끄고 회색 블록만 남긴다. */
+.skeleton {
+  display: block;
+  height: 12px;
+  border-radius: 6px;
+  background: linear-gradient(
+    90deg,
+    var(--grid) 25%,
+    var(--surface-1) 37%,
+    var(--grid) 63%
+  );
+  background-size: 400% 100%;
+  animation: skeleton-shimmer 1.4s ease infinite;
+}
+@keyframes skeleton-shimmer {
+  0% { background-position: 100% 50%; }
+  100% { background-position: 0 50%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .skeleton {
+    animation: none;
+    background: var(--grid);
+  }
 }

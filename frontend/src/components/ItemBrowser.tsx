@@ -28,11 +28,27 @@ const PAGE_SIZE = 20;
 
 type SortKey = "price" | "createdAt" | "name";
 
-export default function ItemBrowser() {
+export default function ItemBrowser({ heading }: { heading?: string }) {
   const navigate = useNavigate();
   const [page, setPage] = useState(0);
   const [sortKey, setSortKey] = useState<SortKey>("createdAt");
   const [desc, setDesc] = useState(true);
+
+  /**
+   * 요약용 전량 조회. **표와 별개 쿼리다.**
+   *
+   * 표는 서버 페이징을 그대로 쓰는데(그게 이 화면의 결정이다), 요약은 42건
+   * 전체를 봐야 성립한다 — 현재 페이지 20건으로 "최저가"를 내면 **페이지를
+   * 넘길 때마다 값이 바뀌는 거짓말**이 된다. 그래서 목적이 다른 두 쿼리를 둔다.
+   *
+   * 대가는 요청 하나이고, 42행이라 무시할 만하다. 규모가 커지면 이건
+   * **집계 엔드포인트로 가야 한다** — 그때는 전량을 받는 것 자체가 틀린 설계다.
+   */
+  const summary = useQuery({
+    queryKey: ["items", "summary"],
+    queryFn: () => api.items({ page: 0, size: 200 }),
+    staleTime: 60_000,
+  });
 
   const listing = useQuery({
     queryKey: ["items", page, sortKey, desc],
@@ -58,7 +74,10 @@ export default function ItemBrowser() {
     setPage(0);
   }
 
-  if (listing.isPending) return <p className="muted">매물을 불러오는 중…</p>;
+  // **빈 문장 대신 표 모양을 그린다.** 첫 진입에서 이 자리가 한 줄짜리
+  // "불러오는 중…" 이면 화면이 통째로 접혔다 펴진다 — 뒤이어 오는 표가
+  // 그만큼 밀려 내려와 눈이 튄다.
+  if (listing.isPending) return <BrowserSkeleton heading={heading} />;
   if (listing.isError)
     return <p className="error">{(listing.error as Error).message}</p>;
 
@@ -67,12 +86,14 @@ export default function ItemBrowser() {
   return (
     <div className="stack">
       <div className="row">
-        <strong>전체 매물</strong>
+        <strong>{heading ?? "전체 매물"}</strong>
         <span className="badge">
           <strong>{totalElements.toLocaleString("ko-KR")}건</strong>
         </span>
         {listing.isFetching && <span className="muted">갱신 중…</span>}
       </div>
+
+      <Summary items={summary.data?.content} />
 
       <div className="card" style={{ overflowX: "auto" }}>
         <table>
@@ -132,6 +153,73 @@ export default function ItemBrowser() {
         >
           다음 →
         </button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * 요약 타일. **표 위의 빈 줄을 채우면서 동시에 정보를 준다.**
+ *
+ * 값이 아직 없으면 **타일 자리를 비워둔 채 유지한다** — 통째로 감추면 데이터가
+ * 도착할 때 아래 표가 밀려 내려간다(레이아웃 시프트).
+ *
+ * 판매/경매는 `saleType`, 가격은 경매면 현재 입찰가를 쓴다 — 표의 가격 열과
+ * 같은 규칙이어야 두 곳이 다른 말을 하지 않는다.
+ */
+function Summary({ items }: { items?: Item[] }) {
+  const stats = (() => {
+    if (!items?.length) return null;
+    const priceOf = (i: Item) =>
+      i.saleType === "AUCTION" ? (i.currentBidPrice ?? i.price) : i.price;
+    const prices = items.map(priceOf);
+    return {
+      auction: items.filter((i) => i.saleType === "AUCTION").length,
+      fixed: items.filter((i) => i.saleType !== "AUCTION").length,
+      min: Math.min(...prices),
+      max: Math.max(...prices),
+    };
+  })();
+
+  return (
+    <div className="summary">
+      <Tile label="판매" value={stats ? `${stats.fixed}건` : "—"} />
+      <Tile label="경매" value={stats ? `${stats.auction}건` : "—"} />
+      <Tile label="최저가" value={stats ? formatWon(stats.min) : "—"} />
+      <Tile label="최고가" value={stats ? formatWon(stats.max) : "—"} />
+    </div>
+  );
+}
+
+function Tile({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="tile">
+      <span className="muted">{label}</span>
+      <strong>{value}</strong>
+    </div>
+  );
+}
+
+/** 로딩 중 표 모양. 높이를 미리 차지해 레이아웃 시프트를 막는 것이 목적이다. */
+function BrowserSkeleton({ heading }: { heading?: string }) {
+  return (
+    <div className="stack" aria-busy="true">
+      <div className="row">
+        <strong>{heading ?? "전체 매물"}</strong>
+        <span className="muted">불러오는 중…</span>
+      </div>
+      <div className="summary">
+        {[0, 1, 2, 3].map((i) => (
+          <div key={i} className="tile">
+            <span className="skeleton" style={{ width: 48 }} />
+            <span className="skeleton" style={{ width: 84, height: 18 }} />
+          </div>
+        ))}
+      </div>
+      <div className="card stack">
+        {Array.from({ length: 6 }, (_, i) => (
+          <span key={i} className="skeleton" style={{ width: `${92 - i * 4}%` }} />
+        ))}
       </div>
     </div>
   );
