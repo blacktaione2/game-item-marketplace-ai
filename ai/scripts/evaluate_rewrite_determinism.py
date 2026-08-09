@@ -114,6 +114,13 @@ async def measure(llm: OpenAIClient, query: str, runs: int) -> dict:
 #: 표본이 반쯤 사라진 채 그럴듯한 숫자가 남는다 (사례 19).
 MAX_DEGRADED_RATE = 0.05
 
+#: **질의 하나가 가져야 할 최소 유효 실행 비율.** 전체 비율만 보면 한 질의의
+#: 붕괴를 다른 질의들이 희석한다 — 질의 10건 × 10회에서 한 질의가 **5회
+#: 폴백이어도 전체는 정확히 5.0%** 라 통과했고, 그 질의는 남은 5개로
+#: `mode_agreement` **1.00(만점)** 을 냈다. 결정성은 질의별로 재는 값이므로
+#: 분모도 질의별로 지켜야 한다 (ADR-0049).
+MIN_VALID_FRACTION_PER_QUERY = 0.8
+
 
 def report(rows: list[dict], runs: int, temperature: float) -> bool:
     """표를 찍고 **채점이 유효한지**를 돌려준다."""
@@ -138,23 +145,37 @@ def report(rows: list[dict], runs: int, temperature: float) -> bool:
                 print(f"       {row['query']}  {row['degraded']}/{row['runs']}회 폴백")
         return False
 
-    empty = [r["query"] for r in rows if not r["filters"]]
-    if empty:
-        print("\n  !! 유효 표본이 0인 질의가 있어 채점하지 않는다:", ", ".join(empty))
+    # **질의별로도 본다.** 전체 비율은 한 질의의 붕괴를 다른 질의들이 희석한다 —
+    # 질의 10건 × 10회에서 한 질의가 5회 폴백이어도 전체는 정확히 5.0% 라
+    # 통과했고, 그 질의는 남은 5개로 `mode_agreement` **1.00** 을 냈다.
+    starved = [
+        f"{r['query']} ({len(r['filters'])}/{r['runs']}회 유효)"
+        for r in rows
+        if len(r["filters"]) < r["runs"] * MIN_VALID_FRACTION_PER_QUERY
+    ]
+    if starved:
+        print("\n  !! 유효 표본이 모자란 질의가 있어 **채점하지 않는다** "
+              f"(질의별 최소 {MIN_VALID_FRACTION_PER_QUERY:.0%}):")
+        for entry in starved:
+            print(f"       {entry}")
+        print("     결정성은 질의별로 재는 값이라 분모도 질의별로 지켜야 한다.")
         return False
 
     print(
-        f"{'질의':<24}{'필터':>12}{'토큰집합':>12}{'문자열':>12}"
+        f"{'질의':<22}{'폴백':>8}{'필터':>10}{'토큰집합':>10}{'문자열':>10}"
         f"{'필터일치':>10}{'토큰일치':>10}"
     )
     print("-" * 78)
 
     for row in rows:
+        # **폴백 수를 채점된 표에도 찍는다.** 예전에는 거부할 때만 찍어서,
+        # 통과한 실행에서는 어떤 질의가 몇 번 흔들렸는지 알 수 없었다.
         print(
-            f"{row['query'][:22]:<24}"
-            f"{len(set(row['filters'])):>10}가지"
-            f"{len(set(row['tokens'])):>10}가지"
-            f"{len(set(row['exact'])):>10}가지"
+            f"{row['query'][:20]:<22}"
+            f"{row['degraded']:>6}회"
+            f"{len(set(row['filters'])):>8}가지"
+            f"{len(set(row['tokens'])):>8}가지"
+            f"{len(set(row['exact'])):>8}가지"
             f"{mode_agreement(row['filters']):>10.2f}"
             f"{mode_agreement(row['tokens']):>10.2f}"
         )
@@ -200,8 +221,11 @@ def report(rows: list[dict], runs: int, temperature: float) -> bool:
     filter_ok = min(filter_agreements) >= FILTER_AGREEMENT_REQUIRED
     token_ok = sum(token_agreements) / len(rows) >= TOKEN_AGREEMENT_REQUIRED
     print(f"\n{'=' * 78}\n재작성 캐싱 전제 조건\n{'=' * 78}")
+    # **분모를 지어내지 않는다.** 예전에는 `{runs}/{runs} 동일` 이라고 찍었는데,
+    # 폴백을 빼고 채점하므로 실제 분모는 질의마다 다를 수 있다.
+    valid_min = min(len(r["filters"]) for r in rows)
     print(
-        f"  필터 추출 전 질의 {runs}/{runs} 동일        "
+        f"  필터 추출이 질의별 전 실행에서 동일 (최소 유효 {valid_min}회)   "
         f"{'충족' if filter_ok else '미충족'}  "
         f"(최저 {min(filter_agreements):.2f})"
     )

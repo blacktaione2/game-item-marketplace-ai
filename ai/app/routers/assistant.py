@@ -12,9 +12,16 @@ from pydantic import BaseModel, Field
 from app.core.auth import Actor
 from app.core.progress import ProgressFn, noop
 from app.core.rate_limit import consume_daily, limit_assistant
-from app.services.anomaly.exceptions import AnomalyModelNotTrainedError
+from app.services.anomaly.exceptions import (
+    AnomalyModelNotTrainedError,
+    UnknownTenantError,
+)
 from app.services.assistant.pipeline import ask
-from app.services.forecast.exceptions import ForecastModelNotTrainedError
+from app.services.forecast.exceptions import (
+    ForecastModelNotTrainedError,
+    InsufficientHistoryError,
+    ItemNotFoundError,
+)
 from app.services.llm.base import LLMClient
 from app.services.llm.dependencies import get_llm_client
 from app.services.search.es_client import get_es_client
@@ -23,6 +30,18 @@ from app.services.search.exceptions import TenantIndexNotFoundError
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/assistant", tags=["assistant"])
+
+#: 사용자에게 그대로 보여줄 수 있는 예외들. **두 라우트가 같은 목록을 쓴다** —
+#: 비스트리밍은 상태 코드로, 스트리밍은 페이로드로 옮길 뿐이다. 한쪽만 늘리면
+#: 같은 예외가 한쪽에서는 안내가 되고 다른 쪽에서는 500 이 된다 (ADR-0049).
+_SHOWABLE = (
+    TenantIndexNotFoundError,
+    ItemNotFoundError,
+    UnknownTenantError,
+    InsufficientHistoryError,
+    ForecastModelNotTrainedError,
+    AnomalyModelNotTrainedError,
+)
 
 
 class AssistantRequest(BaseModel):
@@ -105,8 +124,15 @@ async def assistant(
 ) -> dict[str, Any]:
     try:
         return await _ask_metered(actor, es, llm_client, request)
-    except TenantIndexNotFoundError as e:
+    # **개별 라우터가 매핑하는 예외를 여기서도 매핑한다** (ADR-0049). 예전에는 셋만
+    # 잡아서, 같은 파이프라인이 같은 예외를 던져도 `/api/forecast` 로는 404·422 가
+    # 나가고 `/api/assistant` 로는 **500** 이 나갔다. 콜드스타트 donor 가 없는
+    # 아이템을 통합 진입점으로 물으면 "요청 처리에 실패했습니다" 가 돌아온다.
+    # 이웃 라우터가 이미 판정해둔 것을 물려받지 못한 자리다(ADR-0047 의 주제).
+    except (TenantIndexNotFoundError, ItemNotFoundError, UnknownTenantError) as e:
         raise HTTPException(status_code=404, detail=str(e)) from e
+    except InsufficientHistoryError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
     except (ForecastModelNotTrainedError, AnomalyModelNotTrainedError) as e:
         raise HTTPException(status_code=503, detail=str(e)) from e
     except Exception as e:
@@ -178,11 +204,14 @@ async def assistant_stream(
                     actor, es, llm_client, request, on_progress
                 )
                 await queue.put({"type": "done", "result": result})
-            except (TenantIndexNotFoundError, ForecastModelNotTrainedError,
-                    AnomalyModelNotTrainedError) as e:
+            except _SHOWABLE as e:
                 # **스트림이 열린 뒤에는 상태 코드를 바꿀 수 없다.** 헤더가 이미
                 # 나갔으므로 404/503 을 낼 방법이 없고, 오류는 **페이로드**가
-                # 된다. 이 셋은 사용자에게 보여줄 수 있는 메시지들이다.
+                # 된다. 이것들은 사용자에게 보여줄 수 있는 메시지들이다.
+                #
+                # **목록을 비스트리밍 경로와 공유한다** (ADR-0049). 예전에는 여기만
+                # 셋이라, 같은 예외가 한쪽에서는 안내 문장이 되고 다른 쪽에서는
+                # "요청 처리에 실패했습니다" 가 됐다.
                 await queue.put({"type": "error", "message": str(e)})
             except Exception:
                 # 위와 같은 이유로 500 을 못 낸다. **예외 문자열은 내보내지

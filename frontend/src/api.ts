@@ -113,8 +113,20 @@ export interface AssistantResponse {
    * 타입이 `SearchResultItem` 인 것이 요점이다 — 화면이 검색 결과와 **같은
    * 카드**로 그릴 수 있어야 같은 아이템이 화면마다 다르게 보이지 않는다.
    */
-  resolved_item?: SearchResultItem;
+  resolved_item?: SearchResultItem | null;
   detection?: AnomalyAlert;
+  /**
+   * LLM 호출이 실패해 **결정적 문장으로 내려앉았음** (ADR-0041).
+   *
+   * 서버는 이 경우 500 을 내지 않는다 — 답은 이미 계산돼 있고 산문만 없기
+   * 때문이다. 그래서 **이 플래그가 유일한 신호**이고, 그게 존재 이유다
+   * (`outcome="degraded"` 도 같은 값을 센다).
+   *
+   * 그런데 프론트가 이 필드를 **타입에조차 두지 않아** 화면에 한 번도 뜬 적이
+   * 없었다 (ADR-0049). 파이프라인 패널은 서버가 무슨 일을 했는지 보여주려고
+   * 만든 자리인데, 정작 "평소와 다르게 처리했다"만 빠져 있었다.
+   */
+  degraded?: boolean;
   tool_calls?: ToolCall[];
   tool_failures?: number;
   stop_reason?: string;

@@ -45,7 +45,12 @@ import org.springframework.transaction.support.TransactionTemplate;
  *
  * <p><b>{@code @Transactional} 을 붙이지 않았다.</b> 테스트가 트랜잭션을 쥐고 있으면
  * {@code AFTER_COMMIT} 리스너가 <b>영영 불리지 않아</b> 검증 자체가 성립하지 않는다.
- * 대신 만든 데이터를 직접 지운다.
+ *
+ * <p><b>그래서 행이 남는다 — 지우지 않는다.</b> 예전 주석은 <i>"대신 만든 데이터를 직접
+ * 지운다"</i> 라고 적었는데 <b>정리 코드가 없다</b>(ADR-0049 에서 확인). 테스트 간 오염은
+ * 없다 — 매 테스트가 새 테넌트·새 사용자를 만들어 격리가 데이터가 아니라 <b>키</b>로
+ * 성립하기 때문이다. 남는 행은 로컬/CI 의 일회용 DB 라 문제가 되지 않지만, <b>없는 정리를
+ * 있다고 적어두면</b> 다음 사람이 그 위에서 잘못된 가정을 세운다.
  */
 @SpringBootTest
 class NotificationFlowTest {
@@ -172,8 +177,8 @@ class NotificationFlowTest {
          * <p><b>이 검사가 지나는 길은 사전확인이지 {@code catch} 가 아니다</b>
          * (ADR-0048). 두 번째 호출은 {@code existsByRecipientIdAndTradeId} 에서 조기
          * 반환하므로 {@code DuplicateKeyException} 핸들러에 <b>닿지 않는다.</b> 그
-         * 핸들러가 실제로 무엇을 하는지는 아래 {@code 잡아도_트랜잭션은_되살아나지_않는다}
-         * 가 따로 잰다 — 이름이 "중복 소비"라고 해서 모든 중복 경로를 덮는다고 읽으면
+         * 핸들러가 실제로 무엇을 하는지는 아래 {@code 잡으려던_예외는_애초에_던져지지_않는다} 와
+         * {@code 넓은_타입으로_잡아도_커밋은_실패한다} 가 따로 잰다 — 이름이 "중복 소비"라고 해서 모든 중복 경로를 덮는다고 읽으면
          * 안 된다.
          */
         @Test
@@ -185,21 +190,16 @@ class NotificationFlowTest {
         }
 
         /**
-         * <b>{@code DuplicateKeyException} 을 삼켜도 트랜잭션은 이미 죽어 있다.</b>
+         * <b>고른 예외 타입이 실제로 오는가.</b>
          *
-         * <p>소비자의 {@code catch} 는 <i>"실패로 다루면 DLQ 로 간다"</i> 를 막겠다고
-         * 적혀 있는데, {@code @Transactional} 메서드 안에서 flush 가 제약을 위반하면
-         * Hibernate 가 트랜잭션을 <b>rollback-only 로 표시</b>한다. 삼키고 정상 반환해도
-         * 커밋에서 {@code UnexpectedRollbackException} 이 나고 결국 재시도 → DLQ 다.
+         * <p>컨슈머는 {@code DuplicateKeyException} 을 잡으려 했고 상위 타입을 피한
+         * 근거까지 달아뒀다. 근거는 옳지만 <b>그 타입이 오지 않는다</b> — JPA 경로는
+         * {@code HibernateExceptionTranslator} 를 거쳐
+         * {@code DataIntegrityViolationException} 으로 번역한다.
          *
-         * <p>소비자와 <b>같은 모양</b>(트랜잭션 + {@code saveAndFlush} + 삼킴)을 만들어
-         * 실제로 그런지 잰다. 이 검사가 없으면 그 {@code catch} 는 "동작한다고 적혀
-         * 있지만 아무도 걷지 않은 길"이다.
-         *
-         * <p><b>실무 영향은 낮다</b> — 리스너 동시성이 1이라(설정 없음) 사전확인과
-         * insert 사이에 끼어들 다른 소비자가 없다. 그래도 적어두는 이유는, 동시성을
-         * 올리는 순간 <b>주석이 약속한 보호가 없다는 사실</b>이 조용히 드러나기
-         * 때문이다.
+         * <p>여기서는 <b>타입만</b> 단언한다. "그럼 타입을 넓히면 되지 않나"에 대한
+         * 답은 아래 테스트가 따로 잰다 — 둘을 한 검사에 섞으면 어느 쪽이 실패했는지
+         * 구별되지 않는다.
          */
         @Test
         void 잡으려던_예외는_애초에_던져지지_않는다() {

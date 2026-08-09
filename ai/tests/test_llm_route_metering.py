@@ -237,13 +237,16 @@ class TestEveryLlmRouteIsMetered:
 
         assert not _consumes_daily(handler_via_innocent_helper)
 
-
-def _helper_that_does_not_consume():  # pragma: no cover - 표본
-    """위 검사가 모듈 스캔 분기를 실패 방향으로 지나가게 하는 표본."""
-    return {"ok": True}
-
     def test_the_dependency_scan_can_actually_fail(self):
-        """같은 이유로, 한도 없는 라우트를 만들면 걸리는지 본다."""
+        """같은 이유로, 한도 없는 라우트를 만들면 걸리는지 본다.
+
+        > **이 검사는 한 라운드 동안 사라져 있었다** (ADR-0049). 모듈 레벨 헬퍼
+        > `_helper_that_does_not_consume` 를 클래스 한가운데에 끼워 넣는 바람에
+        > 이 메서드가 그 함수의 `return` **뒤로 중첩**됐고, pytest 가 수집하지
+        > 않았다. 파일의 테스트 수는 9 → 11 로 **늘어서** 아무도 눈치채지
+        > 못했다 — *순증가가 손실을 가린다.*
+        > `test_collected_tests.py` 가 이 계열을 저장소 전체에서 막는다.
+        """
 
         class _FakeDependant:
             dependencies: list = []
@@ -254,6 +257,13 @@ def _helper_that_does_not_consume():  # pragma: no cover - 표본
             dependant = _FakeDependant()
 
         assert limit_assistant not in _dependency_callables(_FakeRoute())
+
+
+def _helper_that_does_not_consume():  # pragma: no cover - 표본
+    """`test_the_one_hop_can_also_fail` 이 모듈 스캔 분기를 실패 방향으로
+    지나가게 하는 표본. **클래스 바깥에 둔다** — 안에 끼워 넣으면 그 아래 메서드가
+    이 함수 본문으로 빨려 들어간다(위 참고)."""
+    return {"ok": True}
 
 
 def test_consume_daily_and_limiter_share_one_key_builder():
@@ -286,8 +296,7 @@ def test_the_limiter_module_lists_every_route_it_actually_guards():
     > 파일에는 그런 구간이 15개라 두 번째가 모듈 설명인 것은 **순서 덕**이었다.
     > 이제 `__doc__` 을 직접 쓴다.
     """
-    header = rate_limit_module.__doc__ or ""
-    missing = [route.path for route in _llm_routes() if route.path not in header]
+    missing = _paths_missing_from(rate_limit_module.__doc__ or "")
     assert not missing, (
         "rate_limit.py 의 모듈 설명이 실제 한도 대상을 빠뜨렸습니다: "
         + ", ".join(missing)
@@ -295,7 +304,31 @@ def test_the_limiter_module_lists_every_route_it_actually_guards():
     )
 
 
+def _paths_missing_from(header: str) -> list[str]:
+    """모듈 설명에서 빠진 LLM 경로들. **위 검사와 아래 공허 방지가 같은 식을 쓴다.**
+
+    나눠 놓지 않으면 공허 방지가 *다른* 식을 검사하게 된다 — 실제로 첫 판본이
+    그랬다(아래 참고).
+    """
+    return [route.path for route in _llm_routes() if route.path not in header]
+
+
 def test_that_docstring_check_can_fail():
-    """**공허 방지.** 설명에 없는 경로를 넣으면 같은 판정식이 잡는지 본다."""
-    header = rate_limit_module.__doc__ or ""
-    assert "/api/does-not-exist" not in header
+    """**공허 방지 — 이번엔 진짜로.**
+
+    > 첫 판본은 `assert "/api/does-not-exist" not in header` 였다. 그건 **위
+    > 검사가 쓰는 식을 한 번도 실행하지 않는다** — `_llm_routes()` 가 0개를
+    > 돌려주거나 판정식이 뒤집혀도 통과한다. *공허를 막겠다는 검사가 공허했다.*
+    > 이 파일이 고치겠다고 나선 바로 그 결함이다 (ADR-0049).
+
+    이제 같은 식(`_paths_missing_from`)에 **실제 경로가 빠진 설명**을 넣어,
+    빠진 것을 실제로 지목하는지 본다.
+    """
+    real = rate_limit_module.__doc__ or ""
+    assert _paths_missing_from(real) == [], "현행 설명은 통과해야 한다"
+
+    stripped = real.replace("/api/search", "")
+    assert "/api/search" in [r.path for r in _llm_routes()], (
+        "표본이 실제 LLM 경로가 아니면 이 검사는 아무것도 구별하지 못한다"
+    )
+    assert _paths_missing_from(stripped) == ["/api/search"]

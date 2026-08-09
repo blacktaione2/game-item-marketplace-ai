@@ -148,7 +148,13 @@ class Settings(BaseSettings):
     jwt_issuer: str = "gimp-backend"
 
     # --- Phase 8: 요청 한도 (ADR-0024) ---
-    # `/api/assistant` 하나에만 건다 — 실제로 돈이 나가는 유일한 경로다.
+    # **LLM 을 부르는 경로 전부**에 건다 — `/api/assistant`, `/api/assistant/stream`,
+    # `/api/search` 셋이고 **같은 키를 공유한다**(예산은 사용자당 하나여야 한다).
+    # 근거와 대상 판정은 `core/rate_limit.py` 의 모듈 설명에 있다.
+    #
+    # 이 줄은 예전에 *"`/api/assistant` 하나에만 건다"* 였다. ADR-0047 이
+    # `rate_limit.py` 쪽 문장을 고칠 때 **이 사본은 같이 안 고쳐졌다** — 같은 사실을
+    # 두 곳에 적으면 한 곳만 바뀐다는, 이 저장소가 반복해서 겪는 그 일이다.
     #
     # **부하테스트는 이 한도에 걸린다.** 그때 이 기본값을 고치지 말고 환경변수로
     # 넘긴다: `RATE_LIMIT_ASSISTANT_PER_MIN=100000 python -m uvicorn ...`

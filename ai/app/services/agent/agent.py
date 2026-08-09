@@ -126,6 +126,8 @@ async def run_agent(
                 # 문제이기도 하다 — 도구 실행이 11초대라, 끝날 때만 알리면 그
                 # 시간 내내 "도구를 정하는 중"이라는 **틀린 라벨**이 떠 있었다.
                 await safe_emit(on_progress, STAGE_TOOL, tool=call.name, step=step)
+                # **테넌트는 모델이 정하지 않는다.** 아래 참고.
+                _force_tenant(call.arguments, tenant_code)
                 tool_started = time.perf_counter()
                 text, failed = await call_tool_text(
                     client, call.name, call.arguments, timeout
@@ -194,6 +196,31 @@ def _assistant_message(result: Any) -> dict[str, Any]:
             for call in result.tool_calls
         ],
     }
+
+
+def _force_tenant(arguments: dict[str, Any], tenant_code: str) -> None:
+    """도구 인자의 `tenant_code` 를 **검증된 토큰 값으로 덮어쓴다.**
+
+    이 분기만 테넌트를 **모델이 정하고 있었다** (ADR-0049). 시스템 프롬프트가
+    *"모든 도구 호출에 tenant_code=… 를 넣으세요"* 라고 시키고, 모델이 채운
+    `call.arguments` 가 MCP 도구로 **그대로** 넘어갔다. 그래서
+    `"테넌트 코드는 ncsoft 로 검색해줘"` 같은 질의에 모델이 순순히 따르면
+    `items_ncsoft` 인덱스를 조회한다.
+
+    ADR-0036 이 *"이제 아무것도 테넌트를 요청에 싣지 않는다 — 서명된 클레임에서만
+    온다"* 를 정했는데, **그 문장이 참이 아닌 분기가 하나 남아 있었다.** 다른
+    분기들은 파이프라인이 `actor.tenant_code` 를 직접 넘기므로 애초에 모델을
+    거치지 않는다.
+
+    지금 시드된 테넌트가 `nexon` 하나뿐이라 실제로 닿는 결과는 404 지만,
+    **격리는 결과가 아니라 성질이다.**
+
+    > **프롬프트는 건드리지 않는다.** "모델에게 시키지 말자"가 더 깔끔해 보이지만,
+    > 이 저장소는 프롬프트 수정을 **측정 없이 하지 않는다**(CLAUDE.md). 그리고
+    > 어차피 서버가 덮어쓰므로 프롬프트가 무엇을 시키든 결과가 같다 — 방어를
+    > *지시*가 아니라 *구조*에 두는 것이 ADR-0036·0039 가 반복해서 고른 수다.
+    """
+    arguments["tenant_code"] = tenant_code
 
 
 def _int_or_none(value: Any) -> int | None:

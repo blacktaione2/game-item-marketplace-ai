@@ -29,7 +29,11 @@ from __future__ import annotations
 import io
 from contextlib import redirect_stdout
 
-from scripts.evaluate_rewrite_determinism import MAX_DEGRADED_RATE, report
+from scripts.evaluate_rewrite_determinism import (
+    MAX_DEGRADED_RATE,
+    MIN_VALID_FRACTION_PER_QUERY,
+    report,
+)
 
 
 def _row(query: str, good_runs: int, degraded: int, *, distinct: int = 1) -> dict:
@@ -74,11 +78,39 @@ class TestItRefusesToScoreOnFailures:
         assert "폴백(degraded) 0/10" in output
 
     def test_상한_이하의_폴백은_통과한다(self):
-        """경계로 잰다 — "폴백이 있으면 무조건 거부"면 정상 실행이 막힌다."""
-        rows = [_row(f"q{i}", good_runs=10, degraded=0) for i in range(19)]
-        rows.append(_row("q19", good_runs=5, degraded=5))  # 전체의 2.5%
+        """경계로 잰다 — "폴백이 있으면 무조건 거부"면 정상 실행이 막힌다.
+
+        > **첫 판본은 여기서 질의 20건을 썼다** (ADR-0049). 실제 `FLOOR_QUERIES`
+        > 는 **10건**이라, 존재하지 않는 규모에서 통과를 승인하고 있었다.
+        > 실제 규모로 맞췄다 — 검사가 승인하는 상황은 **일어날 수 있는 상황**이어야
+        > 한다.
+        """
+        rows = [_row(f"q{i}", good_runs=10, degraded=0) for i in range(9)]
+        rows.append(_row("q9", good_runs=8, degraded=2))  # 전체 2%, 질의별 80%
         scored, _ = _run(rows)
         assert scored is True
+
+    def test_한_질의만_망가져도_채점하지_않는다(self):
+        """**전체 비율은 한 질의의 붕괴를 희석한다.**
+
+        실제 규모(10건 × 10회)에서 한 질의가 5회 폴백이면 전체는 **정확히
+        5.0%** 라 전역 상한을 통과한다. 그런데 그 질의는 남은 5개로
+        `mode_agreement` **1.00** 을 낸다 — 만점이다. 질의별 분모가 없으면
+        가드가 여기서 뚫린다.
+        """
+        rows = [_row(f"q{i}", good_runs=10, degraded=0) for i in range(9)]
+        rows.append(_row("q9", good_runs=5, degraded=5))
+        total = sum(r["runs"] for r in rows)
+        assert sum(r["degraded"] for r in rows) / total <= MAX_DEGRADED_RATE, (
+            "표본이 전역 상한을 넘으면 질의별 가드를 시험하지 못한다"
+        )
+        scored, output = _run(rows)
+        assert scored is False
+        assert "유효 표본이 모자란" in output
+
+    def test_질의별_최소치가_100퍼센트가_아니다(self):
+        """1.0 이면 폴백 한 번에 전체가 거부된다 — 위 경계 검사가 무의미해진다."""
+        assert 0.5 <= MIN_VALID_FRACTION_PER_QUERY < 1.0
 
     def test_상한이_0이_아니다(self):
         """상한이 0이면 위 경계 검사가 의미를 잃는다 — 그것도 고정한다."""

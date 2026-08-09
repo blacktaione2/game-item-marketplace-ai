@@ -468,6 +468,16 @@ function Result({
               도구 실패 <strong>{data.tool_failures}건</strong>
             </span>
           ) : null}
+          {/* **LLM 장애로 내려앉았다는 신호** (ADR-0041). 500 이 아니므로 다른
+              흔적이 없고, 그래서 이 배지가 그 자리다. 서버는 계속 이 값을
+              보내고 있었는데 화면 타입에 없어서 한 번도 뜬 적이 없었다
+              (ADR-0049) — 파이프라인 패널이 "무슨 일이 있었는가"를 보여주는
+              자리인데 정작 평소와 달랐던 경우만 빠져 있었다. */}
+          {data.degraded && (
+            <span className="badge warn">
+              내려앉음 <strong>LLM 실패 → 결정적 문장</strong>
+            </span>
+          )}
         </div>
 
         {data.cache.hit && data.cache.cached_query !== data.query && (
@@ -525,7 +535,23 @@ function ItemCard({
   onOpen: (itemId: number) => void;
 }) {
   return (
-    <div className="item-card" onClick={() => onOpen(item.item_id)}>
+    // **키보드로도 열려야 한다.** `onClick` 만 있는 `div` 는 Tab 순서에 없어서,
+    // 검색 결과 카드 전부가 마우스 없이는 닿지 않았다 — 그리고 이게 랜딩에서
+    // `/items/:id` 로 가는 **유일한 길**이다. `role`+`tabIndex`+키 핸들러 셋이
+    // 한 벌이다: 하나만 빠져도 초점은 가는데 Enter 가 안 먹거나, 읽히기는 하는데
+    // 초점이 안 간다.
+    <div
+      className="item-card"
+      role="button"
+      tabIndex={0}
+      onClick={() => onOpen(item.item_id)}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onOpen(item.item_id);
+        }
+      }}
+    >
       <h4>{item.name}</h4>
       {item.price != null && <div className="price">{formatWon(item.price)}</div>}
       <div className="muted">

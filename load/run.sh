@@ -111,6 +111,11 @@ snapshot before before.txt
 
 if [ "$SUITE" = "purchase" ]; then
   if [ "$MODE" = "step" ]; then
+    # **계단식은 VUS/DURATION 을 쓰지 않는다** — 단계 표(`STEP_STAGES`)가 대신
+    # 정한다. 그래서 주면 조용히 무시되는데, 그게 이 파일이 방금 고친 결함의
+    # 거울상이다(`purchase contended step` 이 VUS 로 흘러 NaN 이 됐던 것).
+    # 무시할 거면 무시한다고 말한다.
+    [ ${#K6_ARGS[@]} -gt 0 ] && echo "  (step 모드는 VUS/DURATION 을 쓰지 않습니다 — 무시합니다)" >&2
     k6 run -e PROFILE=contended -e STAGES=step -e "DEMO_PASSWORD=$DEMO_PASSWORD" \
       "$ROOT/load/k6/purchase-contention.js" 2>&1 | tee "$OUT/$TAG.k6.txt"
   else

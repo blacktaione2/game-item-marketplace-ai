@@ -114,7 +114,7 @@ flowchart TD
     D -->|안| S[검색<br/>BM25+kNN → RRF → 리랭커<br/>LLM 2회]
     RT --> P[시세 예측<br/>LSTM / Cold Start<br/>LLM 3회]
     RT --> A[이상거래 탐지<br/>오토인코더<br/>LLM 1회]
-    RT --> AG[에이전트<br/>MCP 도구 호출<br/>LLM 1~6회]
+    RT --> AG[에이전트<br/>MCP 도구 호출<br/>LLM 1~8회 실측]
 ```
 
 | 요청 유형 | 파이프라인 | LLM 호출 |
@@ -123,7 +123,7 @@ flowchart TD
 | 아이템 검색 | Rewrite+Text-to-DSL ‖ 도메인 판정 → BM25+kNN → RRF → 크로스인코더 재순위 | 2회 (병렬) |
 | 시세 문의 | 거래 이력 충분 시 LSTM, 부족하면 Cold Start 백오프 | 3회 |
 | 이상거래 점검 | 오토인코더 재구성 오차 + 피처별 기여도 분해 | 1회 |
-| 복합 질의 | MCP 도구를 부르는 순차 에이전트 | 1~6회 |
+| 복합 질의 | MCP 도구를 부르는 순차 에이전트 | **1~8회(실측)** |
 
 체결 자체는 AI를 거치지 않는다 — Redis 락 + DB 트랜잭션이고, **체결 후 알림만** RabbitMQ로 넘긴다([ADR-0030](docs/01-Decisions/0030-비동기-후처리-mq.md)).
 
@@ -345,11 +345,11 @@ npm run dev                # :5173
 ### 테스트
 
 ```bash
-cd ai && python -m pytest  # 348건. 외부 서비스·모델 불필요
+cd ai && python -m pytest  # 361건. 외부 서비스·모델 불필요
 cd backend && ./gradlew test --rerun-tasks   # 68건. Postgres·Redis 필요
 ```
 
-CI가 커밋마다 도는 건 여기까지다 — **AI 348건 + 백엔드 68건 + 프론트 빌드.**
+CI가 커밋마다 도는 건 여기까지다 — **AI 361건 + 백엔드 68건 + 프론트 빌드.**
 부하테스트는 CI에 넣지 않았다(환경이 달라 수치가 비교 불가, 걸 SLO가 아직 없음,
 `live-llm`이 실제 과금). 근거는
 [ADR-0021](docs/01-Decisions/0021-ci-cd-1단계.md).
@@ -387,11 +387,11 @@ recall@5 0.48 / MRR 0.47)은 **재학습 변동을 7회 측정해서** 잡았다
 | 폴더 | 내용 |
 |---|---|
 | [00-Architecture](docs/00-Architecture/) | 기획서(**원천 자료 — 고치지 않는다**), 개발 로드맵 |
-| [01-Decisions](docs/01-Decisions/) | **ADR 48건.** 상태/배경/결정/고려한 대안/영향 |
+| [01-Decisions](docs/01-Decisions/) | **ADR 49건.** 상태/배경/결정/고려한 대안/영향 |
 | [02-AI-Pipeline](docs/02-AI-Pipeline/요청-타입별-파이프라인.md) | 요청 유형별 실행 흐름 종합 |
 | [03-API-Specs](docs/03-API-Specs/API-명세.md) | 두 서버의 엔드포인트·상태 코드 |
 | [04-DevLog](docs/04-DevLog/) | 날짜별 경과 |
-| [05-Troubleshooting](docs/05-Troubleshooting/) | 재발 조건이 실재하는 진단 패턴 **16편** (그중 「검사 자체가 틀린 사례들」 한 편에 **33건**) |
+| [05-Troubleshooting](docs/05-Troubleshooting/) | 재발 조건이 실재하는 진단 패턴 **16편** (그중 「검사 자체가 틀린 사례들」 한 편에 **35건**) |
 | [06-발표](docs/06-발표/발표자료.html) | 발표 슬라이드 14장(자체 완결 HTML) + [발표 스크립트](docs/06-발표/발표-스크립트.md) + 진행 노트 |
 
 읽을 것을 하나만 고른다면 [ADR-0018](docs/01-Decisions/0018-리랭커-하한-재측정.md)

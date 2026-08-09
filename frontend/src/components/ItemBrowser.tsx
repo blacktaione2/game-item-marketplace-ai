@@ -259,8 +259,19 @@ function ItemRow({ item, onOpen }: { item: Item; onOpen: () => void }) {
   const auction = item.saleType === "AUCTION";
   const soldOut = item.stock < 1 || item.status !== "ON_SALE";
   return (
+    // 검색 카드와 같은 이유로 키보드에서도 열려야 한다 — 42행 전부가 Tab 순서
+    // 밖에 있었다. `<tr>` 에 `role="button"` 을 주면 표의 의미가 깨지므로,
+    // 초점은 행에 두고 역할은 `<td>` 안의 이름이 갖는 편이 낫지만 —
+    // 여기서는 행 전체가 클릭 대상이라는 기존 동작을 유지하는 쪽을 골랐다.
     <tr
+      tabIndex={0}
       onClick={onOpen}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onOpen();
+        }
+      }}
       style={{ cursor: "pointer", opacity: soldOut ? 0.55 : undefined }}
     >
       <td>{item.name}</td>
