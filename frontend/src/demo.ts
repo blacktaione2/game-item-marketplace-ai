@@ -17,9 +17,13 @@
  * **예외가 하나 생겼다: `code`는 로그인 요청에 실린다**(ADR-0034). 아이디는 테넌트
  * 안에서만 유일해서 아이디 하나로는 계정이 특정되지 않기 때문이다. 로그인은 토큰이
  * 아직 없는 유일한 지점이라 여기서만 값을 싣는다 — 발급 이후에는 예전 그대로다.
- * `id`와 `name`은 여전히 화면 표기용이다.
+ *
+ * **`name`("넥슨")은 지웠다.** 화면 제목이 테넌트 이름을 붙이지 않으므로 쓰는 곳이
+ * 0이 됐고, 공개 배포에 실존 게임사 이름이 걸려 있는 것 자체가 불필요한 오해를
+ * 산다. `code`는 남는다 — ES 인덱스명(`items-nexon`)이자 DB 행이라 바꾸려면
+ * 재색인과 재시드가 따라온다. **표기와 식별자는 같이 움직일 이유가 없다.**
  */
-export const TENANT = { id: 1, code: "nexon", name: "넥슨" } as const;
+export const TENANT = { id: 1, code: "nexon" } as const;
 
 export interface DemoUser {
   id: number;

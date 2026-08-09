@@ -39,7 +39,7 @@ export default function Login({ onSuccess }: { onSuccess: (r: LoginResult) => vo
   return (
     <div className="login-wrap">
       <form className="card login-card" onSubmit={submit}>
-        <h1>{TENANT.name} 아이템 거래소</h1>
+        <h1>아이템 거래소</h1>
         <p className="muted">데모 계정으로 로그인하세요.</p>
 
         <label>

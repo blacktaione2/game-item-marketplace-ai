@@ -3,7 +3,6 @@ import { useEffect, useState } from "react";
 import { NavLink, Route, Routes, useNavigate } from "react-router-dom";
 
 import { api, setAccessToken, setSessionExpiredHandler, type LoginResult } from "./api";
-import { TENANT } from "./demo";
 import AnomalyQueue from "./pages/AnomalyQueue";
 import Assistant from "./pages/Assistant";
 import ItemDetail from "./pages/ItemDetail";
@@ -107,7 +106,7 @@ export default function App() {
   return (
     <div className="layout">
       <header className="topbar">
-        <span className="brand">{TENANT.name} 아이템 거래소</span>
+        <span className="brand">아이템 거래소</span>
 
         <span className="muted">
           {currentUser.username} ({currentUser.role})
