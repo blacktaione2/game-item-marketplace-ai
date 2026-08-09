@@ -137,7 +137,13 @@ public class Item extends BaseTimeEntity {
         this.currentBidder = bidder;
     }
 
-    /** 현재 낙찰 대상 금액: 입찰 이력이 있으면 최고 입찰가, 없으면 시작가. */
+    /**
+     * 다음 입찰이 넘어서야 하는 금액: 입찰 이력이 있으면 최고 입찰가, 없으면 시작가.
+     *
+     * <p>"낙찰 대상"이라고 쓰지 않는다 — <b>낙찰 처리가 없다</b>(ADR-0047, {@link
+     * com.gimp.backend.domain.trade.Trade} 참고). 이 값은 최고가일 뿐 아무것도
+     * 확정하지 않는다.
+     */
     public BigDecimal minimumAcceptableBid() {
         return this.currentBidPrice != null ? this.currentBidPrice : this.price;
     }

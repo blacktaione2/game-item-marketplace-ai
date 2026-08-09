@@ -23,7 +23,17 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 /**
- * 거래 기록. PURCHASE는 생성 즉시 COMPLETED, BID는 낙찰 전까지 ACTIVE/OUTBID로 갱신된다.
+ * 거래 기록. PURCHASE는 생성 즉시 COMPLETED, BID는 ACTIVE/OUTBID 사이에서만 갱신된다.
+ *
+ * <p><b>낙찰 처리는 범위 밖이다</b> (ADR-0047). 경매는 입찰을 받고 최고가를 갱신하는
+ * 데까지이고, 마감·정산·낙찰 알림은 없다 — 마감 시각 컬럼도 스케줄러도 없다. 이건
+ * 미완성이 아니라 결정이고, 근거는 ADR-0002의 정정 블록에 있다.
+ *
+ * <p>그래서 {@code markWon()} 을 <b>지웠다.</b> 호출자가 없는 것보다 나쁜 게, 그
+ * 메서드가 있으면 "낙찰이 구현돼 있다"고 읽힌다는 점이다 — 화면은 마감을 약속하지
+ * 않으므로 <b>이 저장소에서 그 잘못된 신호를 내던 유일한 자리</b>였다. 나중에 정말
+ * 구현한다면 {@code COMPLETED} 가 아니라 {@code WON} 을 새로 만들어야 하므로(재고·정산이
+ * 구매와 갈린다) 껍데기를 남겨둬도 재사용되지 않는다.
  */
 @Entity
 @Table(name = "trades", indexes = @Index(name = "idx_trades_tenant_id", columnList = "tenant_id"))
@@ -87,9 +97,5 @@ public class Trade extends BaseTimeEntity {
 
     public void markOutbid() {
         this.status = TradeStatus.OUTBID;
-    }
-
-    public void markWon() {
-        this.status = TradeStatus.COMPLETED;
     }
 }
