@@ -1,6 +1,7 @@
 package com.gimp.backend.messaging;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.gimp.backend.domain.item.Item;
 import com.gimp.backend.domain.item.SaleType;
@@ -167,6 +168,13 @@ class NotificationFlowTest {
         /**
          * 중복이 예외로 새어나가면 <b>모든 재전달이 DLQ 로 간다</b> — 멱등성 장치가
          * 오히려 실패를 만든다. 두 번째 호출이 조용히 끝나야 한다.
+         *
+         * <p><b>이 검사가 지나는 길은 사전확인이지 {@code catch} 가 아니다</b>
+         * (ADR-0048). 두 번째 호출은 {@code existsByRecipientIdAndTradeId} 에서 조기
+         * 반환하므로 {@code DuplicateKeyException} 핸들러에 <b>닿지 않는다.</b> 그
+         * 핸들러가 실제로 무엇을 하는지는 아래 {@code 잡아도_트랜잭션은_되살아나지_않는다}
+         * 가 따로 잰다 — 이름이 "중복 소비"라고 해서 모든 중복 경로를 덮는다고 읽으면
+         * 안 된다.
          */
         @Test
         void 중복_소비가_예외를_던지지_않는다() {
@@ -174,6 +182,72 @@ class NotificationFlowTest {
 
             consumer.onTradeCompleted(event);
             consumer.onTradeCompleted(event); // 예외가 나면 이 테스트가 실패한다
+        }
+
+        /**
+         * <b>{@code DuplicateKeyException} 을 삼켜도 트랜잭션은 이미 죽어 있다.</b>
+         *
+         * <p>소비자의 {@code catch} 는 <i>"실패로 다루면 DLQ 로 간다"</i> 를 막겠다고
+         * 적혀 있는데, {@code @Transactional} 메서드 안에서 flush 가 제약을 위반하면
+         * Hibernate 가 트랜잭션을 <b>rollback-only 로 표시</b>한다. 삼키고 정상 반환해도
+         * 커밋에서 {@code UnexpectedRollbackException} 이 나고 결국 재시도 → DLQ 다.
+         *
+         * <p>소비자와 <b>같은 모양</b>(트랜잭션 + {@code saveAndFlush} + 삼킴)을 만들어
+         * 실제로 그런지 잰다. 이 검사가 없으면 그 {@code catch} 는 "동작한다고 적혀
+         * 있지만 아무도 걷지 않은 길"이다.
+         *
+         * <p><b>실무 영향은 낮다</b> — 리스너 동시성이 1이라(설정 없음) 사전확인과
+         * insert 사이에 끼어들 다른 소비자가 없다. 그래도 적어두는 이유는, 동시성을
+         * 올리는 순간 <b>주석이 약속한 보호가 없다는 사실</b>이 조용히 드러나기
+         * 때문이다.
+         */
+        @Test
+        void 잡으려던_예외는_애초에_던져지지_않는다() {
+            notificationRepository.saveAndFlush(buildNotification(9_000_009L));
+            TransactionTemplate template = new TransactionTemplate(transactionManager);
+
+            assertThatThrownBy(() -> template.execute(status -> {
+                        notificationRepository.saveAndFlush(buildNotification(9_000_009L));
+                        return null;
+                    }))
+                    .describedAs(
+                            "JPA 경로에서 제약 위반은 HibernateExceptionTranslator 를 거쳐 "
+                                    + "DataIntegrityViolationException 이 된다 — 소비자가 "
+                                    + "고른 DuplicateKeyException 은 그 하위 타입이라 "
+                                    + "잡히지 않는다")
+                    .isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class)
+                    .isNotInstanceOf(org.springframework.dao.DuplicateKeyException.class);
+        }
+
+        /**
+         * <b>넓은 타입으로 잡아도 소용없다 — 트랜잭션이 이미 죽어 있다.</b>
+         *
+         * <p>위 검사가 "좁은 타입을 골라서 안 걸린 것"이라면 타입만 넓히면 될 일이다.
+         * 그렇지 않다는 것을 여기서 잰다: flush 가 제약을 위반하면 트랜잭션이
+         * rollback-only 로 표시되므로, 삼키고 정상 반환해도 <b>커밋에서</b> 실패한다.
+         *
+         * <p>두 검사를 합치면 결론이 하나다 — <b>그 자리에서 삼켜서 재전달을 성공으로
+         * 만드는 것은 불가능하다.</b> 그래서 {@code catch} 를 지웠고, 재전달은 사전확인이
+         * (모든 현실적 경우) 그리고 재시도가 (드문 경쟁) 막는다.
+         */
+        @Test
+        void 넓은_타입으로_잡아도_커밋은_실패한다() {
+            notificationRepository.saveAndFlush(buildNotification(9_000_010L));
+            TransactionTemplate template = new TransactionTemplate(transactionManager);
+
+            assertThatThrownBy(() -> template.execute(status -> {
+                        try {
+                            notificationRepository.saveAndFlush(
+                                    buildNotification(9_000_010L));
+                        } catch (org.springframework.dao.DataIntegrityViolationException e) {
+                            // 넓은 타입으로 잡아본다 — 그래도 아래 커밋이 실패한다.
+                        }
+                        return null;
+                    }))
+                    .describedAs(
+                            "삼켜도 커밋이 실패해야 한다 — 실패하지 않는다면 타입만 넓히면 "
+                                    + "되는 문제이므로 ADR-0048 의 서술을 고쳐야 한다")
+                    .isInstanceOf(org.springframework.transaction.TransactionException.class);
         }
 
         @Test
@@ -205,6 +279,17 @@ class NotificationFlowTest {
                 TradeType.PURCHASE,
                 new BigDecimal("10000"),
                 1);
+    }
+
+    /** 소비자가 만드는 것과 같은 모양의 알림 (멱등 키: recipient + tradeId). */
+    private Notification buildNotification(Long tradeId) {
+        return Notification.builder()
+                .tenant(tenant)
+                .recipient(buyer)
+                .tradeId(tradeId)
+                .type(NotificationType.PURCHASE_COMPLETED)
+                .message("중복 키 실험용")
+                .build();
     }
 
     private List<Notification> notificationsOf(User user) {

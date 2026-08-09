@@ -34,9 +34,11 @@ LLM 비용을 쓴다는 뜻이므로, `limit_assistant` 도 가져야 한다. �
 
 from __future__ import annotations
 
+import ast
 import inspect
-from pathlib import Path
+import textwrap
 
+import app.core.rate_limit as rate_limit_module
 from app.core.rate_limit import consume_daily, limit_assistant
 from app.main import app
 from app.services.llm.dependencies import get_llm_client
@@ -66,21 +68,45 @@ def _dependency_callables(route) -> set:
     return found
 
 
+def _called_names(func) -> set[str]:
+    """이 함수가 **실제로 부르는** 이름들.
+
+    **문자열 스캔이 아니라 AST 다.** 첫 판본은 `"consume_daily" in source` 였는데,
+    그러면 `# TODO: consume_daily 를 붙이자` 라는 **주석 한 줄로 검사가 뚫린다** —
+    실제로 배포에 나갔던 결함을 막으라고 만든 검사가 주석에 속는다. 문자열 리터럴도
+    같은 문제다. AST 는 주석을 애초에 안 싣는다.
+    """
+    tree = ast.parse(textwrap.dedent(inspect.getsource(func)))
+    names = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call):
+            target = node.func
+            name = getattr(target, "id", None) or getattr(target, "attr", None)
+            if name:
+                names.add(name)
+    return names
+
+
 def _consumes_daily(endpoint) -> bool:
     """이 핸들러가 일일 예산을 소비하는가 — **간접 호출 한 겹까지** 본다.
 
     직접 부르는 경우(`/api/search`)와 같은 모듈의 헬퍼를 거치는 경우
     (`/api/assistant` → `_ask_metered`)가 둘 다 있다. 본문만 읽으면 후자를
-    결함으로 잘못 지목한다.
+    결함으로 잘못 지목한다 — 첫 판본이 실제로 그렇게 헛발을 짚었다.
+
+    **깊이는 한 겹이다.** 두 겹 이상으로 숨기면 이 검사는 못 본다. 지금 두 모양이
+    전부라서 그 이상은 사지 않았고, 못 보는 범위를 적어두는 것으로 갈음한다.
     """
-    source = inspect.getsource(endpoint)
-    if "consume_daily" in source:
+    called = _called_names(endpoint)
+    if "consume_daily" in called:
         return True
     module = inspect.getmodule(endpoint)
     for name, helper in vars(module).items():
-        if not inspect.isfunction(helper) or name not in source:
+        # **`in source` 가 아니라 실제 호출 여부다.** 이름이 주석이나 문자열에만
+        # 나와도 통과하던 자리다.
+        if not inspect.isfunction(helper) or name not in called:
             continue
-        if "consume_daily" in inspect.getsource(helper):
+        if "consume_daily" in _called_names(helper):
             return True
     return False
 
@@ -154,35 +180,67 @@ class TestEveryLlmRouteIsMetered:
             + " — 응답 뒤 `finally` 에서 `consume_daily(actor)` 를 부르세요."
         )
 
-    def test_the_source_scan_can_actually_fail(self):
-        """**위 검사가 항상 통과하는 것은 아닌지** 확인한다.
-
-        `consume_daily` 를 안 부르는 핸들러를 하나 만들어, 같은 판정식이
-        그것을 잡아내는지 본다. 이게 없으면 `_consumes_daily` 가 어떤 이유로든
-        항상 참을 돌려줘도 알 수 없다 — 그리고 이 함수는 실제로 한 번
-        **반대 방향으로** 틀렸다(올바른 경로를 결함으로 지목했다).
-        """
+    def test_the_scan_can_actually_fail(self):
+        """**위 검사가 항상 통과하는 것은 아닌지** 확인한다."""
 
         async def handler_without_consume():  # pragma: no cover - 표본
             return {"ok": True}
 
         assert not _consumes_daily(handler_without_consume)
 
+    def test_a_comment_does_not_count_as_calling_it(self):
+        """**첫 판본은 이 표본에 속았다.**
+
+        `"consume_daily" in source` 였을 때 아래 핸들러는 **통과했다** — 주석
+        한 줄이 검사를 뚫는다. 실제로 배포에 나갔던 결함을 막으라고 만든
+        검사가 그러면 장식이다. 지금은 AST 로 *호출*만 본다.
+        """
+
+        async def handler_that_only_mentions_it():  # pragma: no cover - 표본
+            # TODO: consume_daily(actor) 를 붙여야 한다
+            note = "consume_daily"
+            return {"note": note}
+
+        assert "consume_daily" in inspect.getsource(handler_that_only_mentions_it), (
+            "표본에 그 이름이 없으면 이 검사는 아무것도 구별하지 못한다"
+        )
+        assert not _consumes_daily(handler_that_only_mentions_it)
+
     def test_the_one_hop_resolution_actually_resolves(self):
         """헬퍼를 거치는 모양을 **실제로 통과시키는지.**
 
-        위 검사와 짝이다. 하나는 "못 잡는 게 아니다", 이건 "헛발을 짚지
+        위 검사들과 짝이다. 그쪽은 "못 잡는 게 아니다", 이건 "헛발을 짚지
         않는다" — 처음 판본이 틀린 쪽이 이 방향이었다.
         """
         indirect = [
             route
             for route in _llm_routes()
-            if "consume_daily" not in inspect.getsource(route.endpoint)
+            if "consume_daily" not in _called_names(route.endpoint)
         ]
         assert indirect, (
             "간접 호출 표본이 사라졌습니다 — 이 검사가 공허해졌는지 확인하세요"
         )
         assert all(_consumes_daily(route.endpoint) for route in indirect)
+
+    def test_the_one_hop_can_also_fail(self):
+        """**간접 경로의 실패 방향도 본다.**
+
+        위 검사는 *실제 라우터 모듈*의 헬퍼로 성공만 확인한다. 실패 표본이
+        테스트 모듈에만 있으면 `_consumes_daily` 의 **후반부(모듈 스캔)가 실패
+        방향으로 한 번도 실행되지 않는다** — 그 절반은 통과하는 모습만 본 코드가
+        된다. 그래서 여기서 같은 모듈 안에 "헬퍼를 부르지만 그 헬퍼가 소비하지
+        않는" 모양을 만든다.
+        """
+
+        async def handler_via_innocent_helper():  # pragma: no cover - 표본
+            return _helper_that_does_not_consume()
+
+        assert not _consumes_daily(handler_via_innocent_helper)
+
+
+def _helper_that_does_not_consume():  # pragma: no cover - 표본
+    """위 검사가 모듈 스캔 분기를 실패 방향으로 지나가게 하는 표본."""
+    return {"ok": True}
 
     def test_the_dependency_scan_can_actually_fail(self):
         """같은 이유로, 한도 없는 라우트를 만들면 걸리는지 본다."""
@@ -206,22 +264,38 @@ def test_consume_daily_and_limiter_share_one_key_builder():
     같은 이름이 나타나는지로 본다.
     """
     for func in (limit_assistant, consume_daily):
-        assert "_daily_key" in inspect.getsource(func), (
+        assert "_daily_key" in _called_names(func), (
             f"{func.__name__} 이 `_daily_key` 를 쓰지 않습니다 — "
             "키가 갈리면 일일 한도가 조용히 사라집니다."
         )
 
 
-def test_the_limiter_module_no_longer_claims_a_single_route():
+def test_the_limiter_module_lists_every_route_it_actually_guards():
     """문서화된 근거가 코드와 어긋난 채로 남지 않게 한다.
 
     이 결함의 원인은 코드가 아니라 **모듈 docstring 의 일반화**였다
     ("막을 것은 `/api/assistant` 하나다"). 그 문장이 되살아나면 다음 사람이
     같은 판단을 반복한다.
+
+    > **첫 판본은 `"/api/search" in header` 였다 — 즉 열거였다.** 이 파일이
+    > 스스로 *"대상 목록도 적지 않는다"* 고 적어놓고 마지막 검사에서 리터럴
+    > 하나를 박아둔 것이라, **네 번째 LLM 경로가 생기고 설명에서 빠지면 조용히
+    > 통과했다.** 지금은 `_llm_routes()` 가 찾아낸 경로 전부를 요구한다.
+    >
+    > docstring 도 소스를 삼중따옴표로 쪼개 두 번째 조각을 쓰고 있었는데, 그
+    > 파일에는 그런 구간이 15개라 두 번째가 모듈 설명인 것은 **순서 덕**이었다.
+    > 이제 `__doc__` 을 직접 쓴다.
     """
-    source = Path(inspect.getfile(limit_assistant)).read_text(encoding="utf-8")
-    header = source.split('"""')[1]
-    assert "/api/search" in header, (
-        "rate_limit.py 의 모듈 설명이 `/api/search` 를 빠뜨렸습니다 — "
-        "대상 목록이 코드와 어긋나면 그게 다음 누락의 근거가 됩니다."
+    header = rate_limit_module.__doc__ or ""
+    missing = [route.path for route in _llm_routes() if route.path not in header]
+    assert not missing, (
+        "rate_limit.py 의 모듈 설명이 실제 한도 대상을 빠뜨렸습니다: "
+        + ", ".join(missing)
+        + " — 대상 목록이 코드와 어긋나면 그게 다음 누락의 근거가 됩니다."
     )
+
+
+def test_that_docstring_check_can_fail():
+    """**공허 방지.** 설명에 없는 경로를 넣으면 같은 판정식이 잡는지 본다."""
+    header = rate_limit_module.__doc__ or ""
+    assert "/api/does-not-exist" not in header

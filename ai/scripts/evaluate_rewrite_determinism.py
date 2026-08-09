@@ -60,12 +60,33 @@ def mode_agreement(values: list[str]) -> float:
 
 
 async def measure(llm: OpenAIClient, query: str, runs: int) -> dict:
+    """한 질의를 `runs` 회 돌려 재작성/필터의 흔들림을 모은다.
+
+    ## 실패한 호출은 **결정적인 척한다** — 그래서 세어서 버린다
+
+    `understand_query` 는 실패하면 예외를 안 내고 `rewritten_query=query`,
+    빈 필터, `degraded=True` 로 **폴백**한다. 그 폴백은 매번 **글자까지 같다.**
+    그래서 예전 판본처럼 `degraded` 를 안 보면,
+
+      429 가 열 번 중 네 번 나면 그 네 번이 서로 완전히 일치하므로
+      **모드 일치율이 올라간다** — 장애가 "더 결정적"으로 보인다.
+
+    이 저장소는 이미 같은 함정을 반대 방향으로 겪었다(사례 19: 실패를 `is not
+    False` 로 세어 미검출률이 63%로 뛴 건). 처방도 같다 — **분모에서 빼고, 실패가
+    조금이라도 많으면 아예 채점하지 않는다.** 빼기만 하면 표본 절반이 사라진 채
+    그럴듯한 숫자가 남는다.
+    """
     filters: list[str] = []
     exact: list[str] = []
     tokens: list[str] = []
+    degraded = 0
 
     for _ in range(runs):
         result = await understand_query(llm, query)
+        if result.degraded:
+            # 폴백은 측정값이 아니라 **결측**이다. 세어두고 버린다.
+            degraded += 1
+            continue
         # 키 순서에 영향받지 않도록 정렬해서 직렬화한다 — 같은 필터인데 다른
         # 문자열로 세면 불안정을 과대평가한다.
         filters.append(
@@ -84,13 +105,44 @@ async def measure(llm: OpenAIClient, query: str, runs: int) -> dict:
         "filters": filters,
         "exact": exact,
         "tokens": tokens,
+        "degraded": degraded,
+        "runs": runs,
     }
 
 
-def report(rows: list[dict], runs: int, temperature: float) -> None:
+#: 폴백이 이 비율을 넘으면 **채점하지 않는다.** 결측을 분모에서 빼기만 하면
+#: 표본이 반쯤 사라진 채 그럴듯한 숫자가 남는다 (사례 19).
+MAX_DEGRADED_RATE = 0.05
+
+
+def report(rows: list[dict], runs: int, temperature: float) -> bool:
+    """표를 찍고 **채점이 유효한지**를 돌려준다."""
+    total_runs = sum(r["runs"] for r in rows)
+    total_degraded = sum(r["degraded"] for r in rows)
+    rate = total_degraded / total_runs if total_runs else 0.0
+
     print(f"\n{'=' * 78}")
     print(f"질의 {len(rows)}건 × {runs}회, temperature={temperature}")
+    # **판정이 쓴 값을 전부 출력한다.** 폴백 수를 안 찍으면, 장애로 올라간
+    # 일치율과 진짜 결정성을 구별할 방법이 없다.
+    print(f"폴백(degraded) {total_degraded}/{total_runs}회 = {rate:.1%}"
+          f"  (상한 {MAX_DEGRADED_RATE:.0%})")
     print(f"{'=' * 78}")
+
+    if rate > MAX_DEGRADED_RATE:
+        print("\n  !! 폴백이 너무 많아 **채점하지 않는다.**")
+        print("     폴백은 원본 질의를 그대로 돌려주므로 매번 동일하고,")
+        print("     그대로 세면 장애가 '더 결정적'으로 보인다.")
+        for row in rows:
+            if row["degraded"]:
+                print(f"       {row['query']}  {row['degraded']}/{row['runs']}회 폴백")
+        return False
+
+    empty = [r["query"] for r in rows if not r["filters"]]
+    if empty:
+        print("\n  !! 유효 표본이 0인 질의가 있어 채점하지 않는다:", ", ".join(empty))
+        return False
+
     print(
         f"{'질의':<24}{'필터':>12}{'토큰집합':>12}{'문자열':>12}"
         f"{'필터일치':>10}{'토큰일치':>10}"
@@ -171,6 +223,7 @@ def report(rows: list[dict], runs: int, temperature: float) -> None:
         "        ADR-0016의 금지 이유 2(0건은 매물 하나만 등록돼도 거짓이 되는\n"
         "        가장 낡기 쉬운 답)는 재작성 결정성과 무관하게 남는다."
     )
+    return True
 
 
 async def main() -> None:
@@ -195,7 +248,10 @@ async def main() -> None:
     )
 
     rows = [await measure(llm, q.query, args.runs) for q in FLOOR_QUERIES]
-    report(rows, args.runs, temperature)
+    if not report(rows, args.runs, temperature):
+        # **채점 불가는 성공이 아니다.** exit 0 으로 끝내면 자동화도 사람도
+        # "돌았고 괜찮았다"로 읽는다.
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":

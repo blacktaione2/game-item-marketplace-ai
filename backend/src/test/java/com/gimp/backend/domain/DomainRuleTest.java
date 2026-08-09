@@ -2,8 +2,10 @@ package com.gimp.backend.domain;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.gimp.backend.domain.item.Item;
@@ -222,6 +224,39 @@ class DomainRuleTest {
                             .content("{\"name\":\"상한가 검\",\"saleType\":\"FIXED_PRICE\","
                                     + "\"price\":99999999999999999.99,\"stock\":1}"))
                     .andExpect(status().isCreated());
+        }
+
+        /**
+         * ADR-0003 이 <i>"검색 결과에서 제외하는 필터를 반드시 넣어야 한다 — 이 ADR을
+         * 참고해서 놓치지 않을 것"</i> 이라고 적고 <b>놓쳤던</b> 자리다 (ADR-0047).
+         *
+         * <p>거래는 막혀 있었으므로({@code isOnSale()} 검사) 살 수는 없었고,
+         * <b>목록에만 남아 클릭하면 거절되는</b> 상태였다.
+         */
+        @Test
+        void 삭제한_아이템은_목록에서_사라진다() throws Exception {
+            mockMvc.perform(delete("/api/items/" + fixedPriceItem.getId())
+                            .header("Authorization", bearer(seller)))
+                    .andExpect(status().isNoContent());
+
+            mockMvc.perform(get("/api/items").header("Authorization", bearer(buyer)))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath(
+                            "$.content[?(@.id == " + fixedPriceItem.getId() + ")]")
+                            .doesNotExist());
+        }
+
+        /**
+         * <b>공허 방지.</b> 위 검사는 목록이 통째로 비어도 통과한다 — 삭제하지 않은
+         * 아이템은 그대로 있어야 한다는 것을 같이 본다.
+         */
+        @Test
+        void 삭제하지_않은_아이템은_목록에_남는다() throws Exception {
+            mockMvc.perform(get("/api/items").header("Authorization", bearer(buyer)))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath(
+                            "$.content[?(@.id == " + fixedPriceItem.getId() + ")]")
+                            .exists());
         }
 
         /** 이름과 같은 이유로 수정 경로도 막는다. */

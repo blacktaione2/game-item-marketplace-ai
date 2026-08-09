@@ -1,6 +1,7 @@
 package com.gimp.backend.service;
 
 import com.gimp.backend.domain.item.Item;
+import com.gimp.backend.domain.item.ItemStatus;
 import com.gimp.backend.domain.tenant.Tenant;
 import com.gimp.backend.domain.user.User;
 import com.gimp.backend.dto.item.ItemCreateRequest;
@@ -49,7 +50,10 @@ public class ItemService {
     }
 
     public Page<ItemResponse> list(Long tenantId, Pageable pageable) {
-        return itemRepository.findAllByTenantId(tenantId, pageable).map(ItemResponse::from);
+        // 논리 삭제(CLOSED)는 목록에서 뺀다 — ADR-0003 이 지시하고 놓쳤던 필터.
+        return itemRepository
+                .findAllByTenantIdAndStatusNot(tenantId, ItemStatus.CLOSED, pageable)
+                .map(ItemResponse::from);
     }
 
     @Transactional

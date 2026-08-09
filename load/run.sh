@@ -7,7 +7,9 @@
 # 사용:
 #   ./load/run.sh purchase contended 20 30s
 #   ./load/run.sh purchase spread    20 30s
-#   ./load/run.sh purchase contended step        # 계단식 knee 탐색
+#   ./load/run.sh purchase step                  # 계단식 knee 탐색
+#     (오래 `purchase contended step` 이라고 적혀 있었는데 **그건 동작하지 않는다** —
+#      step 분기는 MODE 로 갈리고, 세 번째 자리의 step 은 VUS 로 넘어가 NaN 이 됐다)
 #   ./load/run.sh ai cache-warm 10 40s
 #   ./load/run.sh ai live-llm   3  30s
 set -uo pipefail
@@ -50,6 +52,18 @@ esac
 # 같은 숫자를 두 곳에 두면 한쪽만 바뀌는 게 이 저장소의 단골 결함이다.
 VUS="${3:-}"
 DURATION="${4:-}"
+
+# **인자 자리를 틀리는 것도 오타다.** 위 가드는 모드 *이름*만 봤는데, 이 파일의
+# 헤더가 오랫동안 `purchase contended step` 을 사용법으로 적고 있었다 — 실제
+# 계단식 모드는 `purchase step` 이다. 세 번째 자리에 온 `step` 은 그대로
+# `-e VUS=step` 이 되고 k6 는 `Number("step")` = **NaN** 으로 돈다. 가드를 한 축에만
+# 걸면 이웃 축이 남는다는 그 이야기가, 가드를 고친 라운드에도 한 겹 더 있었다.
+case "$VUS" in
+  ""|*[!0-9]*) [ -z "$VUS" ] || { echo "VUS 는 숫자여야 합니다: '$VUS'" >&2
+                                  echo "  계단식은 './load/run.sh purchase step' 입니다" >&2
+                                  exit 2; } ;;
+esac
+
 K6_ARGS=()
 [ -n "$VUS" ] && K6_ARGS+=(-e "VUS=$VUS")
 [ -n "$DURATION" ] && K6_ARGS+=(-e "DURATION=$DURATION")
