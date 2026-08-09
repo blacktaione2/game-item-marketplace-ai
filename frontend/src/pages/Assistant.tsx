@@ -192,6 +192,25 @@ export default function Assistant() {
   );
 }
 
+/**
+ * 도구 인자를 표에 적는다. **`tenant_code` 는 뺀다.**
+ *
+ * 이 패널이 보여주려는 것은 *"에이전트가 어떤 도구를 어떤 조건으로 불렀나"* 인데,
+ * `tenant_code` 는 **모든 호출에 같은 값**이라 그 질문에 아무것도 답하지 않는다.
+ * 게다가 값이 `"nexon"` 이라, 화면 어디에도 테넌트 이름을 안 쓰기로 한 뒤로는
+ * 여기서만 튀어나와 읽는 사람을 멈춰 세운다.
+ *
+ * **멀티테넌시를 감추는 게 아니다** — 테넌트는 토큰 클레임에서 오고(ADR-0023)
+ * 그건 화면이 만들어내는 값이 아니다. 매 행에 같은 상수를 반복하는 것이 계측을
+ * 더 잘 보여주지도 않는다.
+ */
+function formatArguments(args: Record<string, unknown>): string {
+  const shown = Object.fromEntries(
+    Object.entries(args).filter(([key]) => key !== "tenant_code"),
+  );
+  return JSON.stringify(shown);
+}
+
 /** 의도 코드를 사람 말로. 서버는 사실만 주고 문구는 화면이 정한다. */
 const INTENT_LABEL: Record<string, string> = {
   item_search: "아이템 검색",
@@ -463,7 +482,7 @@ function Result({
                 <tr key={index}>
                   <td>{call.step}</td>
                   <td>{call.tool}</td>
-                  <td className="muted">{JSON.stringify(call.arguments)}</td>
+                  <td className="muted">{formatArguments(call.arguments)}</td>
                   <td style={{ color: call.failed ? "var(--critical)" : undefined }}>
                     {call.failed ? "실패" : "성공"}
                   </td>

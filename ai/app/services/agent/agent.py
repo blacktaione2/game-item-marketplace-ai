@@ -55,6 +55,8 @@ _SYSTEM_PROMPT = """당신은 게임 아이템 거래소의 상담 도우미입�
   실제 거래 이력이 아니라 추정이라는 뜻이기 때문입니다.
 - 검색 결과에는 질의와 무관한 종류가 섞일 수 있습니다. 사용자가 요청한 종류에
   맞는 것만 고르고, 확실하지 않으면 단정하지 마세요.
+- **묻지 않은 것을 더 해주겠다고 제안하며 끝내지 마세요.** 물어본 것에 답하고
+  끝냅니다. (정보가 모자라 되물어야 할 때는 되물어도 됩니다.)
 - 답변은 한국어로, 근거(가격·수치·출처 아이템)를 같이 적으세요."""
 
 _FINAL_PROMPT = (
@@ -204,22 +206,60 @@ def _int_or_none(value: Any) -> int | None:
         return None
 
 
+def _parse_items(text: str) -> list[dict[str, Any]]:
+    """MCP 도구가 돌려준 텍스트에서 아이템 dict 들을 뽑는다.
+
+    **모양을 하나로 가정하면 안 된다.** 도구는 `list[dict]` 를 반환하지만
+    MCP 는 그걸 **원소마다 별도 텍스트 블록**으로 직렬화하고,
+    `call_tool_text` 가 그것들을 개행으로 이어붙인다. 그래서 실제로 오는 것은
+
+      - 항목이 하나면 → pretty-print 된 **객체 하나**
+      - 여럿이면 → 객체들이 줄바꿈으로 **이어 붙은 것**(유효한 JSON 이 아니다)
+
+    둘 다 `json.loads` 로는 리스트가 안 나온다. 그래서 **이어 붙은 값들을
+    차례로 읽는다**(`raw_decode`). 배열로 오는 경우도 그대로 받는다 — 직렬화
+    방식이 바뀌어도 이 함수는 계속 동작해야 한다.
+    """
+    decoder = json.JSONDecoder()
+    items: list[dict[str, Any]] = []
+    index, end = 0, len(text)
+    while index < end:
+        while index < end and text[index].isspace():
+            index += 1
+        if index >= end:
+            break
+        try:
+            value, index = decoder.raw_decode(text, index)
+        except ValueError:
+            # 남은 부분이 JSON 이 아니면 거기서 멈춘다 — 앞에서 읽은 것은 살린다.
+            break
+        if isinstance(value, list):
+            items.extend(entry for entry in value if isinstance(entry, dict))
+        elif isinstance(value, dict):
+            items.append(value)
+    return items
+
+
 def _remember_item(call: Any, text: str, seen: dict[int, dict[str, Any]]) -> None:
     """`search_items` 결과를 id 로 색인해둔다.
 
     도구 출력은 문자열로 오므로 다시 파싱한다. **실패해도 조용히 넘긴다** —
     이건 화면 편의를 위한 부가 정보이지 답변의 근거가 아니다. 여기서 예외가
     나면 복합 질의 전체가 죽는데, 그건 얻는 것에 비해 너무 큰 대가다.
+
+    > **그 조용함 때문에 이 함수는 한 번도 동작한 적이 없었다.** 예전 판본은
+    > `json.loads(text)` 가 **리스트가 아니면** 그냥 돌아갔는데, MCP 직렬화
+    > 때문에 리스트로 오는 경우가 애초에 없었다(`_parse_items` 참고). 그래서
+    > 복합 분기의 `resolved_item` 은 늘 `None` 이었고 — 화면에 "이 답변이
+    > 가리키는 아이템" 카드가 뜬 적이 없다. 예외도 로그도 안 났다.
+    >
+    > **부가 정보라서 조용히 넘긴다는 판단은 유지한다.** 바뀐 것은 넘기기 전에
+    > 실제로 시도해 보게 된 것뿐이다. 조용한 경로일수록 테스트로 고정해야 한다는
+    > 쪽이 이 라운드의 교훈이고, `tests/test_agent_items.py` 가 그 자리다.
     """
     if call.name != "search_items":
         return
-    try:
-        items = json.loads(text)
-    except (TypeError, ValueError):
-        return
-    if not isinstance(items, list):
-        return
-    for item in items:
-        item_id = _int_or_none(item.get("item_id")) if isinstance(item, dict) else None
+    for item in _parse_items(text):
+        item_id = _int_or_none(item.get("item_id"))
         if item_id is not None:
             seen[item_id] = item
