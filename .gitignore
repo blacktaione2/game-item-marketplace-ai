@@ -26,3 +26,6 @@ load/out/
 # 방법이 사라진다.
 /ir_metrics.json
 /ir*.json
+
+# 문서 볼트. 로컬에서만 다룬다 — CLAUDE.md 의 문서 워크플로 참고.
+docs/
