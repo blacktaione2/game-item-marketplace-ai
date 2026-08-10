@@ -14,11 +14,12 @@
 
 ## 무엇을 고정하는가
 
-**pytest 가 조용히 건너뛰는 모양이 없어야 한다.** 세 가지다.
+**pytest 가 조용히 건너뛰는 모양이 없어야 한다.** 네 가지다.
 
 1. `test_*` 가 다른 **함수 안에 중첩** — ADR-0049 가 겪은 그 모양
-2. `Test*` 클래스에 **`__init__` 이 있음** — 클래스 통째로 수집에서 빠진다
-3. 같은 모듈에 **같은 이름이 두 번** — 뒤가 앞을 덮는다
+2. `Test*` 클래스에 **`__init__` 이 있음** — 클래스 통째로 수집에서 빠진다 (경고 하나)
+3. 같은 모듈에 **같은 이름이 두 번** — 뒤가 앞을 덮는다 (무신호)
+4. 클래스 이름이 **`Test` 로 시작하지 않음** — 메서드가 통째로 안 돈다 (무신호)
 
 ### 처음에는 1번만 막았다
 
@@ -28,7 +29,18 @@ ADR-0049 는 사고가 난 축에만 가드를 달았다. 그런데 이 저장�
 `SUITE`/`MODE`). 여기서 성질은 **"`test_*` 인데 pytest 가 안 돈다"** 이고, 축은
 셋이다.
 
-### 그리고 넷째 축은 재보고 뺐다 (ADR-0050)
+### 4번은 목록에 있었는데 「정상」 표본에 들어가 있었다 (ADR-0050 정정)
+
+사고 직후 만든 목록에는 **네 모양**이 있었다. 그런데 가드는 셋만 보고, 남은 하나는
+*지목하면 안 되는 모양*으로 **반대편 표본**(`test_normal_shapes_are_not_flagged`)에
+들어갔다. **빠뜨린 게 아니라 의도된 동작으로 적어둔 것**이라 더 나쁘다 — 다음
+사람이 그 표본을 근거로 "그건 일부러 안 잡는 것"이라고 읽는다.
+
+재보니 4번은 **가장 조용하다**: `class Helper:` 안의 `assert False` 짜리 테스트가
+`1 passed`, exit 0, 경고조차 없다. 지금 저장소에 0건이고, 오탐 위험은 낮다 —
+해소가 "클래스명을 바꾸거나 메서드에서 `test_` 를 뗀다"로 싸다.
+
+### 그리고 다섯째 후보는 재보고 뺐다 (ADR-0050)
 
 `async def test_` 도 같은 계열로 보였다. 이 저장소에는 `pytest-asyncio` 가 없고
 CLAUDE.md 가 *"몇 안 되는 비동기 경우는 `asyncio.run` 을 쓴다"* 고 적어둬서, 누군가
@@ -89,21 +101,30 @@ def _uncollected(tree: ast.AST) -> list[str]:
     walk(tree, False)
 
     for node in ast.iter_child_nodes(tree):
+        if not isinstance(node, ast.ClassDef):
+            continue
+        methods = [
+            m.name for m in node.body
+            if isinstance(m, _FUNC) and m.name.startswith("test_")
+        ]
+        if not methods:
+            continue
         # 2. `Test*` 클래스에 `__init__` 이 있으면 **클래스 통째로** 빠진다.
         #    pytest 는 `PytestCollectionWarning` 만 내고 exit 0 으로 통과한다.
-        if isinstance(node, ast.ClassDef) and node.name.startswith("Test"):
-            has_init = any(
-                isinstance(m, _FUNC) and m.name == "__init__" for m in node.body
-            )
-            methods = [
-                m.name for m in node.body if isinstance(m, _FUNC)
-                and m.name.startswith("test_")
-            ]
-            if has_init and methods:
+        if node.name.startswith("Test"):
+            if any(isinstance(m, _FUNC) and m.name == "__init__" for m in node.body):
                 found.append(
                     f"{node.name} (줄 {node.lineno}, __init__ 때문에 "
                     f"{len(methods)}건 수집 안 됨)"
                 )
+        # 4. 클래스 이름이 `Test` 로 시작하지 않으면 **아무 신호 없이** 안 돈다.
+        #    경고조차 없다 — `__init__` 쪽보다 더 조용하다(실측).
+        else:
+            found.append(
+                f"{node.name} (줄 {node.lineno}, 클래스 이름이 Test* 가 아니라 "
+                f"{len(methods)}건 수집 안 됨 — 클래스명을 바꾸거나 "
+                f"메서드 이름에서 test_ 를 떼세요)"
+            )
 
     # 3. 같은 이름이 두 번이면 뒤가 앞을 **덮는다.** 경고조차 없다.
     scopes: list[list[str]] = [
@@ -180,6 +201,24 @@ def test_the_scan_catches_a_constructor_in_a_test_class():
     assert [n.split(" ")[0] for n in _uncollected(broken)] == ["TestWithInit"]
 
 
+def test_the_scan_catches_a_class_not_named_test():
+    """**네 번째 축 — 처음엔 이걸 「정상」 표본에 넣어뒀다** (ADR-0050 정정).
+
+    사고 직후 만든 목록에는 네 모양이 있었는데, 가드는 셋만 봤고 나머지 하나는
+    *지목하면 안 되는 모양*으로 반대편 표본에 들어가 있었다. **빠뜨린 게 아니라
+    의도된 동작으로 적어둔 것**이라 더 나쁘다.
+
+    실측: `class Helper:` 안의 `assert False` 짜리 `test_` 는 `1 passed`, exit 0,
+    **경고조차 없다** — `__init__` 축(경고 하나)보다 조용하다.
+    """
+    broken = ast.parse(
+        "class Helper:\n"
+        "    def test_never_collected(self):\n"
+        "        assert False\n"
+    )
+    assert [n.split(" ")[0] for n in _uncollected(broken)] == ["Helper"]
+
+
 def test_the_scan_catches_a_duplicate_name():
     """**두 번째 실측 축.** 이건 경고조차 없다 — 뒤 정의가 앞을 덮을 뿐이다."""
     broken = ast.parse(
@@ -220,8 +259,8 @@ def test_normal_shapes_are_not_flagged():
         "    def __init__(self):\n"
         "        self.x = 1\n"
         "\n"
-        "    def test_looks_like_one(self):\n"
-        "        assert True\n"
+        "    def build(self):\n"
+        "        return 1\n"
         "\n"
         "class TestA:\n"
         "    def test_shared_name(self):\n"

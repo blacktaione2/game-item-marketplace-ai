@@ -197,8 +197,18 @@ class TestShowableExceptionsAreOneList:
         **500** 이었다(배포에서 실측). *목록을 하나로 합치면서, 무엇이 그 목록에
         들어가야 하는지를 다시 열거로 정한 것*이다.
 
-        `ValueError` 같은 내장 예외는 뺀다 — 도메인 예외가 아니고, 파이프라인이
-        아니라 요청 파싱에서 나온다.
+        **범위는 `app/routers/*.py` 에서 `assistant` 를 뺀 전부다** — 세 라우터라고
+        적어두면 그 문장이 곧 다음 열거가 된다. 오늘 4xx 를 내는 것이 anomaly·
+        forecast·search 셋뿐이라 결과가 같을 뿐이다.
+
+        **내장 예외는 뺀다. 다만 조용히 건너뛰지 않고 아래에서 단언한다** —
+        `test_no_builtin_catch_carries_a_4xx` 가 *"내장 예외를 4xx 로 옮기는 catch
+        자체가 없다"* 를 고정한다. 건너뛰기만 하면 이 함수가 결함을 가려준다.
+
+        > 첫 판본은 그 근거를 *"내장 예외는 요청 파싱에서 나온다"* 라고 적었는데
+        > **틀렸다** (ADR-0050 정정). `forecast.py` 의 `except ValueError -> 400` 은
+        > `forecast_price` **파이프라인 안**의 검증을 잡고 있었다. 확인하지 않고
+        > 쓴 근거였고, 그 근거가 있었기 때문에 그 catch 를 결함으로 못 봤다.
         """
         import ast
         import builtins
@@ -251,6 +261,79 @@ class TestShowableExceptionsAreOneList:
         assert not disagreeing, (
             f"같은 예외에 다른 상태 코드를 냅니다 (통합, 개별): {disagreeing}"
         )
+
+    def test_내장_예외를_4xx_로_옮기는_catch_가_없다(self):
+        """**제외를 단언으로 바꾼다** (ADR-0050 정정).
+
+        위 유도는 내장 예외를 건너뛴다. 건너뛰기만 하면 `except ValueError -> 400`
+        같은 자리가 **검사에 안 보인 채로** 남는다 — 실제로 그랬다.
+
+        그런 catch 는 그 자체로 결함 신호다. `detail=str(e)` 로 내보내는데 범주
+        기반이라, 파이프라인 안의 ES·numpy·torch 가 내는 예외까지 내부 메시지를
+        4xx 본문에 싣는다. `test_error_detail_leak.py` 가 `detail=str(e)` 를
+        허용하는 근거(*"도메인 예외라 우리가 쓴 메시지"*)가 거기서만 거짓이었다.
+
+        `Exception -> 500` 은 예외다 — 일반 문장을 쓰고 예외를 안 싣는다.
+        """
+        import ast
+        import builtins
+        import pathlib
+
+        import app.routers as routers_pkg
+
+        offenders = []
+        for path in sorted(pathlib.Path(routers_pkg.__file__).parent.glob("*.py")):
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+            for handler in ast.walk(tree):
+                if not isinstance(handler, ast.ExceptHandler) or handler.type is None:
+                    continue
+                targets = (
+                    handler.type.elts
+                    if isinstance(handler.type, ast.Tuple)
+                    else [handler.type]
+                )
+                names = [t.id for t in targets if isinstance(t, ast.Name)]
+                status = None
+                for node in ast.walk(handler):
+                    if isinstance(node, ast.keyword) and node.arg == "status_code":
+                        status = getattr(node.value, "value", None)
+                if status is None or status >= 500:
+                    continue
+                offenders += [
+                    f"{path.name}: except {n} -> {status}"
+                    for n in names
+                    if hasattr(builtins, n)
+                ]
+        assert not offenders, (
+            "내장 예외를 4xx 로 옮기는 catch 가 있습니다: "
+            + ", ".join(offenders)
+            + " — 도메인 예외를 만들어 잡으세요. 범주 기반 catch 는 "
+            "내부 예외 메시지를 응답 본문에 싣습니다."
+        )
+
+    def test_그_단언이_실제로_잡는다(self):
+        """**공허 방지.** 고치기 전 모양(`except ValueError -> 400`)을 만들어 본다."""
+        import ast
+        import builtins
+
+        tree = ast.parse(
+            "try:\n"
+            "    pass\n"
+            "except ValueError as e:\n"
+            "    raise HTTPException(status_code=400, detail=str(e)) from e\n"
+        )
+        hits = []
+        for handler in ast.walk(tree):
+            if not isinstance(handler, ast.ExceptHandler) or handler.type is None:
+                continue
+            names = [handler.type.id] if isinstance(handler.type, ast.Name) else []
+            status = None
+            for node in ast.walk(handler):
+                if isinstance(node, ast.keyword) and node.arg == "status_code":
+                    status = getattr(node.value, "value", None)
+            if status is not None and status < 500:
+                hits += [n for n in names if hasattr(builtins, n)]
+        assert hits == ["ValueError"]
 
     def test_그_유도가_실제로_라우터를_읽는다(self):
         """**공허 방지.** 0개를 읽으면 위 검사는 공짜로 통과한다."""

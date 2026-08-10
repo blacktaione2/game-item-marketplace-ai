@@ -21,6 +21,7 @@ from app.services.anomaly.exceptions import (
 from app.services.assistant.pipeline import ask
 from app.services.forecast.exceptions import (
     ForecastModelNotTrainedError,
+    HorizonTooLongError,
     InsufficientHistoryError,
     ItemNotFoundError,
 )
@@ -67,6 +68,7 @@ _SHOWABLE_STATUS: dict[type[Exception], int] = {
     ItemNotFoundError: 404,
     UnknownTenantError: 404,
     TradeNotFoundError: 404,
+    HorizonTooLongError: 400,
     InsufficientHistoryError: 422,
     ForecastModelNotTrainedError: 503,
     AnomalyModelNotTrainedError: 503,

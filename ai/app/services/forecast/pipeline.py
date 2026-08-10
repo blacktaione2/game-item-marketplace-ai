@@ -24,7 +24,11 @@ from app.corpus.trade_history import SERIES_END, get_price_series
 from app.core.config import get_settings
 from app.services.forecast.cold_start import anchor_price, find_donors, inherit_features
 from app.services.forecast.dataset import normalize_window, to_arrays
-from app.services.forecast.exceptions import InsufficientHistoryError, ItemNotFoundError
+from app.services.forecast.exceptions import (
+    HorizonTooLongError,
+    InsufficientHistoryError,
+    ItemNotFoundError,
+)
 from app.services.forecast.predictor import get_forecast_service
 from app.services.search.exceptions import TenantIndexNotFoundError
 from app.services.search.mapping import index_name
@@ -45,9 +49,7 @@ async def forecast_price(
     window = service.window
     horizon = horizon or service.horizon
     if horizon > service.horizon:
-        raise ValueError(
-            f"모델이 예측할 수 있는 최대 기간은 {service.horizon}일입니다 (요청: {horizon}일)"
-        )
+        raise HorizonTooLongError(horizon, service.horizon)
 
     index = index_name(settings.index_prefix, tenant_code)
     item = await _get_item(es, index, item_id)

@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 from app.core.auth import Actor, require_actor
 from app.services.forecast.exceptions import (
     ForecastModelNotTrainedError,
+    HorizonTooLongError,
     InsufficientHistoryError,
     ItemNotFoundError,
 )
@@ -50,7 +51,11 @@ async def forecast(
         raise HTTPException(status_code=503, detail=str(e)) from e
     except InsufficientHistoryError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
-    except ValueError as e:
+    # **`except ValueError` 였다** (ADR-0050 정정). 범주 기반 catch 라, 파이프라인
+    # 안의 ES·numpy·torch 가 내는 `ValueError` 까지 **내부 메시지를 400 본문으로**
+    # 내보냈다. `test_error_detail_leak.py` 가 `detail=str(e)` 를 허용하는 근거
+    # (*"도메인 예외라 우리가 쓴 메시지"*)가 이 한 자리에서만 거짓이었다.
+    except HorizonTooLongError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
         # 예외 문자열을 클라이언트로 내보내지 않는다 (ADR-0041). 서버에는 남긴다.
