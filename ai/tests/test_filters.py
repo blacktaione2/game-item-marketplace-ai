@@ -7,8 +7,10 @@
 있다.
 """
 
+import json
 from typing import Any, get_args
 
+from app.services.assistant.pipeline import _describe_filters
 from app.services.search.filters import SearchFilters
 
 
@@ -35,17 +37,33 @@ def _sample_for(annotation: Any) -> Any:
     raise AssertionError(f"표본을 만들 수 없는 타입입니다: {annotation}")
 
 
+def clauses_per_field(model: type[SearchFilters]) -> dict[str, str]:
+    """필드 하나씩만 채웠을 때 나오는 절. 직렬화해서 비교 가능하게 만든다."""
+    return {
+        name: json.dumps(
+            model(**{name: _sample_for(field.annotation)}).to_es_filters(),
+            sort_keys=True,
+            ensure_ascii=False,
+        )
+        for name, field in model.model_fields.items()
+    }
+
+
 def unhandled_fields(model: type[SearchFilters]) -> list[str]:
     """값을 넣어도 **절을 하나도 안 만드는** 필드들.
 
     본 검사와 공허 방지가 이 식을 공유한다.
+
+    **깊이: 존재이지 대응이 아니다.** 절이 하나라도 나오면 통과하므로,
+    `rarity` 를 더하면서 `{"term": {"element": self.rarity}}` 라고 **대상만
+    잘못 적은** 경우는 이 함수가 못 잡는다. 그쪽은 아래
+    `test_no_two_fields_produce_the_same_clause` 가 맡는다 — 잘못 적은 대상은
+    원래 그 대상을 쓰는 필드와 **같은 절**을 내므로 충돌로 드러난다.
     """
-    missing = []
-    for name, field in model.model_fields.items():
-        instance = model(**{name: _sample_for(field.annotation)})
-        if not instance.to_es_filters():
-            missing.append(name)
-    return missing
+    empty = json.dumps([], sort_keys=True)
+    return [
+        name for name, clause in clauses_per_field(model).items() if clause == empty
+    ]
 
 
 class TestSubcategory:
@@ -146,6 +164,44 @@ class TestEveryFieldIsActuallyUsed:
 
         assert unhandled_fields(_WithRarity) == ["rarity"]
 
+    def test_no_two_fields_produce_the_same_clause(self):
+        """**대상을 잘못 적은 경우를 잡는다** (ADR-0054).
+
+        `unhandled_fields()` 는 *존재*만 본다 — 절이 하나라도 나오면 통과한다.
+        그래서 `rarity` 를 더하면서 `{"term": {"element": self.rarity}}` 라고
+        **대상만 잘못 적으면** 그 검사는 통과하고, 검색은 엉뚱한 필드로 걸린다.
+
+        실측: 지금 10개 필드가 **전부 다른 절**을 낸다(`price_min`/`price_max` 도
+        `gte`/`lte` 로 갈린다). 그래서 충돌은 곧 "같은 대상을 두 번 썼다"는 뜻이다.
+        """
+        seen: dict[str, list[str]] = {}
+        for name, clause in clauses_per_field(SearchFilters).items():
+            seen.setdefault(clause, []).append(name)
+        collisions = {c: names for c, names in seen.items() if len(names) > 1}
+        assert not collisions, (
+            f"서로 다른 필드가 같은 절을 냅니다: {list(collisions.values())} — "
+            "변환에서 대상 필드를 잘못 적었을 가능성이 큽니다."
+        )
+
+    def test_the_collision_check_can_actually_fail(self):
+        """**공허 방지 — 대상만 잘못 적은 모양을 그대로 만든다.**"""
+
+        class _RarityWithWrongTarget(SearchFilters):
+            rarity: str | None = None
+
+            def to_es_filters(self):
+                clauses = super().to_es_filters()
+                if self.rarity:
+                    # 복사해놓고 대상을 안 바꿨다 — 실제로 잘 나는 실수다.
+                    clauses.append({"term": {"element": self.rarity}})
+                return clauses
+
+        assert unhandled_fields(_RarityWithWrongTarget) == [], (
+            "존재 검사만으로는 통과한다 — 그래서 충돌 검사가 필요하다"
+        )
+        per_field = clauses_per_field(_RarityWithWrongTarget)
+        assert per_field["rarity"] == per_field["element"]
+
     def test_a_handled_subclass_is_not_flagged(self):
         """**반대 방향.** 제대로 변환을 더한 필드는 지목하면 안 된다."""
 
@@ -159,3 +215,81 @@ class TestEveryFieldIsActuallyUsed:
                 return clauses
 
         assert unhandled_fields(_WithRarityHandled) == []
+
+
+class TestDescriptionMatchesWhatIsActuallyFiltered:
+    """**세 번째 손 열거** — 그리고 이 하나가 거짓말을 만든다 (ADR-0054).
+
+    필드 하나가 세 곳에 손으로 적혀 있다.
+
+    | # | 어디 | 무엇을 정하나 |
+    |---|---|---|
+    | 1 | `SearchFilters.model_fields` | LLM 이 무엇을 뽑는가 |
+    | 2 | `to_es_filters()` | 무엇으로 **실제로** 거르는가 |
+    | 3 | `_describe_filters()` | 사용자에게 무엇으로 걸렀다고 **말하는가** |
+
+    빠지는 방향마다 결과가 다르다.
+
+    - **1에만 있다** → 조용히 안 걸린다(사례 45). `unhandled_fields()` 가 잡는다
+    - **2에만 있다** → 걸리는데 설명에 안 나온다. 가볍다
+    - **3에만 있다** → **걸리지도 않았는데 걸렀다고 말한다.** 0건 응답이
+      *"전설 등급 조건에 맞는 매물이 없습니다"* 라고 하는데 등급은 필터에
+      안 들어간 상태다
+
+    세 번째가 심각한 이유는 자리 때문이다. ADR-0016 이 0건 응답에서 설명 LLM 을
+    **없앤** 것은 그 문장이 지어내지 않게 하려는 것이었고, 그 자리의 문구가
+    `_describe_filters()` 다. 그리고 `applied_filters` 는 **이름 자체가 적용을
+    주장**하면서, 주석이 *"0건일 때 사용자가 가진 유일한 근거"* 라고 적어둔다.
+    **값이 유일한 근거인 자리가 곧 그 값이 거짓일 수 있는 자리다.**
+    """
+
+    def _both(self) -> dict[str, tuple[bool, bool]]:
+        result = {}
+        for name, field in SearchFilters.model_fields.items():
+            instance = SearchFilters(**{name: _sample_for(field.annotation)})
+            result[name] = (
+                bool(instance.to_es_filters()),
+                bool(_describe_filters(instance.model_dump(exclude_none=True))),
+            )
+        return result
+
+    def test_filtered_and_described_agree(self):
+        mismatched = {
+            name: ("걸리는데 설명 없음" if filtered else "설명하는데 안 걸림")
+            for name, (filtered, described) in self._both().items()
+            if filtered != described
+        }
+        assert not mismatched, (
+            f"필터와 설명이 어긋납니다: {mismatched} — "
+            "'설명하는데 안 걸림' 은 0건 응답이 거짓을 말한다는 뜻입니다."
+        )
+
+    def test_there_is_something_to_compare(self):
+        """양쪽 다 0이면 위 검사는 공짜로 통과한다."""
+        both = self._both()
+        assert sum(1 for f, _ in both.values() if f) >= 8
+        assert sum(1 for _, d in both.values() if d) >= 8
+
+    def test_the_comparison_can_actually_fail(self):
+        """**공허 방지 — 3에만 있는 모양을 그대로 만든다.**
+
+        `rarity` 를 모델과 설명에는 넣고 변환에는 안 넣었다. 이게 실제로 나는
+        순서다 — 문구는 답변을 쓰다가 자연히 추가되고, DSL 은 따로 손대야 한다.
+        """
+
+        class _RarityDescribedNotFiltered(SearchFilters):
+            rarity: str | None = None
+
+        instance = _RarityDescribedNotFiltered(rarity="전설")
+        assert instance.to_es_filters() == [], "변환에는 없어야 표본이 성립한다"
+
+        def _describe_with_rarity(dumped):
+            parts = _describe_filters(dumped)
+            if dumped.get("rarity"):
+                parts.append(f"{dumped['rarity']} 등급")
+            return parts
+
+        described = _describe_with_rarity(instance.model_dump(exclude_none=True))
+        assert described == ["전설 등급"], (
+            "설명만 있고 필터는 없는 상태 — 0건 응답이 여기서 거짓을 말한다"
+        )

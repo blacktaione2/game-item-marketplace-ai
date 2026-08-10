@@ -286,13 +286,20 @@ def report_spread(runs: list[list[dict]]) -> None:
 
     # 질의 내 마진 = 적합 최솟값 − 부적합 최댓값. 이게 산포보다 커야 한다.
     print(f"\n{'=' * 72}\n질의 내 마진 (적합 최솟값 − 부적합 최댓값)\n{'=' * 72}")
-    margins: list[float] = []
+    # **세 값을 섞지 않는다** (ADR-0054). 예전 판본은 `margins` 하나에
+    #   (1) 실행 1의 질의별 마진과
+    #   (2) 실행 2 이후의 **중복 제거된** 마진 값들
+    # 을 같이 담았다. `min()` 만 쓸 때는 결과가 같아서 오래 안 보였는데,
+    # 분모를 찍기 시작하자 **`len(margins)` 이 질의 수도 관측 수도 아닌 값**이
+    # 됐다 — 없는 분모를 고치려다 **틀린 분모**를 넣은 셈이다.
+    first_run_margin: dict[str, float] = {}   # 표에 찍는 값 (실행 1)
+    all_margins: list[float] = []             # 최솟값 판정에 쓰는 전 실행 관측
     inversions: list[tuple[str, str, str]] = []
-    # **뺀 질의를 센다.** 마진은 "적합 최솟값 − 부적합 최댓값"이라 한쪽이 없으면
-    # 계산할 수 없는데, 예전 판본은 그냥 `continue` 했다. 그러면 아래 표에 안
-    # 보이고 `최소 마진`의 분모도 안 보인다 — **판정에 쓴 값을 전부 출력한다**는
-    # 이 저장소의 규칙에 걸린다(ADR-0053).
-    dropped: dict[str, str] = {}
+    # **뺀 질의를 실행 번호까지 센다.** 마진은 "적합 최솟값 − 부적합 최댓값"이라
+    # 한쪽이 없으면 계산할 수 없는데, 예전 판본은 그냥 `continue` 했다. 그리고
+    # 그 다음 판본은 **실행 1에서만** 기록해서, 실행 3에서만 빠지는 질의를 여전히
+    # 놓쳤다 — 같은 구멍을 절반만 막았다.
+    dropped: dict[str, list[str]] = {}
     for index, rows in enumerate(runs, start=1):
         by_query: dict[str, list[dict]] = {}
         for row in rows:
@@ -301,39 +308,38 @@ def report_spread(runs: list[list[dict]]) -> None:
             fit = [r["score"] for r in group if r["fit"]]
             unfit = [r["score"] for r in group if not r["fit"]]
             if not fit or not unfit:
-                if index == 1:
-                    dropped[query] = "부적합 없음" if fit else "적합 없음"
+                reason = "부적합 없음" if fit else "적합 없음"
+                dropped.setdefault(query, []).append(f"실행{index}({reason})")
                 continue
             margin = min(fit) - max(unfit)
+            all_margins.append(margin)
             if index == 1:
-                margins.append(margin)
+                first_run_margin[query] = margin
                 print(f"  {query:<26} {margin:>+7.2f}")
-            elif margin not in margins:
-                margins.append(margin)
             # 순위 역전: 적합보다 점수가 높은 부적합
             for row in group:
                 if not row["fit"] and row["score"] > min(fit):
                     inversions.append((f"실행{index}", query, row["name"]))
 
+    queries_seen = {row["query"].query for rows in runs for row in rows}
+    expected = len(queries_seen) * len(runs)
     if dropped:
-        print(
-            f"\n  !! 마진을 못 재서 뺀 질의 {len(dropped)}건 "
-            f"— 아래 `최소 마진`의 분모는 나머지다:"
-        )
-        for query, reason in dropped.items():
-            print(f"       {query}  ({reason})")
+        print(f"\n  !! 마진을 못 재서 뺀 (질의, 실행) {expected - len(all_margins)}건:")
+        for query, where in dropped.items():
+            print(f"       {query}  {', '.join(where)}")
 
-    if margins:
+    if all_margins:
         print(
-            f"\n  최소 마진 {min(margins):+.2f}  "
-            f"(전 실행 통합, 질의 {len(margins) if len(runs) == 1 else '중복 제거 후 ' + str(len(margins))}개 기준)"
+            f"\n  최소 마진 {min(all_margins):+.2f}  "
+            f"(질의 {len(queries_seen)}건 × 실행 {len(runs)}회 = {expected} 중 "
+            f"**유효 {len(all_margins)}**)"
         )
         if spreads:
             worst = max(s for _, s in spreads)
-            verdict = "충족" if worst < min(margins) else "**미충족**"
+            verdict = "충족" if worst < min(all_margins) else "**미충족**"
             print(
                 f"\n  => 전제 조건 (최대 산포 {worst:.3f} < 최소 마진 "
-                f"{min(margins):.2f}): {verdict}"
+                f"{min(all_margins):.2f}): {verdict}"
             )
 
     print(f"\n{'=' * 72}\n(d) 순위 역전 - 부적합이 적합보다 위에 있는가\n{'=' * 72}")
