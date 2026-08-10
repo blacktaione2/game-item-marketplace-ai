@@ -321,18 +321,28 @@ def report_spread(runs: list[list[dict]]) -> None:
                 if not row["fit"] and row["score"] > min(fit):
                     inversions.append((f"실행{index}", query, row["name"]))
 
+    # **개수와 목록을 같은 데서 유도한다.** 첫 판본은 개수를
+    # `expected - len(all_margins)` 로 빼고 목록은 `dropped` 에서 뽑았는데,
+    # 그 둘은 **다른 것을 센다** — 어떤 실행에서 결과가 0건이라 행 자체가 없던
+    # 질의는 뺄셈에는 잡히고 목록에는 안 나온다. 헤더 숫자와 아래 줄 수가
+    # 어긋날 수 있었다(사례 49). 세 갈래로 나눠 **합이 닫히게** 찍는다.
     queries_seen = {row["query"].query for rows in runs for row in rows}
     expected = len(queries_seen) * len(runs)
+    listed = sum(len(where) for where in dropped.values())
+    absent = expected - len(all_margins) - listed
+
     if dropped:
-        print(f"\n  !! 마진을 못 재서 뺀 (질의, 실행) {expected - len(all_margins)}건:")
+        print(f"\n  !! 한쪽 라벨이 없어 마진을 못 잰 (질의, 실행) {listed}건:")
         for query, where in dropped.items():
             print(f"       {query}  {', '.join(where)}")
+    if absent:
+        print(f"  !! 그 실행에 결과 자체가 없던 (질의, 실행) {absent}건")
 
     if all_margins:
         print(
             f"\n  최소 마진 {min(all_margins):+.2f}  "
-            f"(질의 {len(queries_seen)}건 × 실행 {len(runs)}회 = {expected} 중 "
-            f"**유효 {len(all_margins)}**)"
+            f"(질의 {len(queries_seen)}건 × 실행 {len(runs)}회 = {expected} "
+            f"= 유효 {len(all_margins)} + 라벨부족 {listed} + 결과없음 {absent})"
         )
         if spreads:
             worst = max(s for _, s in spreads)

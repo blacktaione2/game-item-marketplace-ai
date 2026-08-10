@@ -432,6 +432,13 @@ export async function askStream(
         onEvent(event);
         if (event.type === "done") result = event.result;
         // 스트림이 열린 뒤의 실패는 페이로드로 온다. 상태 코드를 바꿀 수 없어서다.
+        //
+        // **여기서 `500` 은 진짜 상태가 아니다.** 서버는 `error` 이벤트에 메시지만
+        // 싣고 코드는 안 싣는다 — 같은 예외가 비스트리밍 경로로는 404·422·503 이
+        // 됐을 수도 있다(`_SHOWABLE_STATUS`, ADR-0050·0051). 지금은 화면이
+        // `message` 만 쓰므로 무해하지만, **`status` 로 분기하면 안 된다**
+        // (예: "5xx 면 재시도" 는 404 를 영원히 재시도한다). 분기가 필요해지면
+        // 서버가 이벤트에 코드를 실어야 한다.
         if (event.type === "error") throw new ApiError(500, event.message);
       }
     }

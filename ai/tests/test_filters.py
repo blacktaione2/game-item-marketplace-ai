@@ -243,13 +243,25 @@ class TestDescriptionMatchesWhatIsActuallyFiltered:
     **값이 유일한 근거인 자리가 곧 그 값이 거짓일 수 있는 자리다.**
     """
 
-    def _both(self) -> dict[str, tuple[bool, bool]]:
+    def _both(self, model=SearchFilters, describe=_describe_filters) -> dict:
+        """필드마다 (절이 나오는가, 문구가 나오는가).
+
+        **모델과 설명 함수를 인자로 받는다** — 공허 방지가 *"설명에만 있는 상태"*
+        를 실제로 만들어 **이 함수에 통과시킬** 수 있어야 한다. 첫 판본은 그
+        상태를 흉내 낸 지역 함수를 만들고 그 함수만 단언했다. 즉 **본 검사의
+        비교식(`filtered != described`)이 실패 방향으로 한 번도 안 돌았다** —
+        사례 44 를 적은 바로 다음 라운드에 같은 실수다(사례 48).
+
+        깊이: **필드 하나씩** 본다. `_describe_filters` 는 `subcategory` 가 있으면
+        `category` 를 일부러 생략하므로, 여러 필드를 같이 채우면 이 대응은
+        의도적으로 깨진다. 그건 결함이 아니라 축약 규칙이다.
+        """
         result = {}
-        for name, field in SearchFilters.model_fields.items():
-            instance = SearchFilters(**{name: _sample_for(field.annotation)})
+        for name, field in model.model_fields.items():
+            instance = model(**{name: _sample_for(field.annotation)})
             result[name] = (
                 bool(instance.to_es_filters()),
-                bool(_describe_filters(instance.model_dump(exclude_none=True))),
+                bool(describe(instance.model_dump(exclude_none=True))),
             )
         return result
 
@@ -280,16 +292,17 @@ class TestDescriptionMatchesWhatIsActuallyFiltered:
         class _RarityDescribedNotFiltered(SearchFilters):
             rarity: str | None = None
 
-        instance = _RarityDescribedNotFiltered(rarity="전설")
-        assert instance.to_es_filters() == [], "변환에는 없어야 표본이 성립한다"
-
         def _describe_with_rarity(dumped):
             parts = _describe_filters(dumped)
             if dumped.get("rarity"):
                 parts.append(f"{dumped['rarity']} 등급")
             return parts
 
-        described = _describe_with_rarity(instance.model_dump(exclude_none=True))
-        assert described == ["전설 등급"], (
-            "설명만 있고 필터는 없는 상태 — 0건 응답이 여기서 거짓을 말한다"
+        # **본 검사와 같은 식을 돌린다.** 흉내 낸 함수만 단언하면 비교식이
+        # 실패 방향으로 한 번도 안 돈다 (사례 44 · 48).
+        both = self._both(model=_RarityDescribedNotFiltered, describe=_describe_with_rarity)
+        assert both["rarity"] == (False, True), both["rarity"]
+        mismatched = [n for n, (f, d) in both.items() if f != d]
+        assert mismatched == ["rarity"], (
+            f"설명만 있고 필터는 없는 상태를 비교식이 지목해야 한다: {mismatched}"
         )
