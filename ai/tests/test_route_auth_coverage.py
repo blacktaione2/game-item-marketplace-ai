@@ -30,6 +30,8 @@
 
 from __future__ import annotations
 
+from fastapi import Depends, FastAPI
+
 from app.core.auth import require_actor, require_admin
 from app.main import app
 
@@ -55,14 +57,35 @@ def _walk(routes):
             yield route
 
 
-def _auth_callables(route) -> set:
-    """이 경로가 의존하는 호출 가능 객체 (중첩 한 겹 포함)."""
+def dependency_callables(route, *, max_depth: int | None = None) -> set:
+    """이 경로가 의존하는 호출 가능 객체를 **끝까지** 모은다.
+
+    `limit_assistant` 처럼 `require_actor` 를 품은 의존성이 있어서 한 겹으로는
+    부족하다. 예전 판본은 **정확히 두 겹**만 봤고, 실측상 지금 트리의 최대 깊이도
+    2 라 여유가 0이었다 — 누가 의존성을 하나 더 감싸면 그 순간 조용해진다.
+
+    **그 침묵의 방향이 쓰는 쪽마다 다르다.**
+
+    | 쓰임 | 못 봤을 때 |
+    |---|---|
+    | *판정* (`limit_assistant` 가 있는가) | 없다고 판정 → **시끄럽게 실패** |
+    | *모집단* (`get_llm_client` 를 받는가) | 목록에서 **조용히 빠진다** |
+
+    두 번째가 `test_llm_route_metering.py` 가 쓰는 방식이다. 그래서 깊이를
+    적어두는 대신 **없앴다** — 적어둔 한계는 시간이 지나면 면제로 읽힌다.
+
+    `max_depth` 는 공허 방지가 옛 동작을 재현하려고만 쓴다.
+    """
     found = set()
-    for dependency in route.dependant.dependencies:
-        found.add(dependency.call)
-        # `limit_assistant` 처럼 require_actor 를 품은 의존성이 있다.
-        for nested in dependency.dependencies:
-            found.add(nested.call)
+
+    def visit(dependencies, level: int) -> None:
+        if max_depth is not None and level > max_depth:
+            return
+        for dependency in dependencies:
+            found.add(dependency.call)
+            visit(dependency.dependencies, level + 1)
+
+    visit(route.dependant.dependencies, 1)
     return found
 
 
@@ -88,7 +111,7 @@ class TestEveryRouteRequiresAuth:
         unprotected = [
             f"{sorted(route.methods)} {route.path}"
             for route in _guarded_routes()
-            if not (_auth_callables(route) & _AUTH_DEPENDENCIES)
+            if not (dependency_callables(route) & _AUTH_DEPENDENCIES)
         ]
         assert not unprotected, (
             "인증 의존성이 없는 경로가 있습니다: "
@@ -100,7 +123,51 @@ class TestEveryRouteRequiresAuth:
         """`require_actor` 만으로는 부족한 유일한 경로. 일반 토큰으로 열리면 안 된다."""
         alerts = [r for r in _guarded_routes() if r.path == "/api/anomaly/alerts"]
         assert alerts, "GM 큐 경로가 사라졌습니다"
-        assert require_admin in _auth_callables(alerts[0])
+        assert require_admin in dependency_callables(alerts[0])
+
+    def test_a_deeply_nested_dependency_is_still_found(self):
+        """**옛 깊이 제한을 인자로 재현해 나란히 돌린다** (ADR-0057).
+
+        `max_depth=2` 가 예전 동작이다. 세 겹짜리 의존성을 만들어 **옛 판본은
+        못 보고 지금 판본은 본다**를 한 검사에서 확인한다 — 표본만 만들고 본
+        식에 안 먹이면 사례 48 과 같은 실수가 된다.
+
+        이 표본이 중요한 이유는 **못 봤을 때의 방향** 때문이다. 인증 쪽에서는
+        못 보면 "인증 없음" 으로 시끄럽게 실패하지만,
+        `test_llm_route_metering.py` 는 같은 함수로 **모집단**을 정한다 — 거기서
+        못 보면 라우트가 목록에서 조용히 빠진다.
+        """
+        probe = FastAPI()
+
+        def innermost(actor=Depends(require_actor)):
+            return actor
+
+        def middle(x=Depends(innermost)):
+            return x
+
+        def outermost(y=Depends(middle)):
+            return y
+
+        @probe.post("/deep")
+        async def _deep(z=Depends(outermost)):  # pragma: no cover - 표본
+            return {}
+
+        route = next(r for r in probe.routes if getattr(r, "path", "") == "/deep")
+        assert require_actor not in dependency_callables(route, max_depth=2), (
+            "옛 판본이 이 표본을 이미 봤다면 이 검사는 아무것도 구별하지 못한다"
+        )
+        assert require_actor in dependency_callables(route)
+
+    def test_the_shallow_case_did_not_need_the_recursion(self):
+        """**반대 방향.** 지금 실제 라우트는 두 겹 안에 다 들어온다.
+
+        재귀가 *없던* 동작까지 바꿔버렸으면 이 검사가 걸린다 — 넓힌 검사가
+        엉뚱한 것을 새로 쓸어 담지 않는지 본다(사례 31).
+        """
+        for route in _guarded_routes():
+            assert dependency_callables(route) == dependency_callables(
+                route, max_depth=2
+            ), f"{route.path} 의 의존성 깊이가 2를 넘었습니다 — 실측을 갱신하세요"
 
     def test_removed_llm_route_is_gone(self):
         """제거된 경로가 되살아나지 않았는지.

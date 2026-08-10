@@ -63,21 +63,34 @@ class MyDataScopeTest {
     @Autowired NotificationRepository notificationRepository;
 
     private Tenant tenant;
+    private Tenant otherTenant;
     private User me;
     private User other;
+    private User stranger;
     private Long otherNotificationId;
+    private Long strangerNotificationId;
 
     @BeforeEach
     void setUp() {
         tenant = tenantRepository.save(
                 Tenant.builder().code("scope_t").name("스코프 테스트").build());
-        me = newUser("scope_me");
-        other = newUser("scope_other");
-        User third = newUser("scope_third");
+        // **두 번째 테넌트를 반드시 같이 만든다** (ADR-0057). 위 클래스 주석이 사용자
+        // 축에 대해 적은 것과 같은 이유이고, 그 논리가 테넌트 축으로 안 건너와 있었다 —
+        // 테넌트가 하나뿐이면 "내 테넌트만 나온다"와 "전부 나온다"가 같은 결과라,
+        // 조건에서 테넌트를 빼도 전부 통과한다.
+        otherTenant = tenantRepository.save(
+                Tenant.builder().code("scope_t2").name("다른 테넌트").build());
+
+        me = newUser(tenant, "scope_me");
+        other = newUser(tenant, "scope_other");
+        User third = newUser(tenant, "scope_third");
+        stranger = newUser(otherTenant, "scope_stranger");
 
         // 가격을 다르게 둔다 — 목록 정렬 검사가 이걸 근거로 삼는다.
-        Item mine = newItem(me, "내가 파는 검", "90000");
-        Item theirs = newItem(other, "남이 파는 검", "10000");
+        Item mine = newItem(tenant, me, "내가 파는 검", "90000");
+        Item theirs = newItem(tenant, other, "남이 파는 검", "10000");
+        // 가격을 양 끝 바깥에 둔다 — 정렬 검사가 첫 행을 보므로, 새면 그 검사가 먼저 깨진다.
+        newItem(otherTenant, stranger, "다른 테넌트 검", "999000");
 
         // 내가 산 것 / 내가 판 것 / 나와 무관한 것 — 셋을 다 둔다.
         newTrade(theirs, me, other, TradeType.PURCHASE, "10000");
@@ -99,6 +112,57 @@ class MyDataScopeTest {
                 .message("남의 알림")
                 .build());
         otherNotificationId = theirNotification.getId();
+
+        Notification strangerNotification = notificationRepository.save(Notification.builder()
+                .tenant(otherTenant)
+                .recipient(stranger)
+                .tradeId(1003L)
+                .type(NotificationType.ITEM_SOLD)
+                .message("다른 테넌트 알림")
+                .build());
+        strangerNotificationId = strangerNotification.getId();
+    }
+
+    // --- 테넌트 경계 --------------------------------------------------------
+
+    @Test
+    void 다른_테넌트의_매물은_목록에_안_나온다() throws Exception {
+        mockMvc.perform(get("/api/items?page=0&size=20&sort=price,desc")
+                        .header("Authorization", "Bearer " + tokenFor(me)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(2))
+                // 목록은 `Page` 라 배열이 `content` 아래다 — 위 정렬 검사와 같은 경로를 쓴다.
+                .andExpect(jsonPath("$.content[?(@.name == '다른 테넌트 검')]").isEmpty());
+    }
+
+    @Test
+    void 다른_테넌트의_알림은_안_보이고_읽음_처리에도_안_걸린다() throws Exception {
+        mockMvc.perform(get("/api/notifications")
+                        .header("Authorization", "Bearer " + tokenFor(me)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].message").value("내 알림"));
+
+        mockMvc.perform(patch("/api/notifications/read")
+                        .header("Authorization", "Bearer " + tokenFor(me)))
+                .andExpect(status().isOk());
+
+        // **이쪽이 진짜 단언이다.** 조건에서 테넌트를 빼도 recipientId 때문에 위 두 줄은
+        // 통과하지만, 그건 격리가 사용자-테넌트 관계에 얹혀 있다는 뜻이다.
+        assertThat(notificationRepository.findById(strangerNotificationId))
+                .get()
+                .extracting(Notification::isRead)
+                .isEqualTo(false);
+    }
+
+    @Test
+    void 다른_테넌트의_사용자는_자기_알림을_본다() throws Exception {
+        // **반대 방향.** 위 검사만 있으면 "아무것도 안 보여준다"도 통과한다.
+        mockMvc.perform(get("/api/notifications")
+                        .header("Authorization", "Bearer " + tokenFor(stranger)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].message").value("다른 테넌트 알림"));
     }
 
     // --- 거래 내역 ----------------------------------------------------------
@@ -180,10 +244,10 @@ class MyDataScopeTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.count").value(0));
 
-        assertThat(notificationRepository.countByRecipientIdAndReadFalse(me.getId()))
+        assertThat(notificationRepository.countByTenantIdAndRecipientIdAndReadFalse(tenant.getId(), me.getId()))
                 .isZero();
         // **이쪽이 진짜 단언이다.** 조건에서 수신자를 빼먹으면 여기서 걸린다.
-        assertThat(notificationRepository.countByRecipientIdAndReadFalse(other.getId()))
+        assertThat(notificationRepository.countByTenantIdAndRecipientIdAndReadFalse(tenant.getId(), other.getId()))
                 .isEqualTo(1);
         assertThat(notificationRepository.findById(otherNotificationId))
                 .get()
@@ -198,9 +262,9 @@ class MyDataScopeTest {
 
     // --- 헬퍼 ---------------------------------------------------------------
 
-    private User newUser(String username) {
+    private User newUser(Tenant owner, String username) {
         return userRepository.save(User.builder()
-                .tenant(tenant)
+                .tenant(owner)
                 .username(username)
                 .email(username + "@example.com")
                 .passwordHash("(테스트 — 로그인하지 않는다)")
@@ -208,9 +272,9 @@ class MyDataScopeTest {
                 .build());
     }
 
-    private Item newItem(User seller, String name, String price) {
+    private Item newItem(Tenant owner, User seller, String name, String price) {
         return itemRepository.save(Item.builder()
-                .tenant(tenant)
+                .tenant(owner)
                 .seller(seller)
                 .name(name)
                 .description("스코프 테스트용")
@@ -234,14 +298,18 @@ class MyDataScopeTest {
     }
 
     private String tokenFor(User user) {
+        // **테넌트를 사용자에게서 읽는다.** 필드를 그대로 쓰면 두 번째 테넌트의 사용자에게
+        // 첫 번째 테넌트의 클레임을 발급하게 되고, 그건 격리를 시험하는 게 아니라
+        // 위조 토큰을 시험하는 것이 된다.
+        Tenant owner = user.getTenant();
         Instant now = Instant.now();
         JwtClaimsSet claims = JwtClaimsSet.builder()
                 .issuer("gimp-backend")
                 .issuedAt(now)
                 .expiresAt(now.plus(1, ChronoUnit.HOURS))
                 .subject(String.valueOf(user.getId()))
-                .claim(Claims.TENANT_ID, tenant.getId())
-                .claim(Claims.TENANT_CODE, tenant.getCode())
+                .claim(Claims.TENANT_ID, owner.getId())
+                .claim(Claims.TENANT_CODE, owner.getCode())
                 .claim(Claims.ROLE, UserRole.USER.name())
                 .build();
         return jwtEncoder

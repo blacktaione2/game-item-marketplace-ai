@@ -68,8 +68,20 @@ def referenced(node: ast.AST) -> set[str]:
     return found
 
 
+#: 저장소의 것으로 치는 import 출처.
+#:
+#: **`tests` 가 여기 있는 이유가 실측이다** (ADR-0057). 처음엔 `app` 만 봤는데,
+#: 그러면 **형제 테스트 모듈에서 술어를 가져다 쓰는 공허 방지를 지목한다** —
+#: 즉 이 감사가 권하는 바로 그 모양(*"술어에 이름을 붙여 양쪽이 같은 것을
+#: 부르게 하라"*)을 결함으로 읽는다. 재현해서 확인했고, 아래
+#: `test_a_guard_sharing_a_sibling_test_helper_is_not_flagged` 가 고정한다.
+#:
+#: 오탐은 공허한 통과보다 나쁠 수 있다 — 사람이 **멀쩡한 코드를 고치게** 만든다.
+_REPO_MODULES = ("app", "tests")
+
+
 def repo_names(tree: ast.Module) -> set[str]:
-    """그 테스트 모듈이 **스스로 정의했거나 `app` 에서 가져온** 이름.
+    """그 테스트 모듈이 **스스로 정의했거나 저장소에서 가져온** 이름.
 
     클래스 안의 메서드도 넣는다 — `self._except_names(...)` 처럼 클래스 헬퍼를
     공유하는 공허 방지가 있고, 빼면 오탐한다(실측: 2건).
@@ -87,13 +99,15 @@ def repo_names(tree: ast.Module) -> set[str]:
         elif isinstance(node, ast.Assign):
             names |= {t.id for t in node.targets if isinstance(t, ast.Name)}
     for node in ast.walk(tree):
-        if isinstance(node, ast.ImportFrom) and (node.module or "").startswith("app"):
+        if isinstance(node, ast.ImportFrom) and (node.module or "").startswith(
+            _REPO_MODULES
+        ):
             names |= {a.asname or a.name for a in node.names}
         elif isinstance(node, ast.Import):
             names |= {
                 (a.asname or a.name).split(".")[0]
                 for a in node.names
-                if a.name.startswith("app")
+                if a.name.startswith(_REPO_MODULES)
             }
     return names
 
@@ -207,6 +221,28 @@ def test_a_guard_anchored_only_by_a_constant_is_not_flagged():
         def test_scan_can_fail():
             """공허 방지."""
             assert _LEAK.search("x")
+    '''))
+    assert unanchored_guards(fine) == []
+
+
+def test_a_guard_sharing_a_sibling_test_helper_is_not_flagged():
+    """**반대 방향 셋째 — 이 감사가 권하는 모양을 벌하고 있었다** (ADR-0057).
+
+    술어를 형제 테스트 모듈에서 가져다 쓰는 것은 *이 감사가 시키는 바로 그
+    처방*이다(사례 36·44·48 의 해법이 "같은 것을 부르게 하라"였다). 그런데
+    `app` 만 저장소로 세던 판본은 그 모양을 **지목했다** — 실측으로 확인했고,
+    그래서 `_REPO_MODULES` 에 `tests` 가 있다.
+    """
+    fine = ast.parse(textwrap.dedent('''
+        from tests.test_sibling import predicate
+
+
+        def test_main():
+            assert not predicate("진짜")
+
+        def test_guard_can_actually_fail():
+            """공허 방지."""
+            assert predicate("표본")
     '''))
     assert unanchored_guards(fine) == []
 

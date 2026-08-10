@@ -11,7 +11,15 @@ import org.springframework.data.repository.query.Param;
 
 public interface TradeRepository extends JpaRepository<Trade, Long> {
 
-    Optional<Trade> findByItemIdAndStatus(Long itemId, TradeStatus status);
+    /**
+     * 이 아이템의 진행 중인 입찰.
+     *
+     * <p><b>테넌트를 조건에 넣는다</b> — 아래 {@code findMine} 이 적어둔 정책과 같다. 호출부는
+     * 이미 {@code findByIdAndTenantId} 로 아이템을 확인한 뒤라 {@code itemId} 만으로도 결과는
+     * 같지만, 그건 격리가 <b>아이템-테넌트 관계</b>에 얹혀 있다는 뜻이다.
+     */
+    Optional<Trade> findByTenantIdAndItemIdAndStatus(
+            Long tenantId, Long itemId, TradeStatus status);
 
     /**
      * 내가 관여한 거래. <b>구매자와 판매자 양쪽</b>을 본다 — 한 사람이 사기도 하고 팔기도 한다.

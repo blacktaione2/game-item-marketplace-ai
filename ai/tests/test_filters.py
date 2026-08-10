@@ -57,13 +57,72 @@ def unhandled_fields(model: type[SearchFilters]) -> list[str]:
     **깊이: 존재이지 대응이 아니다.** 절이 하나라도 나오면 통과하므로,
     `rarity` 를 더하면서 `{"term": {"element": self.rarity}}` 라고 **대상만
     잘못 적은** 경우는 이 함수가 못 잡는다. 그쪽은 아래
-    `test_no_two_fields_produce_the_same_clause` 가 맡는다 — 잘못 적은 대상은
-    원래 그 대상을 쓰는 필드와 **같은 절**을 내므로 충돌로 드러난다.
+    `test_no_field_borrows_another_fields_target` 이 맡는다.
+
+    > **적어둔 보완이 예시 하나만 덮고 있었다** (ADR-0057). 예전에는 이 자리가
+    > *"같은 **절**을 내므로 충돌로 드러난다"* 였는데, 실측해 보니 그건 **잘못
+    > 적은 대상이 같은 타입일 때만** 참이다 — `rarity`(str) 를 `element` 로 잘못
+    > 적으면 표본 값이 같아 충돌하지만, `price`(int 대상) 로 잘못 적으면 표본이
+    > `"표본"` vs `1` 이라 **절이 달라지고 그냥 통과한다.** 그래서 절 전체가
+    > 아니라 **대상 이름**을 비교하도록 넓혔다.
     """
     empty = json.dumps([], sort_keys=True)
     return [
         name for name, clause in clauses_per_field(model).items() if clause == empty
     ]
+
+
+def _stem(field_name: str) -> str:
+    """범위 한 쌍을 하나로 묶는 어간. `price_min`/`price_max` → `price`.
+
+    **손으로 적은 짝 목록을 두지 않는다** — 목록은 다음에 새는 것이 된다
+    (사례 28). 규칙 하나로 유도하면 새 범위 필드가 저절로 따라온다.
+    """
+    for suffix in ("_min", "_max"):
+        if field_name.endswith(suffix):
+            return field_name[: -len(suffix)]
+    return field_name
+
+
+def targets_per_field(model: type[SearchFilters]) -> dict[str, set[str]]:
+    """필드 하나만 채웠을 때 절이 **가리키는 ES 필드 이름들.**
+
+    `{"term": {"element": …}}` → `{"element"}`,
+    `{"range": {"price": …}}` → `{"price"}`. 절 종류를 열거하지 않고 **한 겹
+    아래의 키**를 읽는다.
+    """
+    result: dict[str, set[str]] = {}
+    for name, field in model.model_fields.items():
+        instance = model(**{name: _sample_for(field.annotation)})
+        targets: set[str] = set()
+        for clause in instance.to_es_filters():
+            for inner in clause.values():
+                if isinstance(inner, dict):
+                    targets |= set(inner)
+        result[name] = targets
+    return result
+
+
+def borrowed_targets(model: type[SearchFilters]) -> list[tuple[str, str, str]]:
+    """**남의 대상을 쓰는 필드 쌍들** — `(필드, 필드, 대상)`.
+
+    같은 대상을 가리켜도 되는 것은 **어간이 같은 범위 한 쌍**뿐이다
+    (`price_min`/`price_max`). 어간이 다른데 대상이 같으면 변환에서 대상을 잘못
+    적었다는 뜻이다.
+
+    본 검사와 공허 방지가 이 식을 공유한다.
+    """
+    by_target: dict[str, list[str]] = {}
+    for name, targets in targets_per_field(model).items():
+        for target in targets:
+            by_target.setdefault(target, []).append(name)
+    found = []
+    for target, names in by_target.items():
+        for i, first in enumerate(names):
+            for second in names[i + 1:]:
+                if _stem(first) != _stem(second):
+                    found.append((first, second, target))
+    return found
 
 
 class TestSubcategory:
@@ -164,27 +223,24 @@ class TestEveryFieldIsActuallyUsed:
 
         assert unhandled_fields(_WithRarity) == ["rarity"]
 
-    def test_no_two_fields_produce_the_same_clause(self):
-        """**대상을 잘못 적은 경우를 잡는다** (ADR-0054).
+    def test_no_field_borrows_another_fields_target(self):
+        """**대상을 잘못 적은 경우를 잡는다** (ADR-0054, 넓힘 ADR-0057).
 
         `unhandled_fields()` 는 *존재*만 본다 — 절이 하나라도 나오면 통과한다.
         그래서 `rarity` 를 더하면서 `{"term": {"element": self.rarity}}` 라고
         **대상만 잘못 적으면** 그 검사는 통과하고, 검색은 엉뚱한 필드로 걸린다.
 
-        실측: 지금 10개 필드가 **전부 다른 절**을 낸다(`price_min`/`price_max` 도
-        `gte`/`lte` 로 갈린다). 그래서 충돌은 곧 "같은 대상을 두 번 썼다"는 뜻이다.
+        실측: 지금 10개 필드가 **7개 대상**을 쓰고, 겹치는 셋은 전부 어간이 같은
+        범위 한 쌍이다(`price` · `enhancement_level` · `required_level`).
         """
-        seen: dict[str, list[str]] = {}
-        for name, clause in clauses_per_field(SearchFilters).items():
-            seen.setdefault(clause, []).append(name)
-        collisions = {c: names for c, names in seen.items() if len(names) > 1}
-        assert not collisions, (
-            f"서로 다른 필드가 같은 절을 냅니다: {list(collisions.values())} — "
+        borrowed = borrowed_targets(SearchFilters)
+        assert not borrowed, (
+            f"서로 다른 필드가 같은 ES 대상을 씁니다: {borrowed} — "
             "변환에서 대상 필드를 잘못 적었을 가능성이 큽니다."
         )
 
-    def test_the_collision_check_can_actually_fail(self):
-        """**공허 방지 — 대상만 잘못 적은 모양을 그대로 만든다.**"""
+    def test_the_target_check_catches_a_same_typed_mistake(self):
+        """**공허 방지 — 대상만 잘못 적은 모양을 본 식에 먹인다.**"""
 
         class _RarityWithWrongTarget(SearchFilters):
             rarity: str | None = None
@@ -197,10 +253,48 @@ class TestEveryFieldIsActuallyUsed:
                 return clauses
 
         assert unhandled_fields(_RarityWithWrongTarget) == [], (
-            "존재 검사만으로는 통과한다 — 그래서 충돌 검사가 필요하다"
+            "존재 검사만으로는 통과한다 — 그래서 이 검사가 필요하다"
         )
-        per_field = clauses_per_field(_RarityWithWrongTarget)
-        assert per_field["rarity"] == per_field["element"]
+        assert borrowed_targets(_RarityWithWrongTarget) == [
+            ("element", "rarity", "element")
+        ]
+
+    def test_the_target_check_catches_a_cross_typed_mistake(self):
+        """**이게 이번에 넓힌 부분이다** (ADR-0057).
+
+        옛 판본은 절 전체를 비교했으므로 **표본 값이 다르면 충돌이 안 났다.**
+        `rarity`(str) 를 숫자 대상인 `price` 로 잘못 적으면 절은
+        `{"range": {"price": {"gte": "표본"}}}` 이고 `price_min` 의 것은
+        `{"gte": 1}` 이라 **그냥 통과했다** — 실측으로 확인했다.
+
+        옛 식과 지금 식을 같은 표본에 나란히 돌린다(사례 48·49 와 같은 이유).
+        """
+
+        class _RarityIntoPrice(SearchFilters):
+            rarity: str | None = None
+
+            def to_es_filters(self):
+                clauses = super().to_es_filters()
+                if self.rarity:
+                    clauses.append({"range": {"price": {"gte": self.rarity}}})
+                return clauses
+
+        per_field = clauses_per_field(_RarityIntoPrice)
+        old_collisions = [
+            name for name, clause in per_field.items()
+            if list(per_field.values()).count(clause) > 1
+        ]
+        assert old_collisions == [], "옛 식이 이걸 잡았다면 이 표본은 아무것도 구별하지 못한다"
+        assert ("price_min", "rarity", "price") in borrowed_targets(_RarityIntoPrice)
+
+    def test_a_legitimate_range_pair_is_not_flagged(self):
+        """**반대 방향.** 어간이 같은 범위 한 쌍은 대상을 공유해도 정상이다.
+
+        이걸 안 보면 넓힌 검사가 **멀쩡한 `price_min`/`price_max` 를 지목**한다 —
+        오탐은 사람에게 맞는 코드를 고치게 만든다(사례 31).
+        """
+        assert _stem("price_min") == _stem("price_max") == "price"
+        assert not [b for b in borrowed_targets(SearchFilters) if b[2] == "price"]
 
     def test_a_handled_subclass_is_not_flagged(self):
         """**반대 방향.** 제대로 변환을 더한 필드는 지목하면 안 된다."""

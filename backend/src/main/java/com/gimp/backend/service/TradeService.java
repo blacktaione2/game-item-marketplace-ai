@@ -186,7 +186,8 @@ public class TradeService {
         }
 
         // 밀려나는 입찰자를 이벤트에 실어야 하므로 갱신 전에 붙잡아 둔다.
-        Trade previous = tradeRepository.findByItemIdAndStatus(itemId, TradeStatus.ACTIVE)
+        Trade previous = tradeRepository
+                .findByTenantIdAndItemIdAndStatus(tenantId, itemId, TradeStatus.ACTIVE)
                 .orElse(null);
         Long previousBidderId = previous != null ? previous.getBuyer().getId() : null;
         if (previous != null) {

@@ -43,29 +43,10 @@ from app.core.rate_limit import consume_daily, limit_assistant
 from app.main import app
 from app.services.llm.dependencies import get_llm_client
 
-
-def _walk(routes):
-    """`_IncludedRouter` 안쪽까지 내려가 실제 라우트를 전부 낸다.
-
-    `test_route_auth_coverage.py` 와 같은 이유다 — 한 겹만 보면 포함된 라우터가
-    안 보이고, 그러면 이 검사는 **0개를 세어 공짜로 통과한다.**
-    """
-    for route in routes:
-        included = getattr(route, "original_router", None)
-        if included is not None:
-            yield from _walk(included.routes)
-        else:
-            yield route
-
-
-def _dependency_callables(route) -> set:
-    """이 라우트가 의존하는 호출 가능 객체 (중첩 한 겹 포함)."""
-    found = set()
-    for dependency in route.dependant.dependencies:
-        found.add(dependency.call)
-        for nested in dependency.dependencies:
-            found.add(nested.call)
-    return found
+# **직접 구현하지 않는다.** 이 파일은 예전에 `_walk` 와 의존성 수집기를 그대로
+# 베껴 두고 주석으로 *"같은 이유다"* 라고만 적어놨었다 — 두 벌이 어긋나면
+# 그걸 알려줄 것이 없다. `test_assistant_stream.py` 는 처음부터 가져다 쓴다.
+from tests.test_route_auth_coverage import _walk, dependency_callables  # noqa: E402
 
 
 def _called_names(func) -> set[str]:
@@ -94,8 +75,16 @@ def _consumes_daily(endpoint) -> bool:
     (`/api/assistant` → `_ask_metered`)가 둘 다 있다. 본문만 읽으면 후자를
     결함으로 잘못 지목한다 — 첫 판본이 실제로 그렇게 헛발을 짚었다.
 
-    **깊이는 한 겹이다.** 두 겹 이상으로 숨기면 이 검사는 못 본다. 지금 두 모양이
-    전부라서 그 이상은 사지 않았고, 못 보는 범위를 적어두는 것으로 갈음한다.
+    **깊이는 한 겹이고, 이번엔 그걸 재봤다** (ADR-0057). 실측 홉 수는
+    `/api/search` 1, `/api/assistant` 2, `/api/assistant/stream` 2 — 즉 **한계에
+    딱 붙어 있고 여유가 0이다.**
+
+    그런데도 그대로 두는 이유는 **못 봤을 때의 방향**이다. 여기서 못 보면
+    *"소비하지 않는 경로가 있다"* 로 **시끄럽게 실패**한다 — 사람이 와서 본다.
+    같은 한 겹이라도 `dependency_callables` 쪽은 모집단을 정하므로 조용히
+    빠졌고, 그래서 그쪽만 재귀로 바꿨다.
+
+    > **한계의 위험도는 깊이가 아니라 그 식이 무엇을 정하느냐가 정한다.**
     """
     called = _called_names(endpoint)
     if "consume_daily" in called:
@@ -117,7 +106,7 @@ def _llm_routes():
         route
         for route in _walk(app.routes)
         if hasattr(route, "dependant")
-        and get_llm_client in _dependency_callables(route)
+        and get_llm_client in dependency_callables(route)
     ]
 
 
@@ -146,7 +135,7 @@ class TestEveryLlmRouteIsMetered:
         unmetered = [
             f"{sorted(route.methods)} {route.path}"
             for route in _llm_routes()
-            if limit_assistant not in _dependency_callables(route)
+            if limit_assistant not in dependency_callables(route)
         ]
         assert not unmetered, (
             "LLM 을 부르는데 한도가 없는 경로가 있습니다: "
@@ -261,7 +250,7 @@ class TestEveryLlmRouteIsMetered:
             methods = {"POST"}
             dependant = _FakeDependant()
 
-        assert limit_assistant not in _dependency_callables(_FakeRoute())
+        assert limit_assistant not in dependency_callables(_FakeRoute())
 
 
 def _helper_that_does_not_consume():  # pragma: no cover - 표본

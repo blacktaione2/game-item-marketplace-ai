@@ -293,8 +293,10 @@ class NotificationFlowTest {
     }
 
     private List<Notification> notificationsOf(User user) {
-        return notificationRepository.findByRecipientIdOrderByIdDesc(
-                user.getId(), org.springframework.data.domain.PageRequest.of(0, 20));
+        return notificationRepository.findByTenantIdAndRecipientIdOrderByIdDesc(
+                tenant.getId(),
+                user.getId(),
+                org.springframework.data.domain.PageRequest.of(0, 20));
     }
 
     private User saveUser(String prefix) {

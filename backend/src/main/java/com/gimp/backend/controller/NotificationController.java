@@ -32,7 +32,8 @@ public class NotificationController {
     @GetMapping
     public List<NotificationResponse> list(Actor actor) {
         return notificationRepository
-                .findByRecipientIdOrderByIdDesc(actor.userId(), PageRequest.of(0, MAX_ITEMS))
+                .findByTenantIdAndRecipientIdOrderByIdDesc(
+                        actor.tenantId(), actor.userId(), PageRequest.of(0, MAX_ITEMS))
                 .stream()
                 .map(NotificationResponse::from)
                 .toList();
@@ -40,7 +41,9 @@ public class NotificationController {
 
     @GetMapping("/unread-count")
     public UnreadCount unreadCount(Actor actor) {
-        return new UnreadCount(notificationRepository.countByRecipientIdAndReadFalse(actor.userId()));
+        return new UnreadCount(
+                notificationRepository.countByTenantIdAndRecipientIdAndReadFalse(
+                        actor.tenantId(), actor.userId()));
     }
 
     /**
@@ -54,7 +57,7 @@ public class NotificationController {
      */
     @PatchMapping("/read")
     public UnreadCount markAllRead(Actor actor) {
-        notificationRepository.markAllRead(actor.userId());
+        notificationRepository.markAllRead(actor.tenantId(), actor.userId());
         return new UnreadCount(0);
     }
 
