@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 
-import { api, formatWon, type TradeHistoryEntry } from "../api";
+import { api, formatDateTime, formatWon, type TradeHistoryEntry } from "../api";
 
 /**
  * 내 거래 내역.
@@ -90,7 +90,7 @@ function TradeRow({ trade }: { trade: TradeHistoryEntry }) {
       </td>
       <td className="muted">{trade.status}</td>
       <td className="muted">
-        {trade.createdAt.replace("T", " ").slice(0, 16)}
+        {formatDateTime(trade.createdAt)}
       </td>
     </tr>
   );

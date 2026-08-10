@@ -541,3 +541,41 @@ export const api = {
 export function formatWon(value: number): string {
   return `${Math.round(value).toLocaleString("ko-KR")}원`;
 }
+
+/**
+ * 서버가 준 시점을 **보는 사람의 시간대**로 그린다.
+ *
+ * 예전에는 `createdAt.replace("T", " ").slice(0, 16)` 이었다. 문자열을 자를 뿐이라
+ * **변환이 아니었고**, 변환할 수도 없었다 — 서버가 오프셋 없이
+ * `"2026-08-10T21:06:12"` 를 보냈기 때문이다. 배포본은 UTC 로 돌아서 한국에서 보면
+ * 9시간 어긋난 시각이 그대로 보였다.
+ *
+ * 지금은 서버가 `"2026-08-10T21:06:12Z"` 처럼 오프셋을 실어 보내므로(`Instant`),
+ * `Date` 가 해석할 수 있다. **여기서 시간대를 지정하지 않는 것이 의도**다 — 보는
+ * 사람의 시간대로 그리는 것이 브라우저의 기본 동작이고, 서버가 특정 지역을 가정하지
+ * 않는다는 뜻이기도 하다.
+ */
+export function formatDateTime(iso: string): string {
+  const at = new Date(iso);
+  if (Number.isNaN(at.getTime())) return iso; // 파싱 실패 시 원문을 보여준다
+  return `${formatDate(iso)} ${pad(at.getHours())}:${pad(at.getMinutes())}`;
+}
+
+/** 날짜만 필요한 자리(매물 표의 등록일). 같은 변환을 쓴다. */
+export function formatDate(iso: string): string {
+  const at = new Date(iso);
+  if (Number.isNaN(at.getTime())) return iso;
+  return `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}`;
+}
+
+/**
+ * `toLocaleString` 이 아니라 **지역 시각 게터로 직접 조립**한다.
+ *
+ * 둘 다 보는 사람의 시간대로 그리는 것은 같다(`getHours()` 는 지역 시각이다). 다른 것은
+ * 형식이다 — `ko-KR` 기본 형식은 `2026. 08. 11. 06:06` 이라 기존 표시(`2026-08-10 21:06`)와
+ * 모양이 달라진다. **이번 변경은 값이 틀린 것을 고치는 것이지 화면을 바꾸는 것이 아니라,
+ * 모양을 유지한다.** 고친 자리와 안 고친 자리를 나란히 놓고 비교할 수 있어야 한다.
+ */
+function pad(n: number): string {
+  return String(n).padStart(2, "0");
+}

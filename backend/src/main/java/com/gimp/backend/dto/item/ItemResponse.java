@@ -4,7 +4,8 @@ import com.gimp.backend.domain.item.Item;
 import com.gimp.backend.domain.item.ItemStatus;
 import com.gimp.backend.domain.item.SaleType;
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
+import com.gimp.backend.domain.common.StoredTime;
+import java.time.Instant;
 
 public record ItemResponse(
         Long id,
@@ -19,8 +20,8 @@ public record ItemResponse(
         Long currentBidderId,
         Integer stock,
         ItemStatus status,
-        LocalDateTime createdAt,
-        LocalDateTime updatedAt) {
+        Instant createdAt,
+        Instant updatedAt) {
 
     public static ItemResponse from(Item item) {
         return new ItemResponse(
@@ -36,7 +37,7 @@ public record ItemResponse(
                 item.getCurrentBidder() != null ? item.getCurrentBidder().getId() : null,
                 item.getStock(),
                 item.getStatus(),
-                item.getCreatedAt(),
-                item.getUpdatedAt());
+                StoredTime.toInstant(item.getCreatedAt()),
+                StoredTime.toInstant(item.getUpdatedAt()));
     }
 }

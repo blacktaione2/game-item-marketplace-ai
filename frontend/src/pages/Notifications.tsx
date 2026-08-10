@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 
-import { api, type Notification } from "../api";
+import { api, formatDateTime, type Notification } from "../api";
 
 const TYPE_LABELS: Record<Notification["type"], string> = {
   PURCHASE_COMPLETED: "구매 완료",
@@ -82,7 +82,7 @@ export default function Notifications() {
               <div className="row">
                 <strong>{TYPE_LABELS[item.type] ?? item.type}</strong>
                 <span className="muted">
-                  {item.createdAt.replace("T", " ").slice(0, 16)}
+                  {formatDateTime(item.createdAt)}
                 </span>
                 {!item.read && <span className="badge unread">NEW</span>}
               </div>

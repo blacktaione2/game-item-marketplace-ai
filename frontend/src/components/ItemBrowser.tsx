@@ -2,7 +2,7 @@ import { useQuery, keepPreviousData } from "@tanstack/react-query";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 
-import { api, formatWon, type Item } from "../api";
+import { api, formatDate, formatWon, type Item } from "../api";
 
 /**
  * 매물 목록 — 질문하지 않아도 무엇을 파는지 보이는 화면.
@@ -294,7 +294,7 @@ function ItemRow({ item, onOpen }: { item: Item; onOpen: () => void }) {
         {auction && <span className="muted">입찰가 </span>}
         {formatWon(auction ? (item.currentBidPrice ?? item.price) : item.price)}
       </td>
-      <td className="muted">{item.createdAt.slice(0, 10)}</td>
+      <td className="muted">{formatDate(item.createdAt)}</td>
     </tr>
   );
 }

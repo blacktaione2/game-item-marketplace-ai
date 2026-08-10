@@ -182,6 +182,19 @@ class MyDataScopeTest {
     }
 
     @Test
+    void 거래_일시가_오프셋을_달고_나간다() throws Exception {
+        // **이게 화면의 9시간 오차를 만들었다.** 예전에는 `LocalDateTime` 이라
+        // `"2026-08-10T21:06:12"` 처럼 오프셋 없이 나갔고, 받는 쪽은 변환할 근거가 없어
+        // 문자열을 그대로 잘라 뿌렸다 — 배포본이 UTC 라 한국에서 9시간 어긋나 보였다.
+        //
+        // Jackson 설정에 기대는 부분이라(Boot 기본값이 ISO-8601) **직렬화 결과를 직접 본다.**
+        // 타입만 확인하면 설정이 바뀌었을 때 못 잡는다.
+        mockMvc.perform(get("/api/trades").header("Authorization", "Bearer " + tokenFor(me)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].createdAt").value(org.hamcrest.Matchers.endsWith("Z")));
+    }
+
+    @Test
     void 산_것과_판_것이_side_로_갈린다() throws Exception {
         mockMvc.perform(get("/api/trades").header("Authorization", "Bearer " + tokenFor(me)))
                 .andExpect(status().isOk())

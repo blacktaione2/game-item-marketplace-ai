@@ -5,7 +5,8 @@ import com.gimp.backend.domain.trade.TradeStatus;
 import com.gimp.backend.domain.trade.TradeType;
 import com.gimp.backend.domain.user.User;
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
+import com.gimp.backend.domain.common.StoredTime;
+import java.time.Instant;
 
 /**
  * 거래 내역 한 줄.
@@ -26,7 +27,7 @@ public record TradeHistoryResponse(
         Integer quantity,
         Side side,
         String counterpartyUsername,
-        LocalDateTime createdAt) {
+        Instant createdAt) {
 
     /** 이 거래에서 조회자가 어느 쪽이었나. */
     public enum Side {
@@ -47,6 +48,6 @@ public record TradeHistoryResponse(
                 trade.getQuantity(),
                 bought ? Side.BUY : Side.SELL,
                 counterparty.getUsername(),
-                trade.getCreatedAt());
+                StoredTime.toInstant(trade.getCreatedAt()));
     }
 }

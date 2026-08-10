@@ -4,7 +4,8 @@ import com.gimp.backend.domain.trade.Trade;
 import com.gimp.backend.domain.trade.TradeStatus;
 import com.gimp.backend.domain.trade.TradeType;
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
+import com.gimp.backend.domain.common.StoredTime;
+import java.time.Instant;
 
 public record TradeResponse(
         Long id,
@@ -16,7 +17,7 @@ public record TradeResponse(
         BigDecimal price,
         Integer quantity,
         TradeStatus status,
-        LocalDateTime createdAt) {
+        Instant createdAt) {
 
     public static TradeResponse from(Trade trade) {
         return new TradeResponse(
@@ -29,6 +30,6 @@ public record TradeResponse(
                 trade.getPrice(),
                 trade.getQuantity(),
                 trade.getStatus(),
-                trade.getCreatedAt());
+                StoredTime.toInstant(trade.getCreatedAt()));
     }
 }
