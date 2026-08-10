@@ -95,10 +95,12 @@ class TestRememberItem:
         assert seen == {}
 
     def test_옛_판본이라면_실패한다(self):
-        """**공허 방지.** 옛 구현(`리스트가 아니면 포기`)을 그대로 돌려본다.
+        """**공허 방지 — 옛 구현과 현재 구현을 같은 표본에 나란히 돌린다.**
 
-        이 검사가 없으면 "리스트만 받는" 구현으로 되돌려도 위의 검사들이
-        어떻게 통과하는지 알 수 없다.
+        옛 구현(`리스트가 아니면 포기`)만 단언하면 *표본이 구별된다*는 것만
+        보인다. **현재 구현이 그 표본에서 실제로 다르게 동작하는지**는 별개이고,
+        그게 이 검사가 지켜야 할 것이다 (ADR-0056). 사례 48 과 같은 이유로
+        한 검사 안에서 양쪽을 돌린다.
         """
         text = json.dumps(ITEM, ensure_ascii=False, indent=2)
 
@@ -114,7 +116,12 @@ class TestRememberItem:
                 seen[item["item_id"]] = item
             return seen
 
+        now: dict[int, dict] = {}
+        _remember_item(_Call("search_items"), text, now)
+
         assert old_implementation(text) == {}, "옛 구현이 통과하면 표본이 잘못됐다"
+        assert list(now) == [ITEM["item_id"]], "현재 구현은 같은 표본에서 읽어내야 한다"
+        assert old_implementation(text) != now, "둘이 같으면 이 표본은 아무것도 구별하지 못한다"
 
 
 class TestResolveItem:
@@ -149,7 +156,12 @@ class TestResolveItem:
         assert _resolve_item(99, seen) is None
 
     def test_옛_폴백이라면_엉뚱한_것을_준다(self):
-        """**공허 방지.** 옛 판본을 그대로 돌려 표본이 실제로 구별되는지 본다."""
+        """**공허 방지 — 옛 판본과 현재 판본을 같은 표본에 나란히 돌린다.**
+
+        옛 구현만 단언하면 *표본이 구별된다*는 것만 보인다. 현재 구현이 그
+        표본에서 실제로 다르게 답하는지는 별개이고, 그게 이 검사가 지켜야 할
+        것이다 (ADR-0056, 사례 48 과 같은 이유).
+        """
         seen = {24: ITEM, 12: self.SECOND}
 
         def old_implementation(focus_id, seen_items):
@@ -158,6 +170,11 @@ class TestResolveItem:
                 resolved = next(iter(seen_items.values()))
             return resolved
 
-        assert old_implementation(99, seen)["item_id"] == 24, (
+        old = old_implementation(99, seen)
+        now = _resolve_item(99, seen)
+
+        assert old is not None and old["item_id"] == 24, (
             "옛 구현이 None 을 주면 표본이 잘못됐다 — 구별할 것이 없다"
         )
+        assert now is None, "현재 판본은 빈 카드를 줘야 한다"
+        assert old != now, "둘이 같으면 이 표본은 아무것도 구별하지 못한다"

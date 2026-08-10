@@ -33,6 +33,37 @@ from app.services.search.exceptions import TenantIndexNotFoundError
 from app.routers.assistant import _sse
 
 
+def builtin_4xx_catches(source: str) -> list[str]:
+    """소스에서 **내장 예외를 4xx 로 옮기는** `except` 절의 예외 이름들.
+
+    **본 검사와 공허 방지가 이 함수를 공유한다** (ADR-0056). 첫 판본은 이 로직이
+    검사 메서드 안에 인라인으로 있었고, 공허 방지가 그것을 **다시 구현**했다 —
+    그리고 두 벌은 **이미 어긋나 있었다**: 본 검사는 `except (A, B)` 튜플을
+    처리하는데 공허 방지 쪽은 `ast.Name` 만 봤다.
+    """
+    import ast
+    import builtins
+
+    found: list[str] = []
+    for handler in ast.walk(ast.parse(source)):
+        if not isinstance(handler, ast.ExceptHandler) or handler.type is None:
+            continue
+        targets = (
+            handler.type.elts
+            if isinstance(handler.type, ast.Tuple)
+            else [handler.type]
+        )
+        names = [t.id for t in targets if isinstance(t, ast.Name)]
+        status = None
+        for node in ast.walk(handler):
+            if isinstance(node, ast.keyword) and node.arg == "status_code":
+                status = getattr(node.value, "value", None)
+        if status is None or status >= 500:
+            continue
+        found += [n for n in names if hasattr(builtins, n)]
+    return found
+
+
 # **직접 구현하지 않는다.** `app.routes` 를 한 겹만 보면 `include_router` 로
 # 붙인 라우터가 안 보이고, 그러면 아래 검사들이 "라우트를 못 찾아서" 가 아니라
 # 조용히 통과할 수도 있다. 이미 그 함정을 푼 쪽을 재사용한다.
@@ -275,35 +306,16 @@ class TestShowableExceptionsAreOneList:
 
         `Exception -> 500` 은 예외다 — 일반 문장을 쓰고 예외를 안 싣는다.
         """
-        import ast
-        import builtins
         import pathlib
 
         import app.routers as routers_pkg
 
         offenders = []
         for path in sorted(pathlib.Path(routers_pkg.__file__).parent.glob("*.py")):
-            tree = ast.parse(path.read_text(encoding="utf-8"))
-            for handler in ast.walk(tree):
-                if not isinstance(handler, ast.ExceptHandler) or handler.type is None:
-                    continue
-                targets = (
-                    handler.type.elts
-                    if isinstance(handler.type, ast.Tuple)
-                    else [handler.type]
-                )
-                names = [t.id for t in targets if isinstance(t, ast.Name)]
-                status = None
-                for node in ast.walk(handler):
-                    if isinstance(node, ast.keyword) and node.arg == "status_code":
-                        status = getattr(node.value, "value", None)
-                if status is None or status >= 500:
-                    continue
-                offenders += [
-                    f"{path.name}: except {n} -> {status}"
-                    for n in names
-                    if hasattr(builtins, n)
-                ]
+            offenders += [
+                f"{path.name}: except {name} -> 4xx"
+                for name in builtin_4xx_catches(path.read_text(encoding="utf-8"))
+            ]
         assert not offenders, (
             "내장 예외를 4xx 로 옮기는 catch 가 있습니다: "
             + ", ".join(offenders)
@@ -312,28 +324,43 @@ class TestShowableExceptionsAreOneList:
         )
 
     def test_그_단언이_실제로_잡는다(self):
-        """**공허 방지.** 고치기 전 모양(`except ValueError -> 400`)을 만들어 본다."""
-        import ast
-        import builtins
+        """**공허 방지 — 본 검사와 같은 함수를 실패 방향으로 돌린다** (ADR-0056).
 
-        tree = ast.parse(
-            "try:\n"
-            "    pass\n"
-            "except ValueError as e:\n"
-            "    raise HTTPException(status_code=400, detail=str(e)) from e\n"
+        첫 판본은 판정 로직이 본 검사 메서드 안에 **인라인**이었고, 이 공허
+        방지가 그것을 **다시 구현**했다. 그리고 두 벌은 이미 어긋나 있었다 —
+        본 검사는 `except (A, B)` 튜플을 처리하는데 이쪽은 `ast.Name` 만 봤다.
+        아래 두 번째 표본이 그 차이다.
+        """
+        import textwrap
+
+        single = textwrap.dedent("""
+            try:
+                pass
+            except ValueError as e:
+                raise HTTPException(status_code=400, detail=str(e)) from e
+        """)
+        assert builtin_4xx_catches(single) == ["ValueError"]
+
+        tuple_form = textwrap.dedent("""
+            try:
+                pass
+            except (ValueError, TypeError) as e:
+                raise HTTPException(status_code=400, detail=str(e)) from e
+        """)
+        assert builtin_4xx_catches(tuple_form) == ["ValueError", "TypeError"], (
+            "튜플 형태를 놓치면 두 벌이 갈린 것이다 — 첫 판본의 공허 방지가 그랬다"
         )
-        hits = []
-        for handler in ast.walk(tree):
-            if not isinstance(handler, ast.ExceptHandler) or handler.type is None:
-                continue
-            names = [handler.type.id] if isinstance(handler.type, ast.Name) else []
-            status = None
-            for node in ast.walk(handler):
-                if isinstance(node, ast.keyword) and node.arg == "status_code":
-                    status = getattr(node.value, "value", None)
-            if status is not None and status < 500:
-                hits += [n for n in names if hasattr(builtins, n)]
-        assert hits == ["ValueError"]
+
+        # **반대 방향.** 도메인 예외와 `Exception -> 500` 은 지목하면 안 된다.
+        innocent = textwrap.dedent("""
+            try:
+                pass
+            except MyDomainError as e:
+                raise HTTPException(status_code=404, detail=str(e)) from e
+            except Exception as e:
+                raise HTTPException(status_code=500, detail="일반") from e
+        """)
+        assert builtin_4xx_catches(innocent) == []
 
     def test_상태코드를_리터럴로_못_읽는_핸들러가_없다(self):
         """**두 번째 제외도 단언으로** (ADR-0052).
