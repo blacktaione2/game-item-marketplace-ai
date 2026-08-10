@@ -335,6 +335,47 @@ class TestShowableExceptionsAreOneList:
                 hits += [n for n in names if hasattr(builtins, n)]
         assert hits == ["ValueError"]
 
+    def test_상태코드를_리터럴로_못_읽는_핸들러가_없다(self):
+        """**두 번째 제외도 단언으로** (ADR-0052).
+
+        위 유도는 `status_code=` 가 **리터럴이 아닌** 핸들러를 `status is None`
+        으로 건너뛴다. 건너뛰기만 하면 `HTTPException(404, ...)` 처럼 위치 인자로
+        쓰거나 값을 변수로 만든 핸들러가 **검사에 안 보인 채로** 남는다.
+
+        `assistant.py` 는 대상이 아니다 — 거기가 물려받는 쪽이고, 상태 코드를
+        `_showable_status(e)` 로 계산하는 것이 정상이다.
+        """
+        import ast
+        import pathlib
+
+        import app.routers as routers_pkg
+
+        blind = []
+        for path in sorted(pathlib.Path(routers_pkg.__file__).parent.glob("*.py")):
+            if path.stem in ("assistant", "__init__"):
+                continue
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+            for handler in ast.walk(tree):
+                if not isinstance(handler, ast.ExceptHandler) or handler.type is None:
+                    continue
+                raises_http = any(
+                    isinstance(n, ast.Call) and getattr(n.func, "id", None) == "HTTPException"
+                    for n in ast.walk(handler)
+                )
+                literal_status = any(
+                    isinstance(n, ast.keyword)
+                    and n.arg == "status_code"
+                    and isinstance(n.value, ast.Constant)
+                    for n in ast.walk(handler)
+                )
+                if raises_http and not literal_status:
+                    blind.append(f"{path.name}:{handler.lineno}")
+        assert not blind, (
+            "상태 코드를 리터럴 `status_code=` 로 안 쓰는 핸들러가 있습니다: "
+            + ", ".join(blind)
+            + " — 위 유도가 그 자리를 조용히 건너뜁니다."
+        )
+
     def test_그_유도가_실제로_라우터를_읽는다(self):
         """**공허 방지.** 0개를 읽으면 위 검사는 공짜로 통과한다."""
         theirs = self._router_mappings()

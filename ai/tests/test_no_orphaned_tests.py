@@ -100,9 +100,16 @@ def _uncollected(tree: ast.AST) -> list[str]:
 
     walk(tree, False)
 
-    for node in ast.iter_child_nodes(tree):
-        if not isinstance(node, ast.ClassDef):
-            continue
+    # 클래스 축 둘(2·4)은 **중첩 깊이에도 적용된다.** 실측: `TestOuter` 안의
+    # `TestInner` 는 수집되지만(`TestOuter::TestInner::test_x`), 같은 자리의
+    # `Helper` 안 테스트는 **조용히 빠진다.** 최상위만 보면 그걸 못 본다.
+    def classes(node: ast.AST):
+        for child in ast.iter_child_nodes(node):
+            if isinstance(child, ast.ClassDef):
+                yield child
+                yield from classes(child)
+
+    for node in classes(tree):
         methods = [
             m.name for m in node.body
             if isinstance(m, _FUNC) and m.name.startswith("test_")
@@ -134,8 +141,7 @@ def _uncollected(tree: ast.AST) -> list[str]:
     scopes += [
         [m.name for m in node.body if isinstance(m, _FUNC)
          and m.name.startswith("test_")]
-        for node in ast.iter_child_nodes(tree)
-        if isinstance(node, ast.ClassDef)
+        for node in classes(tree)
     ]
     for names in scopes:
         for name, count in Counter(names).items():
@@ -215,6 +221,25 @@ def test_the_scan_catches_a_class_not_named_test():
         "class Helper:\n"
         "    def test_never_collected(self):\n"
         "        assert False\n"
+    )
+    assert [n.split(" ")[0] for n in _uncollected(broken)] == ["Helper"]
+
+
+def test_the_class_axes_reach_nested_classes():
+    """**중첩 깊이에도 적용된다** (ADR-0052). 첫 판본은 최상위 클래스만 봤다.
+
+    실측: `TestOuter` 안의 `TestInner` 는 수집돼서 실패로 뜨지만
+    (`TestOuter::TestInner::test_x`), 같은 자리의 `Helper` 안 테스트는
+    **조용히 빠진다** — `1 failed, 1 passed` 로 끝난다.
+    """
+    broken = ast.parse(
+        "class TestOuter:\n"
+        "    class Helper:\n"
+        "        def test_swallowed(self):\n"
+        "            assert False\n"
+        "\n"
+        "    def test_outer_runs(self):\n"
+        "        assert True\n"
     )
     assert [n.split(" ")[0] for n in _uncollected(broken)] == ["Helper"]
 

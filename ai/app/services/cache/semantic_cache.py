@@ -136,6 +136,20 @@ class SemanticCache:
             if not allows_semantic(Intent(hit["intent"])):
                 return None
         except ValueError:
+            # 저장될 때는 유효했는데 지금은 없는 의도 이름 — 의도를 개명·삭제하고
+            # `cache_version` 을 안 올리면 생긴다. 미적중으로 넘기는 판단은 맞다.
+            #
+            # **다만 조용히 넘기지 않는다.** 이 저장소는 같은 자리에서 이미
+            # 배웠다 — 캐시가 실패했을 때의 증상은 "적중률 0" 하나뿐이고, 그건
+            # 캐시가 원래 못 맞히는 것과 **구분되지 않는다**(임계값 0.98).
+            # 그래서 fail-open/fail-safe 경로는 기록을 남긴다는 규칙이 있고
+            # (`pipeline.py` 의 조회·저장, `core/rate_limit.py`),
+            # 이 파일만 로거를 정의해두고 한 번도 쓰지 않았다.
+            logger.warning(
+                "캐시 항목의 의도 이름을 모른다(%r) — 미적중으로 넘긴다. "
+                "의도를 개명했다면 cache_version 을 올리세요.",
+                hit.get("intent"),
+            )
             return None
 
         return _hit(hit, keys[best], score, "semantic")
