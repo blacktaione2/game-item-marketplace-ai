@@ -7,6 +7,8 @@
 있다.
 """
 
+from typing import Any, get_args
+
 from app.services.search.filters import SearchFilters
 
 
@@ -17,6 +19,33 @@ def clause_fields(filters: SearchFilters) -> list[str]:
         for body in clause.values():
             fields.extend(body.keys())
     return fields
+
+
+def _sample_for(annotation: Any) -> Any:
+    """그 타입의 대표값. **타입에서 유도한다** — 필드별 표본을 손으로 적으면
+    그 목록이 곧 다음에 새는 열거다."""
+    inner = [a for a in get_args(annotation) if a is not type(None)]
+    base = inner[0] if inner else annotation
+    if base is str:
+        return "표본"
+    if base is int:
+        return 1
+    if base is float:
+        return 1.0
+    raise AssertionError(f"표본을 만들 수 없는 타입입니다: {annotation}")
+
+
+def unhandled_fields(model: type[SearchFilters]) -> list[str]:
+    """값을 넣어도 **절을 하나도 안 만드는** 필드들.
+
+    본 검사와 공허 방지가 이 식을 공유한다.
+    """
+    missing = []
+    for name, field in model.model_fields.items():
+        instance = model(**{name: _sample_for(field.annotation)})
+        if not instance.to_es_filters():
+            missing.append(name)
+    return missing
 
 
 class TestSubcategory:
@@ -71,3 +100,62 @@ class TestRanges:
 
     def test_no_clauses_when_empty(self):
         assert SearchFilters().to_es_filters() == []
+
+
+class TestEveryFieldIsActuallyUsed:
+    """모델에 필드를 더하고 **변환에 안 넣으면** 그 필터는 조용히 무력해진다.
+
+    ## 왜 조용한가
+
+    `to_es_filters()` 는 필드를 **하나씩 손으로** 옮긴다. 하나를 빠뜨리면
+
+    - LLM 은 그 필드를 뽑는다(스키마에 있으니 프롬프트가 안내한다)
+    - 응답의 `filters` 에는 **추출된 값이 그대로 실린다** — 적용된 것처럼 보인다
+    - ES 에는 안 걸린다. 결과는 그냥 **필터 없는 검색**이다
+
+    예외도 로그도 없고, 화면은 값을 보여준다. 이 저장소는 같은 계열을 이미
+    겪었다 — `HARD_FILTER_FIELDS` 가 빠진 아이템은 **검색에서 조용히 사라졌고**,
+    그래서 `corpus/__init__.py` 가 임포트 시점에 단언한다. 이건 그 거울상이다:
+    모델에는 있고 변환에는 없는 필드.
+
+    로드맵에 **`rarity` 축**이 열려 있다(등급 분류 체계를 만들어야 하는 건).
+    다음에 필드를 더하는 사람이 정확히 이 자리로 온다.
+    """
+
+    def test_every_field_produces_at_least_one_clause(self):
+        missing = unhandled_fields(SearchFilters)
+        assert not missing, (
+            f"모델에 있는데 `to_es_filters()` 가 안 쓰는 필드: {missing} — "
+            "값이 추출돼도 ES 에는 안 걸립니다. 응답에는 실려서 적용된 것처럼 보입니다."
+        )
+
+    def test_there_are_fields_to_check(self):
+        """0개를 세면 위 검사는 공짜로 통과한다."""
+        assert len(SearchFilters.model_fields) >= 8
+
+    def test_the_check_can_actually_fail(self):
+        """**공허 방지 — 같은 식을 실패 방향으로.**
+
+        로드맵에 열려 있는 축(`rarity`)을 그대로 써서, 다음에 실제로 일어날
+        모양을 만든다. 지어낸 이름으로 하면 "필드를 더했다"가 아니라 정규식만
+        시험하게 된다.
+        """
+
+        class _WithRarity(SearchFilters):
+            rarity: str | None = None
+
+        assert unhandled_fields(_WithRarity) == ["rarity"]
+
+    def test_a_handled_subclass_is_not_flagged(self):
+        """**반대 방향.** 제대로 변환을 더한 필드는 지목하면 안 된다."""
+
+        class _WithRarityHandled(SearchFilters):
+            rarity: str | None = None
+
+            def to_es_filters(self):
+                clauses = super().to_es_filters()
+                if self.rarity:
+                    clauses.append({"term": {"rarity": self.rarity}})
+                return clauses
+
+        assert unhandled_fields(_WithRarityHandled) == []

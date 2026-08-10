@@ -215,3 +215,30 @@ class TestRecordResponse:
             and 'tenant="scale-check"' in line
         )
         assert total == 2.0
+
+
+class TestUnknownKeyIsNotSilent:
+    """모르는 키를 버리되 **한 번은 알린다** (ADR-0053).
+
+    위 `TestStageMapping` 이 소스의 문자열 상수를 훑지만 깊이가 거기까지다 —
+    키를 변수나 f-string 으로 만들면 못 본다. 런타임 그물이 그 구멍을 막는다.
+    """
+
+    def test_unknown_key_warns_once(self, caplog):
+        from app.core import metrics
+
+        metrics._WARNED_UNKNOWN_KEYS.discard("made_up_stage_ms")
+        with caplog.at_level("WARNING", logger="app.core.metrics"):
+            metrics.record_timings("nexon", {"made_up_stage_ms": 12.0})
+            metrics.record_timings("nexon", {"made_up_stage_ms": 12.0})
+        hits = [r for r in caplog.records if "made_up_stage_ms" in r.getMessage()]
+        assert len(hits) == 1, f"요청마다 경고를 내면 로그가 막힌다: {len(hits)}건"
+        metrics._WARNED_UNKNOWN_KEYS.discard("made_up_stage_ms")
+
+    def test_known_key_does_not_warn(self, caplog):
+        """**반대 방향.** 정상 키에 경고를 내면 로그가 쓸모없어진다."""
+        from app.core import metrics
+
+        with caplog.at_level("WARNING", logger="app.core.metrics"):
+            metrics.record_timings("nexon", {"rerank_ms": 5.0})
+        assert not [r for r in caplog.records if "rerank_ms" in r.getMessage()]

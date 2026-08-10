@@ -22,11 +22,14 @@ dict를 히스토그램으로 옮긴다. 계측 지점이 하나뿐이라 새 �
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from prometheus_client import CollectorRegistry, Counter, Histogram, generate_latest
 
 from app.core.llm_usage import note_call
+
+logger = logging.getLogger(__name__)
 
 # 기본 레지스트리를 쓰지 않는다 — 테스트가 서로 오염되지 않게 격리한다.
 REGISTRY = CollectorRegistry()
@@ -151,11 +154,32 @@ def stage_for(key: str) -> str | None:
     return _STAGE_BY_KEY.get(key)
 
 
+#: 이미 경고를 낸 미등록 키. 요청마다 같은 경고를 내지 않으려고 기억한다.
+#: 서로 다른 키의 개수만큼만 자라므로 무한히 늘지 않는다.
+_WARNED_UNKNOWN_KEYS: set[str] = set()
+
+
 def record_timings(tenant: str, timings: dict[str, float]) -> None:
-    """`timings` dict를 히스토그램으로 옮긴다. 모르는 키는 조용히 버린다."""
+    """`timings` dict를 히스토그램으로 옮긴다. 모르는 키는 버리되 **한 번 알린다.**
+
+    `tests/test_metrics.py` 가 소스의 `*_ms` 문자열 상수를 훑어 표에 다 있는지
+    본다. 그 검사의 깊이는 **문자열 상수**라, 키를 변수나 f-string 으로 만들면
+    못 본다 — 그 구멍을 여기서 막는다 (ADR-0053).
+
+    조용히 버리면 그 단계는 메트릭에서 사라지고, 증상은 *"그래프에 그 줄이
+    없다"* 하나뿐이다. 그건 **애초에 그 단계를 안 탄 것과 구분되지 않는다** —
+    캐시 실패가 "적중률 0"으로만 보이던 것과 같은 모양이다.
+    """
     for key, value in timings.items():
         stage = _STAGE_BY_KEY.get(key)
         if stage is None:
+            if key not in _WARNED_UNKNOWN_KEYS:
+                _WARNED_UNKNOWN_KEYS.add(key)
+                logger.warning(
+                    "`_STAGE_BY_KEY` 에 없는 timings 키를 버린다: %s — "
+                    "단계를 늘렸다면 표에 한 줄 넣으세요.",
+                    key,
+                )
             continue
         stage_duration.labels(stage=stage, tenant=tenant).observe(value / 1000.0)
 

@@ -288,6 +288,11 @@ def report_spread(runs: list[list[dict]]) -> None:
     print(f"\n{'=' * 72}\n질의 내 마진 (적합 최솟값 − 부적합 최댓값)\n{'=' * 72}")
     margins: list[float] = []
     inversions: list[tuple[str, str, str]] = []
+    # **뺀 질의를 센다.** 마진은 "적합 최솟값 − 부적합 최댓값"이라 한쪽이 없으면
+    # 계산할 수 없는데, 예전 판본은 그냥 `continue` 했다. 그러면 아래 표에 안
+    # 보이고 `최소 마진`의 분모도 안 보인다 — **판정에 쓴 값을 전부 출력한다**는
+    # 이 저장소의 규칙에 걸린다(ADR-0053).
+    dropped: dict[str, str] = {}
     for index, rows in enumerate(runs, start=1):
         by_query: dict[str, list[dict]] = {}
         for row in rows:
@@ -296,6 +301,8 @@ def report_spread(runs: list[list[dict]]) -> None:
             fit = [r["score"] for r in group if r["fit"]]
             unfit = [r["score"] for r in group if not r["fit"]]
             if not fit or not unfit:
+                if index == 1:
+                    dropped[query] = "부적합 없음" if fit else "적합 없음"
                 continue
             margin = min(fit) - max(unfit)
             if index == 1:
@@ -308,8 +315,19 @@ def report_spread(runs: list[list[dict]]) -> None:
                 if not row["fit"] and row["score"] > min(fit):
                     inversions.append((f"실행{index}", query, row["name"]))
 
+    if dropped:
+        print(
+            f"\n  !! 마진을 못 재서 뺀 질의 {len(dropped)}건 "
+            f"— 아래 `최소 마진`의 분모는 나머지다:"
+        )
+        for query, reason in dropped.items():
+            print(f"       {query}  ({reason})")
+
     if margins:
-        print(f"\n  최소 마진 {min(margins):+.2f}  (전 실행 통합)")
+        print(
+            f"\n  최소 마진 {min(margins):+.2f}  "
+            f"(전 실행 통합, 질의 {len(margins) if len(runs) == 1 else '중복 제거 후 ' + str(len(margins))}개 기준)"
+        )
         if spreads:
             worst = max(s for _, s in spreads)
             verdict = "충족" if worst < min(margins) else "**미충족**"
