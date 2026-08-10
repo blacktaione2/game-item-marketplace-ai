@@ -28,6 +28,8 @@ from app.core.progress import (
     safe_emit,
 )
 from app.main import app
+from app.services.forecast.exceptions import ItemNotFoundError
+from app.services.search.exceptions import TenantIndexNotFoundError
 from app.routers.assistant import _sse
 
 
@@ -121,6 +123,80 @@ class TestProgressCallback:
 
         asyncio.run(safe_emit(record, STAGE_TOOL, tool="search_items", step=2, failed=False))
         assert seen == [(STAGE_TOOL, {"tool": "search_items", "step": 2, "failed": False})]
+
+
+class TestShowableExceptionsAreOneList:
+    """두 라우트가 **하나의 표**에서 예외 목록을 얻는지 (ADR-0050).
+
+    ADR-0049 는 `_SHOWABLE` 을 만들며 *"두 라우트가 같은 목록을 쓴다"* 고 적었지만
+    **실제로는 목록이 둘이었다** — 튜플은 스트리밍만 쓰고, 비스트리밍은 `except`
+    절 셋에 같은 여섯 개를 다시 열거했다. 오늘 두 목록이 일치하는 것은 같은
+    사람이 같은 날 적었기 때문이지 구조 때문이 아니다.
+
+    한쪽만 늘어나면 같은 예외가 한쪽에서는 404·422 안내가 되고 다른 쪽에서는
+    "요청 처리에 실패했습니다"가 된다 — **어긋나도 아무 신호가 없는 종류**라
+    소스로 박는다.
+    """
+
+    def _except_names(self, handler) -> list[str]:
+        """핸들러의 `except` 절이 이름으로 잡는 것들."""
+        import ast
+        import inspect
+        import textwrap
+
+        tree = ast.parse(textwrap.dedent(inspect.getsource(handler)))
+        names: list[str] = []
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.ExceptHandler) or node.type is None:
+                continue
+            targets = (
+                node.type.elts if isinstance(node.type, ast.Tuple) else [node.type]
+            )
+            names += [t.id for t in targets if isinstance(t, ast.Name)]
+        return names
+
+    def test_비스트리밍이_예외를_다시_열거하지_않는다(self):
+        from app.routers import assistant
+
+        names = self._except_names(assistant.assistant)
+        assert names, "표본이 틀렸습니다 — except 절을 하나도 못 찾았습니다"
+        extra = [n for n in names if n not in ("_SHOWABLE", "Exception")]
+        assert not extra, (
+            f"비스트리밍 경로가 예외를 따로 열거합니다: {extra} — "
+            "`_SHOWABLE_STATUS` 한 곳에서 나오게 하세요."
+        )
+
+    def test_스트리밍도_같은_이름을_쓴다(self):
+        from app.routers import assistant
+
+        assert "_SHOWABLE" in self._except_names(assistant.assistant_stream)
+
+    def test_열거를_되살리면_걸린다(self):
+        """**공허 방지 — 같은 식을 실패 방향으로.** 옛 모양을 그대로 만들어 본다."""
+
+        async def old_shape():  # pragma: no cover - 표본
+            try:
+                return None
+            except (TenantIndexNotFoundError, ItemNotFoundError):
+                raise
+            except Exception:
+                raise
+
+        names = self._except_names(old_shape)
+        assert [n for n in names if n not in ("_SHOWABLE", "Exception")] == [
+            "TenantIndexNotFoundError",
+            "ItemNotFoundError",
+        ]
+
+    def test_표에_있는_예외는_전부_상태코드가_나온다(self):
+        from app.routers.assistant import _SHOWABLE, _SHOWABLE_STATUS, _showable_status
+
+        assert set(_SHOWABLE) == set(_SHOWABLE_STATUS), (
+            "`except` 가 쓰는 튜플이 표에서 유도되지 않습니다"
+        )
+        # 생성자 시그니처가 제각각이라 `__new__` 로 만든다 — isinstance 만 보면 된다.
+        for cls in _SHOWABLE_STATUS:
+            assert _showable_status(cls.__new__(cls)) == _SHOWABLE_STATUS[cls]
 
 
 class TestDailyBudgetRuleDoesNotFork:

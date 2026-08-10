@@ -31,17 +31,40 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/assistant", tags=["assistant"])
 
-#: 사용자에게 그대로 보여줄 수 있는 예외들. **두 라우트가 같은 목록을 쓴다** —
-#: 비스트리밍은 상태 코드로, 스트리밍은 페이로드로 옮길 뿐이다. 한쪽만 늘리면
-#: 같은 예외가 한쪽에서는 안내가 되고 다른 쪽에서는 500 이 된다 (ADR-0049).
-_SHOWABLE = (
-    TenantIndexNotFoundError,
-    ItemNotFoundError,
-    UnknownTenantError,
-    InsufficientHistoryError,
-    ForecastModelNotTrainedError,
-    AnomalyModelNotTrainedError,
-)
+#: 사용자에게 그대로 보여줄 수 있는 예외 → 비스트리밍 경로의 상태 코드.
+#:
+#: **두 라우트가 이 표 하나에서 나온다.** 비스트리밍은 상태 코드로, 스트리밍은
+#: 페이로드로 옮길 뿐이다. 한쪽만 늘리면 같은 예외가 한쪽에서는 안내가 되고 다른
+#: 쪽에서는 500 이 된다 (ADR-0049).
+#:
+#: > **ADR-0049 는 그 문장을 적어놓고 목록을 둘로 뒀다** (ADR-0050). 튜플은
+#: > 스트리밍만 쓰고, 비스트리밍은 `except` 절 셋에 같은 여섯 개를 **다시**
+#: > 열거했다. 오늘 두 목록이 일치하는 것은 같은 사람이 같은 날 적었기
+#: > 때문이지 구조 때문이 아니다 — 이 저장소가 반복해서 겪은
+#: > *"열거는 새고, 같은 열거로 만든 검사는 그걸 못 잡는다"* 의 재발이다.
+#: > 이제 목록이 하나고, `_showable_status()` 가 상태 코드를 여기서 읽는다.
+_SHOWABLE_STATUS: dict[type[Exception], int] = {
+    TenantIndexNotFoundError: 404,
+    ItemNotFoundError: 404,
+    UnknownTenantError: 404,
+    InsufficientHistoryError: 422,
+    ForecastModelNotTrainedError: 503,
+    AnomalyModelNotTrainedError: 503,
+}
+
+#: `except` 절이 쓰는 형태. 표에서 유도하므로 따로 늘어날 수 없다.
+_SHOWABLE = tuple(_SHOWABLE_STATUS)
+
+
+def _showable_status(exc: Exception) -> int:
+    """`_SHOWABLE` 로 걸러진 예외의 상태 코드.
+
+    `except` 는 isinstance 기준이므로 하위 클래스가 잡힐 수 있다. `type(exc)` 로
+    바로 찾으면 그때 KeyError 가 나므로 같은 기준으로 찾는다.
+    """
+    return next(
+        status for cls, status in _SHOWABLE_STATUS.items() if isinstance(exc, cls)
+    )
 
 
 class AssistantRequest(BaseModel):
@@ -129,12 +152,11 @@ async def assistant(
     # 나가고 `/api/assistant` 로는 **500** 이 나갔다. 콜드스타트 donor 가 없는
     # 아이템을 통합 진입점으로 물으면 "요청 처리에 실패했습니다" 가 돌아온다.
     # 이웃 라우터가 이미 판정해둔 것을 물려받지 못한 자리다(ADR-0047 의 주제).
-    except (TenantIndexNotFoundError, ItemNotFoundError, UnknownTenantError) as e:
-        raise HTTPException(status_code=404, detail=str(e)) from e
-    except InsufficientHistoryError as e:
-        raise HTTPException(status_code=422, detail=str(e)) from e
-    except (ForecastModelNotTrainedError, AnomalyModelNotTrainedError) as e:
-        raise HTTPException(status_code=503, detail=str(e)) from e
+    #
+    # **절을 예외마다 나누지 않는다** (ADR-0050). 나누면 그게 곧 두 번째 열거이고,
+    # 스트리밍 경로의 `_SHOWABLE` 과 어긋나도 아무 신호가 없다.
+    except _SHOWABLE as e:
+        raise HTTPException(status_code=_showable_status(e), detail=str(e)) from e
     except Exception as e:
         # **예외 문자열을 클라이언트로 내보내지 않는다** (ADR-0041). 업스트림
         # 메시지에는 ES 인덱스명·쿼리 DSL·내부 호스트가 섞여 나온다. 백엔드는

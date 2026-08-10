@@ -30,16 +30,29 @@ import textwrap
 from app.services.agent.agent import _force_tenant, run_agent
 
 
+def _tenant_reaching_the_tool(
+    arguments: dict, tenant_code: str, *, force: bool
+) -> str:
+    """도구가 실제로 받는 `tenant_code`. `force=False` 가 **옛 판본**이다.
+
+    아래 검사와 공허 방지가 **이 함수 하나를 두 방향으로** 돌린다. 나눠 놓지
+    않으면 공허 방지가 *다른* 식을 검사하게 되는데, 첫 판본이 정확히 그랬다 —
+    `_force_tenant` 를 부르지도 않고 딕셔너리 리터럴이 제 값을 갖는지만 봤다.
+    항상 참인 문장이라, `_force_tenant` 가 통째로 사라져도 통과했다 (ADR-0050).
+    """
+    if force:
+        _force_tenant(arguments, tenant_code)
+    return arguments["tenant_code"]
+
+
 class TestForceTenant:
     def test_모델이_넣은_값을_덮는다(self):
         arguments = {"tenant_code": "ncsoft", "query": "검"}
-        _force_tenant(arguments, "nexon")
-        assert arguments["tenant_code"] == "nexon"
+        assert _tenant_reaching_the_tool(arguments, "nexon", force=True) == "nexon"
 
     def test_빠져_있으면_채운다(self):
         arguments = {"query": "검"}
-        _force_tenant(arguments, "nexon")
-        assert arguments["tenant_code"] == "nexon"
+        assert _tenant_reaching_the_tool(arguments, "nexon", force=True) == "nexon"
 
     def test_다른_인자는_건드리지_않는다(self):
         arguments = {"tenant_code": "ncsoft", "item_id": 24, "size": 5}
@@ -47,12 +60,13 @@ class TestForceTenant:
         assert arguments == {"tenant_code": "nexon", "item_id": 24, "size": 5}
 
     def test_옛_판본이라면_남의_테넌트가_그대로_간다(self):
-        """**공허 방지.** 덮어쓰지 않던 때를 그대로 돌려본다."""
+        """**공허 방지 — 같은 식을 실패 방향으로 돌린다.**
+
+        옛 판본은 `call.arguments` 를 그대로 넘겼다. 그러면 모델이 적어 보낸
+        `ncsoft` 가 도구까지 간다 — 위 검사가 잡아내는 바로 그 차이다.
+        """
         arguments = {"tenant_code": "ncsoft", "query": "검"}
-        # 옛 판본: 아무것도 하지 않고 call.arguments 를 그대로 넘겼다.
-        assert arguments["tenant_code"] == "ncsoft", (
-            "표본이 이미 nexon 이면 이 검사는 아무것도 구별하지 못한다"
-        )
+        assert _tenant_reaching_the_tool(arguments, "nexon", force=False) == "ncsoft"
 
 
 class TestItRunsBeforeTheToolCall:
