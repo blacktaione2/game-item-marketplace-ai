@@ -188,6 +188,78 @@ class TestShowableExceptionsAreOneList:
             "ItemNotFoundError",
         ]
 
+    def _router_mappings(self) -> dict[str, int]:
+        """개별 라우터가 매핑하는 **도메인 예외 → 상태 코드**. 소스에서 유도한다.
+
+        **목록을 적지 않는다.** 첫 판본은 ADR-0049 가 적은 여섯 개를 그대로
+        옮겼는데 개별 라우터가 매핑하는 것은 아홉이었다 — `TradeNotFoundError`
+        가 빠져서 같은 조건에 `/api/anomaly/detect` 는 404, `/api/assistant` 는
+        **500** 이었다(배포에서 실측). *목록을 하나로 합치면서, 무엇이 그 목록에
+        들어가야 하는지를 다시 열거로 정한 것*이다.
+
+        `ValueError` 같은 내장 예외는 뺀다 — 도메인 예외가 아니고, 파이프라인이
+        아니라 요청 파싱에서 나온다.
+        """
+        import ast
+        import builtins
+        import pathlib
+
+        import app.routers as routers_pkg
+
+        root = pathlib.Path(routers_pkg.__file__).parent
+        found: dict[str, int] = {}
+        for path in sorted(root.glob("*.py")):
+            if path.stem in ("assistant", "__init__"):
+                continue
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+            for handler in ast.walk(tree):
+                if not isinstance(handler, ast.ExceptHandler) or handler.type is None:
+                    continue
+                targets = (
+                    handler.type.elts
+                    if isinstance(handler.type, ast.Tuple)
+                    else [handler.type]
+                )
+                names = [t.id for t in targets if isinstance(t, ast.Name)]
+                status = None
+                for node in ast.walk(handler):
+                    if isinstance(node, ast.keyword) and node.arg == "status_code":
+                        status = getattr(node.value, "value", None)
+                if status is None or status == 500:
+                    continue
+                for name in names:
+                    if hasattr(builtins, name):
+                        continue
+                    found[name] = status
+        return found
+
+    def test_개별_라우터가_매핑하는_것을_전부_물려받는다(self):
+        from app.routers.assistant import _SHOWABLE_STATUS
+
+        mine = {cls.__name__: status for cls, status in _SHOWABLE_STATUS.items()}
+        theirs = self._router_mappings()
+        assert len(theirs) >= 6, f"표본이 이상합니다 — 라우터에서 찾은 매핑 {theirs}"
+
+        missing = {n: s for n, s in theirs.items() if n not in mine}
+        assert not missing, (
+            f"개별 라우터는 매핑하는데 통합 진입점은 500 을 내는 예외가 있습니다: "
+            f"{missing} — `_SHOWABLE_STATUS` 에 넣으세요."
+        )
+        disagreeing = {
+            n: (mine[n], s) for n, s in theirs.items() if mine[n] != s
+        }
+        assert not disagreeing, (
+            f"같은 예외에 다른 상태 코드를 냅니다 (통합, 개별): {disagreeing}"
+        )
+
+    def test_그_유도가_실제로_라우터를_읽는다(self):
+        """**공허 방지.** 0개를 읽으면 위 검사는 공짜로 통과한다."""
+        theirs = self._router_mappings()
+        # 실제로 라우터에 있는 매핑 하나로 확인한다 — 지어낸 이름으로 하면
+        # "읽었는가" 가 아니라 정규식만 시험하게 된다.
+        assert theirs.get("TradeNotFoundError") == 404, theirs
+        assert "ValueError" not in theirs, "내장 예외를 걸러야 한다"
+
     def test_표에_있는_예외는_전부_상태코드가_나온다(self):
         from app.routers.assistant import _SHOWABLE, _SHOWABLE_STATUS, _showable_status
 

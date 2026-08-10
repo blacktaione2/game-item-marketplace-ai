@@ -10,10 +10,12 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from app.core.auth import Actor
+from app.core.ids import MalformedIdRefError, UnsupportedIdSpaceError
 from app.core.progress import ProgressFn, noop
 from app.core.rate_limit import consume_daily, limit_assistant
 from app.services.anomaly.exceptions import (
     AnomalyModelNotTrainedError,
+    TradeNotFoundError,
     UnknownTenantError,
 )
 from app.services.assistant.pipeline import ask
@@ -43,13 +45,33 @@ router = APIRouter(prefix="/api/assistant", tags=["assistant"])
 #: > 때문이지 구조 때문이 아니다 — 이 저장소가 반복해서 겪은
 #: > *"열거는 새고, 같은 열거로 만든 검사는 그걸 못 잡는다"* 의 재발이다.
 #: > 이제 목록이 하나고, `_showable_status()` 가 상태 코드를 여기서 읽는다.
+#:
+#: > **그리고 그 목록 자체가 짧았다** (ADR-0050 정정). 첫 판본은 ADR-0049 가 적은
+#: > 여섯 개를 그대로 옮겼는데, **개별 라우터가 매핑하는 것은 아홉 개**였다 —
+#: > `TradeNotFoundError` 가 빠져서 `"거래 999999번 이상거래인지 확인해줘"` 가
+#: > 배포에서 **500** 이었다(`/api/anomaly/detect` 는 같은 조건에 404). 즉
+#: > *열거가 한 층 위로 샜다*: 목록을 하나로 합치면서 **무엇이 그 목록에 들어가야
+#: > 하는지**를 다시 열거로 정한 것이다.
+#: >
+#: > 이제 `test_assistant_stream.py` 가 세 라우터(`anomaly`·`forecast`·`search`)의
+#: > `except` 절을 AST 로 읽어 **여기에 같은 상태 코드로 다 있는지** 본다 — 목록을
+#: > 적는 대신 **물어본다.**
+#:
+#: 개별 라우터가 매핑하지만 통합 진입점으로는 못 닿는 것도 넣는다
+#: (`MalformedIdRefError`·`UnsupportedIdSpaceError` — 어시스턴트는 `parse_ref` 를
+#: 안 거치고 `IdSpace.SYNTHETIC` 을 고정으로 넘긴다). **닿는지 여부로 거르지
+#: 않는 이유**: 그 판단이 곧 다음에 새는 열거이고, 못 닿는 항목의 대가는 쓰이지
+#: 않는 표 한 줄뿐이다.
 _SHOWABLE_STATUS: dict[type[Exception], int] = {
     TenantIndexNotFoundError: 404,
     ItemNotFoundError: 404,
     UnknownTenantError: 404,
+    TradeNotFoundError: 404,
     InsufficientHistoryError: 422,
     ForecastModelNotTrainedError: 503,
     AnomalyModelNotTrainedError: 503,
+    MalformedIdRefError: 400,
+    UnsupportedIdSpaceError: 501,
 }
 
 #: `except` 절이 쓰는 형태. 표에서 유도하므로 따로 늘어날 수 없다.
